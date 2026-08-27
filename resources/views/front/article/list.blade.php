@@ -6,98 +6,58 @@
 @section('canonical', $currentCategory ? url('/articles/category/' . $currentCategory->slug) : url('/articles'))
 
 @section('content')
-<div class="container py-4">
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/">首页</a></li>
-            <li class="breadcrumb-item {{ $currentCategory ? '' : 'active' }}">
-                @if($currentCategory)
-                    <a href="/articles">文章中心</a>
-                @else
-                    文章中心
-                @endif
-            </li>
-            @if($currentCategory)
-            <li class="breadcrumb-item active" aria-current="page">{{ $currentCategory->name }}</li>
-            @endif
-        </ol>
-    </nav>
-
-    <div class="row g-4">
-        {{-- Sidebar --}}
-        <div class="col-lg-3">
-            <div class="article-sidebar">
-                <h2 class="h6 fw-bold mb-3">文章分类</h2>
-                <div class="list-group">
-                    <a href="/articles"
-                       class="list-group-item list-group-item-action {{ !$currentCategory ? 'active' : '' }}">
-                        全部文章
-                    </a>
-                    @foreach($categories as $cat)
-                    <a href="/articles/category/{{ $cat->slug }}"
-                       class="list-group-item list-group-item-action {{ $currentCategory && $currentCategory->id === $cat->id ? 'active' : '' }}">
-                        {{ $cat->name }}
-                    </a>
-                    @endforeach
-                </div>
+    <div class="pd-layout">
+        {{-- Main: Article List --}}
+        <div class="pd-main">
+            <div class="pd-info" style="padding:15px 20px 5px;">
+                <h2 class="pd-title" style="font-size:18px;margin-bottom:5px;">
+                    {{ $currentCategory ? $currentCategory->name : '全部文章' }}
+                </h2>
             </div>
-        </div>
-
-        {{-- Article List --}}
-        <div class="col-lg-9">
-            <h1 class="h4 fw-bold mb-4">
-                {{ $currentCategory ? $currentCategory->name : '全部文章' }}
-            </h1>
 
             @if($articles->count() > 0)
-            <div class="row g-3">
+            <div class="article-page-list">
                 @foreach($articles as $article)
-                <div class="col-12 col-sm-6">
-                    <div class="article-card">
-                        @if($article->cover_image)
-                        <a href="/articles/{{ $article->slug }}">
-                            <img src="{{ $article->cover_image }}" alt="{{ $article->title }}" class="cover-image">
-                        </a>
-                        @else
-                        <a href="/articles/{{ $article->slug }}">
-                            <div class="cover-placeholder">
-                                <i class="bi bi-file-text"></i>
-                            </div>
-                        </a>
+                <article class="article-page-item">
+                    <a href="/articles/{{ $article->slug }}" class="title">{{ $article->title }}</a>
+                    <div class="meta">
+                        @if($article->articleCategory)
+                        <span style="color:var(--teal);margin-right:8px;">{{ $article->articleCategory->name }}</span>
                         @endif
-                        <div class="card-body">
-                            <h3 class="article-title">
-                                <a href="/articles/{{ $article->slug }}">{{ $article->title }}</a>
-                            </h3>
-                            @if($article->summary)
-                            <p class="article-summary">{{ $article->summary }}</p>
-                            @endif
-                            <div class="article-meta">
-                                <span>
-                                    <i class="bi bi-calendar3 me-1"></i>{{ $article->created_at->format('Y-m-d') }}
-                                    <span class="ms-2"><i class="bi bi-eye me-1"></i>{{ $article->views }}</span>
-                                </span>
-                                @if($article->articleCategory)
-                                <span class="category-label">{{ $article->articleCategory->name }}</span>
-                                @endif
-                            </div>
-                        </div>
+                        {{ $article->created_at->format('Y-m-d') }}
                     </div>
-                </div>
+                </article>
                 @endforeach
             </div>
 
-            <div class="d-flex justify-content-center mt-4">
-                {{ $articles->links() }}
-            </div>
+            <div class="pagination-wrap">{{ $articles->links() }}</div>
             @else
-            <div class="empty-state">
-                <div class="icon"><i class="bi bi-journal-x"></i></div>
+            <div class="text-center" style="padding:60px 0;color:var(--text-light)">
+                <div style="font-size:48px;margin-bottom:15px">&#128209;</div>
                 <p>暂无文章</p>
-                <a href="/" class="btn btn-outline-primary">返回首页</a>
+                <a href="/" class="btn-buy-sm" style="margin-top:10px">返回首页</a>
             </div>
             @endif
         </div>
+
+        {{-- Sidebar: Categories --}}
+        <div class="pd-sidebar">
+            <div class="sidebar-card">
+                <div class="sidebar-card-header">文章分类</div>
+                <ul class="sidebar-article-list">
+                    <li>
+                        <a href="/articles" style="{{ !$currentCategory ? 'color:var(--teal);font-weight:600' : '' }}">全部文章</a>
+                    </li>
+                    @foreach($categories as $cat)
+                    <li>
+                        <a href="/articles/category/{{ $cat->slug }}"
+                           style="{{ $currentCategory && $currentCategory->id === $cat->id ? 'color:var(--teal);font-weight:600' : '' }}">
+                            {{ $cat->name }}
+                        </a>
+                    </li>
+                    @endforeach
+                </ul>
+            </div>
+        </div>
     </div>
-</div>
 @endsection

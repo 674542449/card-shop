@@ -14,7 +14,6 @@
     <link rel="canonical" href="@yield('canonical')">
     @endif
 
-    {{-- Open Graph --}}
     <meta property="og:type" content="@yield('og_type', 'website')">
     <meta property="og:title" content="@yield('title', setting('seo_default_title', 'CardShop'))">
     <meta property="og:description" content="@yield('meta_description', setting('seo_default_description', ''))">
@@ -23,16 +22,8 @@
 
     @yield('structured_data')
 
-    {{-- Bootstrap 5.3 CDN --}}
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
-    {{-- Bootstrap Icons --}}
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-
-    {{-- Custom CSS --}}
     <link href="{{ asset('css/front.css') }}" rel="stylesheet">
 
-    {{-- Turnstile --}}
     @if(setting('turnstile_site_key'))
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     @endif
@@ -41,84 +32,71 @@
 </head>
 <body>
 
-    {{-- Navbar --}}
-    <nav class="navbar navbar-expand-lg">
+    <h1 class="seo-h1">{{ setting('site_name', 'CardShop') }} - {{ setting('site_description', '自动发卡平台') }}</h1>
+
+    <header class="site-header">
         <div class="container">
-            <a class="navbar-brand navbar-brand-custom" href="/">
-                <i class="bi bi-shop"></i>
+            <a class="site-logo" href="/">
+                <span class="logo-icon">{{ mb_substr(setting('site_name', 'C'), 0, 1) }}</span>
                 {{ setting('site_name', 'CardShop') }}
             </a>
 
-            <button class="navbar-toggler border-0" type="button" data-bs-toggle="collapse"
-                    data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false"
-                    aria-label="Toggle navigation">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->is('/') ? 'active' : '' }}" href="/">
-                            <i class="bi bi-house-door"></i> 首页
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->is('articles*') ? 'active' : '' }}" href="/articles">
-                            <i class="bi bi-journal-text"></i> 文章
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {{ request()->is('order/query*') ? 'active' : '' }}" href="/order/query">
-                            <i class="bi bi-search"></i> 订单查询
-                        </a>
-                    </li>
+            <nav>
+                <ul class="site-nav">
+                    <li><a href="/" class="{{ request()->is('/') ? 'active' : '' }}">购买商品</a></li>
+                    <li><a href="/order/query" class="{{ request()->is('order/query*') ? 'active' : '' }}">查询订单</a></li>
+                    <li><a href="/articles" class="{{ request()->is('articles*') ? 'active' : '' }}">相关文章</a></li>
                 </ul>
-            </div>
-        </div>
-    </nav>
+            </nav>
 
-    {{-- Announcement Bar --}}
-    @php $announcement = setting('site_announcement', ''); @endphp
-    @if($announcement)
-    <div class="announcement-bar" id="announcement-bar">
-        <div class="container">
-            <i class="bi bi-megaphone-fill me-1"></i>
-            {{ $announcement }}
+            <button class="menu-toggle" id="menu-toggle" aria-label="菜单">&#9776;</button>
         </div>
-        <button type="button" class="btn-close" id="announcement-dismiss" aria-label="关闭"></button>
+    </header>
+
+    <div class="mobile-nav" id="mobile-nav">
+        <ul>
+            <li><a href="/" class="{{ request()->is('/') ? 'active' : '' }}">购买商品</a></li>
+            <li><a href="/order/query" class="{{ request()->is('order/query*') ? 'active' : '' }}">查询订单</a></li>
+            <li><a href="/articles" class="{{ request()->is('articles*') ? 'active' : '' }}">相关文章</a></li>
+        </ul>
     </div>
-    @endif
 
-    {{-- Main Content --}}
-    <main>
-        @if($errors->any())
-        <div class="container mt-3">
-            <div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <main class="main-container">
+        <div class="container">
+            @if($errors->any())
+            <div class="alert alert-danger">
                 @foreach($errors->all() as $error)
                     <div>{{ $error }}</div>
                 @endforeach
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
             </div>
-        </div>
-        @endif
+            @endif
 
-        @yield('content')
+            @if(session('success'))
+            <div class="alert alert-success">{{ session('success') }}</div>
+            @endif
+
+            @if(session('error'))
+            <div class="alert alert-danger">{{ session('error') }}</div>
+            @endif
+
+            @yield('content')
+        </div>
     </main>
 
-    {{-- Footer --}}
     <footer class="site-footer">
         <div class="container">
-            <div class="footer-brand">{{ setting('site_name', 'CardShop') }}</div>
-            <div>&copy; {{ date('Y') }} {{ setting('site_name', 'CardShop') }}. All rights reserved.</div>
+            &copy; {{ date('Y') }} {{ setting('site_name', 'CardShop') }}. All rights reserved.
         </div>
     </footer>
 
-    {{-- Bootstrap 5.3 JS Bundle --}}
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <div class="fab-group">
+        @if(setting('contact_url'))
+        <a href="{{ setting('contact_url') }}" class="fab-btn fab-contact" title="联系客服" target="_blank" rel="noopener">&#128172;</a>
+        @endif
+        <button class="fab-btn fab-top" id="back-to-top" title="回到顶部">&#8593;</button>
+    </div>
 
-    {{-- Custom JS --}}
     <script src="{{ asset('js/front.js') }}"></script>
-
     @yield('scripts')
 </body>
 </html>

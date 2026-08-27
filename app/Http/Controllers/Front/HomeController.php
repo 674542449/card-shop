@@ -19,18 +19,15 @@ class HomeController extends Controller
             }])
             ->get();
 
-        $query = Product::active()->ordered()->with(['category', 'wholesalePrices']);
+        $products = Product::active()
+            ->ordered()
+            ->with(['category', 'wholesalePrices'])
+            ->get();
 
-        if ($request->filled('category')) {
-            $category = Category::where('slug', $request->input('category'))->first();
-            if ($category) {
-                $query->where('category_id', $category->id);
-            }
-        }
+        $groupedProducts = $products->groupBy('category_id');
 
-        $products = $query->paginate(12)->withQueryString();
-
-        $articles = Article::published()->recent()->limit(3)->get();
+        $latestArticles = Article::published()->recent()->limit(5)->get();
+        $recommendedArticles = Article::published()->orderByDesc('views')->limit(5)->get();
 
         $siteName = setting('site_name', 'CardShop');
         $siteDescription = setting('site_description', '');
@@ -39,7 +36,9 @@ class HomeController extends Controller
         return view('front.home', compact(
             'categories',
             'products',
-            'articles',
+            'groupedProducts',
+            'latestArticles',
+            'recommendedArticles',
             'siteName',
             'siteDescription',
             'siteAnnouncement',

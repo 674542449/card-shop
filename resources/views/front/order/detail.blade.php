@@ -3,158 +3,102 @@
 @section('title', '订单详情 - ' . setting('site_name', 'CardShop'))
 
 @section('content')
-<div class="container py-4">
-    <nav aria-label="breadcrumb">
-        <ol class="breadcrumb">
-            <li class="breadcrumb-item"><a href="/">首页</a></li>
-            <li class="breadcrumb-item"><a href="/order/query">订单查询</a></li>
-            <li class="breadcrumb-item active" aria-current="page">订单详情</li>
-        </ol>
-    </nav>
+    <div style="margin-bottom:15px;">
+        <a href="/order/query" style="color:var(--text-light);font-size:13px">&larr; 返回订单列表</a>
+    </div>
 
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-
-            {{-- Status Header --}}
-            <div class="order-summary-card mb-3">
-                <div class="card-body">
-                    @if($order->isPaid())
-                    <div class="payment-status success">
-                        <div class="icon"><i class="bi bi-check-circle-fill"></i></div>
-                        <h3 class="h5 fw-bold mb-1">支付成功</h3>
-                        <p class="text-secondary mb-0">订单已完成，卡密信息如下</p>
-                    </div>
-                    @elseif($order->isExpired() || $order->status === 'expired')
-                    <div class="payment-status expired">
-                        <div class="icon"><i class="bi bi-clock-history"></i></div>
-                        <h3 class="h5 fw-bold mb-1">订单已过期</h3>
-                        <p class="text-secondary mb-0">此订单已超过支付时限</p>
-                    </div>
-                    @elseif($order->status === 'closed')
-                    <div class="payment-status expired">
-                        <div class="icon"><i class="bi bi-x-circle"></i></div>
-                        <h3 class="h5 fw-bold mb-1">订单已关闭</h3>
-                        <p class="text-secondary mb-0">此订单已被关闭</p>
-                    </div>
-                    @else
-                    <div class="payment-status pending">
-                        <div class="icon"><i class="bi bi-hourglass-split"></i></div>
-                        <h3 class="h5 fw-bold mb-1">待支付</h3>
-                        <p class="text-secondary mb-2">请尽快完成支付</p>
-                        <a href="/order/pay/{{ $order->order_no }}" class="btn btn-primary">
-                            <i class="bi bi-credit-card me-1"></i> 继续支付
-                        </a>
-                    </div>
-                    @endif
-                </div>
-            </div>
-
-            {{-- Order Info --}}
-            <div class="order-summary-card mb-3">
-                <div class="card-header">
-                    <i class="bi bi-info-circle me-1"></i> 订单信息
-                </div>
-                <div class="card-body">
-                    <div class="order-info-row">
-                        <span class="label">订单编号</span>
-                        <span class="value" style="font-family: monospace;">{{ $order->order_no }}</span>
-                    </div>
-                    <div class="order-info-row">
-                        <span class="label">商品名称</span>
-                        <span class="value">{{ $order->product->name ?? '—' }}</span>
-                    </div>
-                    <div class="order-info-row">
-                        <span class="label">购买数量</span>
-                        <span class="value">{{ $order->quantity }} 件</span>
-                    </div>
-                    <div class="order-info-row">
-                        <span class="label">单价</span>
-                        <span class="value">¥{{ number_format($order->unit_price, 2) }}</span>
-                    </div>
-                    @if($order->discount_amount > 0)
-                    <div class="order-info-row">
-                        <span class="label">优惠金额</span>
-                        <span class="value text-success">-¥{{ number_format($order->discount_amount, 2) }}</span>
-                    </div>
-                    @endif
-                    <div class="order-info-row">
-                        <span class="label">支付金额</span>
-                        <span class="value text-price fw-bold">¥{{ number_format($order->total_amount, 2) }}</span>
-                    </div>
-                    <div class="order-info-row">
-                        <span class="label">支付方式</span>
-                        <span class="value">
-                            @switch($order->payment_method)
-                                @case('alipay') 支付宝 @break
-                                @case('wechat') 微信支付 @break
-                                @case('usdt_trc20') USDT(TRC20) @break
-                                @case('usdt_bep20') USDT(BEP20) @break
-                                @case('usdt_polygon') USDT(Polygon) @break
-                                @default {{ $order->payment_method ?? '—' }}
-                            @endswitch
-                        </span>
-                    </div>
-                    <div class="order-info-row">
-                        <span class="label">订单状态</span>
-                        <span class="value">
-                            @switch($order->status)
-                                @case('pending')
-                                    <span class="status-badge pending">待支付</span>
-                                    @break
-                                @case('paid')
-                                    <span class="status-badge paid">已支付</span>
-                                    @break
-                                @case('expired')
-                                    <span class="status-badge expired">已过期</span>
-                                    @break
-                                @case('closed')
-                                    <span class="status-badge closed">已关闭</span>
-                                    @break
-                                @default
-                                    <span class="status-badge">{{ $order->status }}</span>
-                            @endswitch
-                        </span>
-                    </div>
-                    @if($order->paid_at)
-                    <div class="order-info-row">
-                        <span class="label">支付时间</span>
-                        <span class="value">{{ $order->paid_at->format('Y-m-d H:i:s') }}</span>
-                    </div>
-                    @endif
-                    <div class="order-info-row">
-                        <span class="label">下单时间</span>
-                        <span class="value">{{ $order->created_at->format('Y-m-d H:i:s') }}</span>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Card Contents --}}
-            @if($order->isPaid() && $cards->count() > 0)
-            <div class="order-summary-card mb-3">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <span><i class="bi bi-key me-1"></i> 卡密信息</span>
-                    <button type="button" class="btn btn-copy btn-sm" data-target="card-content-text">
-                        <i class="bi bi-clipboard me-1"></i> 复制
-                    </button>
-                </div>
-                <div class="card-body p-0">
-                    <div class="card-contents" id="card-content-text">@foreach($cards as $card){{ $card->content }}
-@endforeach</div>
-                </div>
-            </div>
+    {{-- Status Header --}}
+    <div class="page-card" style="margin-bottom:15px">
+        <div class="page-card-body text-center" style="padding:25px;">
+            @if($order->isPaid())
+            <div style="font-size:48px;color:var(--teal);">&#9989;</div>
+            <h3 style="font-size:18px;margin:8px 0 4px;">支付成功</h3>
+            <p style="color:var(--text-light);font-size:13px;">订单已完成，卡密信息如下</p>
+            @elseif($order->isExpired() || $order->status === 'expired')
+            <div style="font-size:48px;">&#9200;</div>
+            <h3 style="font-size:18px;margin:8px 0 4px;">订单已过期</h3>
+            <p style="color:var(--text-light);font-size:13px;">此订单已超过支付时限</p>
+            @elseif($order->status === 'closed')
+            <div style="font-size:48px;">&#10060;</div>
+            <h3 style="font-size:18px;margin:8px 0 4px;">订单已关闭</h3>
+            <p style="color:var(--text-light);font-size:13px;">此订单已被关闭</p>
+            @else
+            <div style="font-size:48px;">&#9203;</div>
+            <h3 style="font-size:18px;margin:8px 0 4px;">待支付</h3>
+            <p style="color:var(--text-light);font-size:13px;margin-bottom:12px;">请尽快完成支付</p>
+            <a href="/order/pay/{{ $order->order_no }}" class="btn-submit" style="display:inline-block;width:auto;padding:8px 30px;">继续支付</a>
             @endif
-
-            {{-- Back --}}
-            <div class="text-center mt-3">
-                <a href="/order/query" class="btn btn-outline-secondary me-2">
-                    <i class="bi bi-arrow-left me-1"></i> 返回订单列表
-                </a>
-                <a href="/" class="btn btn-outline-primary">
-                    <i class="bi bi-house me-1"></i> 返回首页
-                </a>
-            </div>
-
         </div>
     </div>
-</div>
+
+    {{-- Order Info --}}
+    <div class="page-card" style="margin-bottom:15px">
+        <div class="page-card-header">订单信息</div>
+        <div class="page-card-body">
+            <table class="order-info-table">
+                <tr><th>订单编号</th><td style="font-family:monospace;">{{ $order->order_no }}</td></tr>
+                <tr><th>商品名称</th><td>{{ $order->product->name ?? '—' }}</td></tr>
+                <tr><th>购买数量</th><td>{{ $order->quantity }} 件</td></tr>
+                <tr><th>单价</th><td>¥{{ number_format($order->unit_price, 2) }}</td></tr>
+                @if($order->discount_amount > 0)
+                <tr><th>优惠金额</th><td style="color:var(--teal);">-¥{{ number_format($order->discount_amount, 2) }}</td></tr>
+                @endif
+                <tr><th>支付金额</th><td style="color:var(--price-color);font-weight:700;">¥{{ number_format($order->total_amount, 2) }}</td></tr>
+                <tr>
+                    <th>支付方式</th>
+                    <td>
+                        @switch($order->payment_method)
+                            @case('alipay') 支付宝 @break
+                            @case('wechat') 微信支付 @break
+                            @case('usdt_trc20') USDT(TRC20) @break
+                            @case('usdt_bep20') USDT(BEP20) @break
+                            @case('usdt_polygon') USDT(Polygon) @break
+                            @default {{ $order->payment_method ?? '—' }}
+                        @endswitch
+                    </td>
+                </tr>
+                <tr>
+                    <th>订单状态</th>
+                    <td>
+                        @switch($order->status)
+                            @case('pending') <span class="order-status pending">待支付</span> @break
+                            @case('paid') <span class="order-status paid">已支付</span> @break
+                            @case('expired') <span class="order-status expired">已过期</span> @break
+                            @case('closed') <span class="order-status closed">已关闭</span> @break
+                            @default <span class="order-status">{{ $order->status }}</span>
+                        @endswitch
+                    </td>
+                </tr>
+                @if($order->paid_at)
+                <tr><th>支付时间</th><td>{{ $order->paid_at->format('Y-m-d H:i:s') }}</td></tr>
+                @endif
+                <tr><th>下单时间</th><td>{{ $order->created_at->format('Y-m-d H:i:s') }}</td></tr>
+            </table>
+        </div>
+    </div>
+
+    {{-- Card Contents --}}
+    @if($order->isPaid() && $cards->count() > 0)
+    <div class="page-card" style="margin-bottom:15px">
+        <div class="page-card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <span>卡密信息</span>
+            <button type="button" class="btn-buy-sm btn-copy" data-target="card-content-text"
+                    style="padding:3px 14px;font-size:13px;">复制</button>
+        </div>
+        <div class="page-card-body" style="padding:0;">
+            <ul class="card-content-list">
+                @foreach($cards as $card)
+                <li>{{ $card->content }}</li>
+                @endforeach
+            </ul>
+            <textarea id="card-content-text" style="position:absolute;left:-9999px;">@foreach($cards as $card){{ $card->content }}
+@endforeach</textarea>
+        </div>
+    </div>
+    @endif
+
+    <div class="text-center mt-2">
+        <a href="/order/query" style="color:var(--text-light);font-size:13px;margin-right:20px;">&larr; 返回订单列表</a>
+        <a href="/" style="color:var(--text-light);font-size:13px;">返回首页</a>
+    </div>
 @endsection
