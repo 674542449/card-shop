@@ -31,9 +31,12 @@ class DashboardController extends Controller
 
         $recentOrders = Order::with('product')->recent()->take(10)->get();
 
-        $lowStockProducts = Product::withCount(['cards as stock_count' => function ($query) {
-            $query->where('status', 'unsold');
-        }])->having('stock_count', '<', 10)->where('is_active', true)->get();
+        $lowStockProducts = Product::where('is_active', true)
+            ->withCount(['cards as stock_count' => function ($query) {
+                $query->where('status', 'unsold');
+            }])
+            ->get()
+            ->where('stock_count', '<', 10);
 
         $orderStatusDistribution = Order::select('status', DB::raw('count(*) as count'))
             ->groupBy('status')
