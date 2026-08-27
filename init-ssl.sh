@@ -17,17 +17,15 @@ echo "  邮箱: $EMAIL"
 echo "========================================"
 echo ""
 
-# 1. Ensure containers are running
-echo "[1/4] 启动容器..."
-docker compose up -d
-sleep 3
+# 1. Stop nginx to free port 80
+echo "[1/5] 停止 Nginx 释放 80 端口..."
+docker compose stop nginx 2>/dev/null || true
 echo ""
 
-# 2. Request certificate
-echo "[2/4] 向 Let's Encrypt 申请证书..."
-docker compose run --rm certbot certonly \
-    --webroot \
-    -w /var/www/certbot \
+# 2. Request certificate using standalone mode
+echo "[2/5] 向 Let's Encrypt 申请证书..."
+docker compose run --rm -p 80:80 --entrypoint "certbot" certbot certonly \
+    --standalone \
     --email "$EMAIL" \
     --agree-tos \
     --no-eff-email \
@@ -35,7 +33,7 @@ docker compose run --rm certbot certonly \
 echo ""
 
 # 3. Generate SSL Nginx config
-echo "[3/4] 生成 SSL Nginx 配置..."
+echo "[3/5] 生成 SSL Nginx 配置..."
 cat > docker/nginx/default.conf << NGINXEOF
 server {
     listen 80;
@@ -117,9 +115,14 @@ server {
 NGINXEOF
 echo ""
 
-# 4. Restart Nginx with SSL
-echo "[4/4] 重启 Nginx..."
-docker compose restart nginx
+# 4. Update certbot service entrypoint for webroot renewal
+echo "[4/5] 启动所有服务..."
+docker compose up -d
+echo ""
+
+# 5. Verify
+echo "[5/5] 验证证书..."
+docker compose exec nginx nginx -t
 echo ""
 
 echo "========================================"
