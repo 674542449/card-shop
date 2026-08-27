@@ -47,27 +47,11 @@ RUN { \
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy project files
-COPY . .
-
-# Create required directories and set git safe directory
-RUN mkdir -p bootstrap/cache \
-    storage/app/public \
-    storage/framework/cache/data \
-    storage/framework/sessions \
-    storage/framework/views \
-    storage/logs \
-    && git config --global --add safe.directory /var/www/html
-
-# Install Composer dependencies
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress
-
-# Set permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache \
-    && chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
-
-USER www-data
+# Copy entrypoint script
+COPY docker/php/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 EXPOSE 9000
 
+ENTRYPOINT ["entrypoint.sh"]
 CMD ["php-fpm"]
