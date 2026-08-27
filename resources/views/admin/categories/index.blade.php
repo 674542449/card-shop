@@ -30,7 +30,7 @@
                                 <td>{{ $category->id }}</td>
                                 <td>{{ $category->name }}</td>
                                 <td><code>{{ $category->slug }}</code></td>
-                                <td>{{ $category->cards_count ?? 0 }}</td>
+                                <td>{{ $category->products_count }}</td>
                                 <td>{{ $category->sort_order }}</td>
                                 <td>
                                     @if($category->is_active)
