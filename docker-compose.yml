@@ -1,0 +1,81 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: cardshop-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/var/www/html
+    expose:
+      - "9000"
+    networks:
+      - cardshop
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+
+  nginx:
+    image: nginx:stable
+    container_name: cardshop-nginx
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - cardshop
+
+  postgres:
+    image: postgres:17
+    container_name: cardshop-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-cardshop}
+      POSTGRES_USER: ${DB_USERNAME:-cardshop}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-cardshop} -d ${DB_DATABASE:-cardshop}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cardshop
+
+  redis:
+    image: redis:7-alpine
+    container_name: cardshop-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cardshop
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local
+
+networks:
+  cardshop:
+    driver: bridge
