@@ -25,6 +25,11 @@ RUN pecl install redis && docker-php-ext-enable redis
 # Copy Composer from official image
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
+# Install Node.js 20 for admin frontend build
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
 # Configure OPcache
 RUN { \
     echo 'opcache.memory_consumption=128'; \

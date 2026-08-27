@@ -18,4 +18,14 @@ mkdir -p bootstrap/cache \
 chown -R www-data:www-data storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
 
+# Build admin frontend if not built yet
+if [ -d admin-frontend ] && [ ! -f public/admin-assets/index.html ]; then
+    echo "Building admin frontend..."
+    cd admin-frontend
+    npm install --no-audit --no-fund
+    npm run build
+    cd /var/www/html
+    echo "Admin frontend built successfully."
+fi
+
 exec docker-php-entrypoint "$@"

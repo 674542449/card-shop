@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Front;
 use App\Http\Controllers\Admin;
+use App\Http\Controllers\Api\Admin as ApiAdmin;
 
 /*
 |--------------------------------------------------------------------------
@@ -44,60 +45,88 @@ Route::middleware('check.blacklist')->group(function () {
 
 /*
 |--------------------------------------------------------------------------
-| Admin Routes
+| Admin API Routes (JSON, session auth)
 |--------------------------------------------------------------------------
 */
 
-Route::prefix('admin')->name('admin.')->group(function () {
-    // Auth (no admin.auth middleware)
-    Route::get('/login', [Admin\AuthController::class, 'showLogin']);
-    Route::post('/login', [Admin\AuthController::class, 'login']);
-    Route::post('/logout', [Admin\AuthController::class, 'logout']);
+Route::prefix('api/admin')->group(function () {
+    Route::post('/login', [ApiAdmin\AuthController::class, 'login']);
 
-    // Protected admin routes
     Route::middleware('admin.auth')->group(function () {
+        Route::post('/logout', [ApiAdmin\AuthController::class, 'logout']);
+        Route::get('/me', [ApiAdmin\AuthController::class, 'me']);
+
         // Dashboard
-        Route::get('/', [Admin\DashboardController::class, 'index']);
+        Route::get('/dashboard', [ApiAdmin\DashboardController::class, 'index']);
 
         // Categories
-        Route::resource('categories', Admin\CategoryController::class);
+        Route::get('/categories', [ApiAdmin\CategoryController::class, 'index']);
+        Route::post('/categories', [ApiAdmin\CategoryController::class, 'store']);
+        Route::put('/categories/{category}', [ApiAdmin\CategoryController::class, 'update']);
+        Route::delete('/categories/{category}', [ApiAdmin\CategoryController::class, 'destroy']);
 
         // Products
-        Route::resource('products', Admin\ProductController::class);
+        Route::get('/products', [ApiAdmin\ProductController::class, 'index']);
+        Route::post('/products', [ApiAdmin\ProductController::class, 'store']);
+        Route::get('/products/{product}', [ApiAdmin\ProductController::class, 'show']);
+        Route::put('/products/{product}', [ApiAdmin\ProductController::class, 'update']);
+        Route::delete('/products/{product}', [ApiAdmin\ProductController::class, 'destroy']);
 
         // Cards
-        Route::get('/products/{product}/cards', [Admin\CardController::class, 'index']);
-        Route::post('/products/{product}/cards/import', [Admin\CardController::class, 'import']);
-        Route::delete('/cards/batch-destroy', [Admin\CardController::class, 'batchDestroy']);
-        Route::delete('/cards/{card}', [Admin\CardController::class, 'destroy']);
+        Route::get('/products/{product}/cards', [ApiAdmin\CardController::class, 'index']);
+        Route::post('/products/{product}/cards/import', [ApiAdmin\CardController::class, 'import']);
+        Route::delete('/cards/batch-destroy', [ApiAdmin\CardController::class, 'batchDestroy']);
+        Route::delete('/cards/{card}', [ApiAdmin\CardController::class, 'destroy']);
 
         // Orders
-        Route::get('/orders', [Admin\OrderController::class, 'index']);
-        Route::get('/orders/export', [Admin\OrderController::class, 'export']);
-        Route::get('/orders/{order}', [Admin\OrderController::class, 'show']);
-        Route::post('/orders/{order}/resend', [Admin\OrderController::class, 'resend']);
-        Route::post('/orders/{order}/close', [Admin\OrderController::class, 'close']);
-        Route::post('/orders/{order}/paid', [Admin\OrderController::class, 'markPaid']);
+        Route::get('/orders', [ApiAdmin\OrderController::class, 'index']);
+        Route::get('/orders/export', [ApiAdmin\OrderController::class, 'export']);
+        Route::get('/orders/{order}', [ApiAdmin\OrderController::class, 'show']);
+        Route::post('/orders/{order}/close', [ApiAdmin\OrderController::class, 'close']);
+        Route::post('/orders/{order}/paid', [ApiAdmin\OrderController::class, 'markPaid']);
+        Route::post('/orders/{order}/resend', [ApiAdmin\OrderController::class, 'resend']);
 
         // Articles
-        Route::resource('articles', Admin\ArticleController::class);
+        Route::get('/articles', [ApiAdmin\ArticleController::class, 'index']);
+        Route::post('/articles', [ApiAdmin\ArticleController::class, 'store']);
+        Route::get('/articles/{article}', [ApiAdmin\ArticleController::class, 'show']);
+        Route::put('/articles/{article}', [ApiAdmin\ArticleController::class, 'update']);
+        Route::delete('/articles/{article}', [ApiAdmin\ArticleController::class, 'destroy']);
 
         // Article Categories
-        Route::resource('article-categories', Admin\ArticleCategoryController::class);
+        Route::get('/article-categories', [ApiAdmin\ArticleCategoryController::class, 'index']);
+        Route::post('/article-categories', [ApiAdmin\ArticleCategoryController::class, 'store']);
+        Route::put('/article-categories/{articleCategory}', [ApiAdmin\ArticleCategoryController::class, 'update']);
+        Route::delete('/article-categories/{articleCategory}', [ApiAdmin\ArticleCategoryController::class, 'destroy']);
 
         // Coupons
-        Route::resource('coupons', Admin\CouponController::class);
+        Route::get('/coupons', [ApiAdmin\CouponController::class, 'index']);
+        Route::post('/coupons', [ApiAdmin\CouponController::class, 'store']);
+        Route::put('/coupons/{coupon}', [ApiAdmin\CouponController::class, 'update']);
+        Route::delete('/coupons/{coupon}', [ApiAdmin\CouponController::class, 'destroy']);
 
         // Blacklists
-        Route::get('/blacklists', [Admin\BlacklistController::class, 'index']);
-        Route::post('/blacklists', [Admin\BlacklistController::class, 'store']);
-        Route::delete('/blacklists/{blacklist}', [Admin\BlacklistController::class, 'destroy']);
+        Route::get('/blacklists', [ApiAdmin\BlacklistController::class, 'index']);
+        Route::post('/blacklists', [ApiAdmin\BlacklistController::class, 'store']);
+        Route::delete('/blacklists/{blacklist}', [ApiAdmin\BlacklistController::class, 'destroy']);
 
         // Logs
-        Route::get('/logs', [Admin\LogController::class, 'index']);
+        Route::get('/logs', [ApiAdmin\LogController::class, 'index']);
 
         // Settings
-        Route::get('/settings', [Admin\SettingController::class, 'index']);
-        Route::post('/settings', [Admin\SettingController::class, 'update']);
+        Route::get('/settings', [ApiAdmin\SettingController::class, 'index']);
+        Route::post('/settings', [ApiAdmin\SettingController::class, 'update']);
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| Admin SPA (React + Ant Design Pro)
+|--------------------------------------------------------------------------
+| All /admin/* GET routes serve the SPA shell. The React Router handles
+| client-side routing. Data is served via /api/admin/* routes above.
+*/
+
+Route::get('/admin/{any?}', function () {
+    return view('admin.spa');
+})->where('any', '.*');
