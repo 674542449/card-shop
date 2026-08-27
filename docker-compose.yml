@@ -23,8 +23,8 @@ services:
       test: ["CMD-SHELL", "php -r \"@fsockopen('127.0.0.1', 9000) or exit(1);\""]
       interval: 5s
       timeout: 5s
-      retries: 12
-      start_period: 60s
+      retries: 30
+      start_period: 180s
 
   nginx:
     image: nginx:stable
@@ -45,8 +45,10 @@ services:
     image: postgres:17
     container_name: cardshop-postgres
     restart: unless-stopped
+    # Bound to loopback only. Publishing 5432 on 0.0.0.0 exposes the database to the
+    # internet; the app reaches it over the internal `cardshop` network regardless.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     environment:
@@ -54,7 +56,9 @@ services:
       POSTGRES_USER: ${DB_USERNAME:-cardshop}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-cardshop} -d ${DB_DATABASE:-cardshop}"]
+      # -h 127.0.0.1 forces a TCP check. Without it pg_isready uses the Unix socket and
+      # reports healthy while initdb is still running, so migrations start too early.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U ${DB_USERNAME:-cardshop} -d ${DB_DATABASE:-cardshop}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -65,8 +69,10 @@ services:
     image: redis:7-alpine
     container_name: cardshop-redis
     restart: unless-stopped
+    # Loopback only. An internet-reachable Redis with no password is a remote code
+    # execution vector, not just a data leak.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redisdata:/data
     healthcheck:

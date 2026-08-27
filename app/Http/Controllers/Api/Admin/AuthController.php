@@ -47,6 +47,10 @@ class AuthController extends Controller
         return response()->json([
             'id' => $admin->id,
             'username' => $admin->username,
+            // session()->regenerate() above rotated the CSRF token. The SPA was rendered
+            // with the pre-login token in its meta tag, so it must adopt this one or every
+            // subsequent write is rejected with 419.
+            'csrf_token' => csrf_token(),
         ]);
     }
 
@@ -57,7 +61,10 @@ class AuthController extends Controller
         $request->session()->flush();
         $request->session()->regenerateToken();
 
-        return response()->json(['message' => 'ok']);
+        return response()->json([
+            'message' => 'ok',
+            'csrf_token' => csrf_token(),
+        ]);
     }
 
     public function me(Request $request)

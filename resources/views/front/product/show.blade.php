@@ -101,6 +101,36 @@
                                value="{{ old('coupon_code') }}" placeholder="可选">
                     </div>
 
+                    @php
+                        // CreateOrderRequest requires payment_method, so this field is not
+                        // optional — without it every checkout fails validation.
+                        $payMethods = [];
+                        if (setting('epay_api_url') && setting('epay_merchant_id') && setting('epay_merchant_key')) {
+                            $payMethods['alipay'] = '支付宝';
+                            $payMethods['wechat'] = '微信支付';
+                        }
+                        if (setting('epusdt_api_url') && setting('epusdt_api_token')) {
+                            $payMethods['usdt_trc20'] = 'USDT (TRC20)';
+                            $payMethods['usdt_bep20'] = 'USDT (BEP20)';
+                            $payMethods['usdt_polygon'] = 'USDT (Polygon)';
+                        }
+                        // Nothing configured yet: still offer the default gateways so the form
+                        // stays usable and the operator sees a payment error rather than a
+                        // validation error they cannot act on.
+                        if (empty($payMethods)) {
+                            $payMethods = ['alipay' => '支付宝', 'wechat' => '微信支付'];
+                        }
+                    @endphp
+
+                    <div class="form-group">
+                        <label class="form-label">支付方式</label>
+                        <select name="payment_method" id="payment_method" class="form-input" required>
+                            @foreach($payMethods as $value => $label)
+                            <option value="{{ $value }}" @selected(old('payment_method') === $value)>{{ $label }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+
                     @if(setting('turnstile_site_key'))
                     <div style="margin: 12px 0;">
                         <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}"></div>

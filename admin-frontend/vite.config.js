@@ -7,6 +7,9 @@ export default defineConfig({
   build: {
     outDir: '../public/admin-assets',
     emptyOutDir: true,
+    // Required: without this Vite 5 never writes .vite/manifest.json, and
+    // spa.blade.php has no way to find the hashed entry files.
+    manifest: true,
   },
   server: {
     proxy: {

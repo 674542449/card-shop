@@ -51,8 +51,13 @@ export default function App() {
     <Suspense fallback={<Loading />}>
       <Routes>
         <Route path="/admin/login" element={<LoginPage />} />
+        {/*
+          Must be "/admin", not a splat pattern. A splat segment has to be the last thing
+          in a pattern, so nested children under a splat parent compile to a path with the
+          splat in the middle, which never matches.
+        */}
         <Route
-          path="/admin/*"
+          path="/admin"
           element={
             <ProtectedRoute>
               <AdminLayout />

@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\ProductWholesalePrice;
 use App\Models\OperationLog;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -25,8 +26,10 @@ class ProductController extends Controller
             $query->where('is_active', $request->is_active);
         }
 
-        if ($request->filled('keyword')) {
-            $query->where('name', 'ilike', '%' . $request->keyword . '%');
+        // The table's search form submits the column name (`name`); accept both.
+        $keyword = $request->input('keyword', $request->input('name'));
+        if (filled($keyword)) {
+            $query->where('name', 'ilike', '%' . $keyword . '%');
         }
 
         $products = $query->ordered()->paginate($request->get('pageSize', 20));
@@ -108,6 +111,10 @@ class ProductController extends Controller
             'wholesale_prices.*.price' => 'required_with:wholesale_prices|numeric|min:0.01',
         ]);
 
+        // Only touch the tiers when the client actually submitted the field. Deleting
+        // unconditionally means any edit from a form without a wholesale section
+        // silently wipes every tier the product had.
+        $replaceTiers = $request->has('wholesale_prices');
         $wholesalePrices = $data['wholesale_prices'] ?? [];
         unset($data['wholesale_prices']);
 
@@ -115,16 +122,21 @@ class ProductController extends Controller
             $data['slug'] = Str::slug($data['name']) ?: Str::slug(Str::random(8));
         }
 
-        $product->update($data);
-        $product->wholesalePrices()->delete();
+        DB::transaction(function () use ($product, $data, $replaceTiers, $wholesalePrices) {
+            $product->update($data);
 
-        foreach ($wholesalePrices as $wp) {
-            ProductWholesalePrice::create([
-                'product_id' => $product->id,
-                'min_quantity' => $wp['min_quantity'],
-                'price' => $wp['price'],
-            ]);
-        }
+            if ($replaceTiers) {
+                $product->wholesalePrices()->delete();
+
+                foreach ($wholesalePrices as $wp) {
+                    ProductWholesalePrice::create([
+                        'product_id' => $product->id,
+                        'min_quantity' => $wp['min_quantity'],
+                        'price' => $wp['price'],
+                    ]);
+                }
+            }
+        });
 
         OperationLog::log('更新商品', 'product', $product->id, $product->name);
 

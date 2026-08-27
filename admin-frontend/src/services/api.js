@@ -8,32 +8,69 @@ const api = axios.create({
   },
 });
 
-// Attach CSRF token from meta tag
+const readMetaToken = () =>
+  document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+let csrfToken = readMetaToken();
+
+// Laravel rotates the CSRF token on login and logout. The page was served with the
+// pre-login token, so we track the current one here and keep the meta tag in sync.
+function setCsrfToken(token) {
+  if (!token) return;
+  csrfToken = token;
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  if (meta) meta.setAttribute('content', token);
+}
+
 api.interceptors.request.use((config) => {
-  const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-  if (token) {
-    config.headers['X-CSRF-TOKEN'] = token;
+  if (csrfToken) {
+    config.headers['X-CSRF-TOKEN'] = csrfToken;
   }
+
+  // ProTable sends pageSize; some pages forward it as per_page. Send both so the
+  // page-size selector works no matter which name the controller reads.
+  if (config.params && typeof config.params === 'object') {
+    const p = config.params;
+    if (p.pageSize != null && p.per_page == null) p.per_page = p.pageSize;
+    if (p.per_page != null && p.pageSize == null) p.pageSize = p.per_page;
+  }
+
   return config;
 });
 
-// Handle 401 responses globally
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      window.location.href = '/admin/login';
+    const status = error.response?.status;
+
+    if (status === 401) {
+      if (!window.location.pathname.startsWith('/admin/login')) {
+        window.location.href = '/admin/login';
+      }
     }
+
+    // 419 = expired/mismatched CSRF token. A full reload re-renders the shell with a
+    // valid token rather than leaving the admin stuck on every write.
+    if (status === 419) {
+      window.location.reload();
+    }
+
     return Promise.reject(error);
   }
 );
 
 // Auth
-export const login = (username, password) =>
-  api.post('/login', { username, password });
+export const login = async (username, password) => {
+  const res = await api.post('/login', { username, password });
+  setCsrfToken(res.data?.csrf_token);
+  return res;
+};
 
-export const logout = () =>
-  api.post('/logout');
+export const logout = async () => {
+  const res = await api.post('/logout');
+  setCsrfToken(res.data?.csrf_token);
+  return res;
+};
 
 export const getMe = () =>
   api.get('/me');

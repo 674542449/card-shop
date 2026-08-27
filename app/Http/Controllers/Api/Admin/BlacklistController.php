@@ -16,8 +16,10 @@ class BlacklistController extends Controller
         if ($request->filled('type')) {
             $query->where('type', $request->type);
         }
-        if ($request->filled('keyword')) {
-            $query->where('value', 'ilike', '%' . $request->keyword . '%');
+        // The table's search form submits the column name (`value`); accept both.
+        $keyword = $request->input('keyword', $request->input('value'));
+        if (filled($keyword)) {
+            $query->where('value', 'ilike', '%' . $keyword . '%');
         }
 
         $blacklists = $query->orderByDesc('id')->paginate($request->get('pageSize', 20));

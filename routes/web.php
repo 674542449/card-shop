@@ -10,9 +10,11 @@ use App\Http\Controllers\Api\Admin as ApiAdmin;
 |--------------------------------------------------------------------------
 */
 
-// Payment callbacks (no CSRF, no blacklist check — external payment providers)
-Route::post('/payment/epay/notify', [Front\PaymentController::class, 'epayNotify']);
-Route::post('/payment/epusdt/notify', [Front\PaymentController::class, 'epusdtNotify']);
+// Payment callbacks (no CSRF, no blacklist check — external payment providers).
+// EPay-compatible gateways call notify_url with GET in some deployments and POST in
+// others, so accept both rather than silently 405-ing half of them.
+Route::match(['get', 'post'], '/payment/epay/notify', [Front\PaymentController::class, 'epayNotify']);
+Route::match(['get', 'post'], '/payment/epusdt/notify', [Front\PaymentController::class, 'epusdtNotify']);
 
 Route::middleware('check.blacklist')->group(function () {
     // Home

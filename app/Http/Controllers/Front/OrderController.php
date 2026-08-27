@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 
 class OrderController extends Controller
 {
@@ -139,6 +140,14 @@ class OrderController extends Controller
             ->firstOrFail();
 
         if ($order->isPaid()) {
+            // Order numbers are predictable (timestamp + 5 digits), so knowing one must
+            // not be enough to read the card secrets. Require the same session proof the
+            // detail page requires.
+            if (session('order_verified_email') !== $order->email) {
+                return redirect('/order/query')
+                    ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
+            }
+
             return view('front.order.detail', [
                 'order' => $order,
                 'cards' => $order->cards,
@@ -244,6 +253,19 @@ class OrderController extends Controller
             'query_password' => ['required', 'string'],
         ]);
 
+        // This endpoint is not behind the turnstile that protects /order/query, so
+        // without a limiter it is a free brute-force oracle for query passwords.
+        $key = 'order-verify|' . $request->ip();
+
+        if (RateLimiter::tooManyAttempts($key, 10)) {
+            return response()->json([
+                'success' => false,
+                'message' => '尝试次数过多，请稍后再试',
+            ], 429);
+        }
+
+        RateLimiter::hit($key, 300);
+
         $firstOrder = Order::where('email', $request->input('email'))
             ->orderBy('created_at')
             ->first();
@@ -261,6 +283,8 @@ class OrderController extends Controller
                 'message' => '查询密码错误',
             ]);
         }
+
+        RateLimiter::clear($key);
 
         session(['order_verified_email' => $request->input('email')]);
 

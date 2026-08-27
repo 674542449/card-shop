@@ -1,4 +1,7 @@
-* text=auto
+# Shell scripts must keep LF endings. A CRLF entrypoint.sh fails inside the container
+# with "bad interpreter: no such file or directory".
 *.sh text eol=lf
-*.blade.php text eol=lf
-*.conf text eol=lf
+docker/php/entrypoint.sh text eol=lf
+
+# Built admin assets are generated artifacts: store them byte-for-byte.
+public/admin-assets/** -text

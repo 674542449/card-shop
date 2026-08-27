@@ -6,12 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\Card;
 use App\Models\OperationLog;
 use App\Models\Order;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 
 class OrderController extends Controller
 {
+    public function __construct(private readonly NotificationService $notifications)
+    {
+    }
+
     public function index(Request $request)
     {
         $query = Order::with('product');
@@ -22,6 +27,14 @@ class OrderController extends Controller
         if ($request->filled('payment_method')) {
             $query->where('payment_method', $request->payment_method);
         }
+        // The table's search form submits column names; accept those as well as the
+        // combined `keyword` so the 订单号 and 邮箱 search boxes actually filter.
+        if (filled($request->input('order_no'))) {
+            $query->where('order_no', 'ilike', '%' . $request->input('order_no') . '%');
+        }
+        if (filled($request->input('email'))) {
+            $query->where('email', 'ilike', '%' . $request->input('email') . '%');
+        }
         if ($request->filled('keyword')) {
             $kw = $request->keyword;
             $query->where(function ($q) use ($kw) {
@@ -29,17 +42,24 @@ class OrderController extends Controller
                   ->orWhere('email', 'ilike', "%{$kw}%");
             });
         }
-        if ($request->filled('date_from')) {
-            $query->where('created_at', '>=', $request->date_from);
+
+        $dateFrom = $request->input('date_from', $request->input('start_date'));
+        $dateTo = $request->input('date_to', $request->input('end_date'));
+        if (filled($dateFrom)) {
+            $query->where('created_at', '>=', $dateFrom);
         }
-        if ($request->filled('date_to')) {
-            $query->where('created_at', '<=', $request->date_to . ' 23:59:59');
+        if (filled($dateTo)) {
+            $query->where('created_at', '<=', $dateTo . ' 23:59:59');
         }
 
         $sortBy = $request->get('sort', 'created_at');
-        $sortDir = $request->get('dir', 'desc');
-        if (!in_array($sortBy, ['created_at', 'total_amount'])) {
+        $sortDir = strtolower((string) $request->get('dir', 'desc'));
+        if (!in_array($sortBy, ['created_at', 'total_amount'], true)) {
             $sortBy = 'created_at';
+        }
+        // orderBy() throws on anything other than asc/desc, which would surface as a 500.
+        if (!in_array($sortDir, ['asc', 'desc'], true)) {
+            $sortDir = 'desc';
         }
 
         $orders = $query->orderBy($sortBy, $sortDir)
@@ -83,41 +103,52 @@ class OrderController extends Controller
             return response()->json(['message' => '只能确认待支付订单。'], 422);
         }
 
-        DB::transaction(function () use ($order) {
-            $cards = Card::where('order_id', $order->id)
-                ->where('status', 'locked')
-                ->get();
-
-            if ($cards->isEmpty()) {
-                $cards = Card::where('product_id', $order->product_id)
-                    ->where('status', 'unsold')
-                    ->take($order->quantity)
-                    ->lockForUpdate()
+        try {
+            DB::transaction(function () use ($order) {
+                $cards = Card::where('order_id', $order->id)
+                    ->where('status', 'locked')
                     ->get();
-            }
 
-            if ($cards->count() < $order->quantity) {
-                throw new \RuntimeException('库存不足');
-            }
+                if ($cards->isEmpty()) {
+                    $cards = Card::where('product_id', $order->product_id)
+                        ->where('status', 'unsold')
+                        ->take($order->quantity)
+                        ->lockForUpdate()
+                        ->get();
+                }
 
-            foreach ($cards as $card) {
-                $card->update([
-                    'status' => 'sold',
-                    'order_id' => $order->id,
-                    'sold_at' => now(),
+                if ($cards->count() < $order->quantity) {
+                    throw new \RuntimeException('库存不足');
+                }
+
+                foreach ($cards as $card) {
+                    $card->update([
+                        'status' => 'sold',
+                        'order_id' => $order->id,
+                        'sold_at' => now(),
+                    ]);
+                }
+
+                $order->update([
+                    'status' => 'paid',
+                    'paid_at' => now(),
+                    'payment_method' => $order->payment_method ?: 'manual',
                 ]);
-            }
-
-            $order->update([
-                'status' => 'paid',
-                'paid_at' => now(),
-                'payment_method' => $order->payment_method ?: 'manual',
-            ]);
-        });
+            });
+        } catch (\RuntimeException $e) {
+            // Without this the exception escapes as an unhandled 500 instead of the
+            // 422 the operator is meant to see.
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         OperationLog::log('手动确认支付', 'order', $order->id, "手动确认订单 {$order->order_no}");
 
-        return response()->json(['message' => '订单已确认支付。']);
+        // Confirming payment has to actually deliver the cards, not just flip the status.
+        $order->refresh()->load(['product', 'cards']);
+        $this->notifications->sendOrderEmail($order);
+        $this->notifications->notifyNewOrder($order);
+
+        return response()->json(['message' => '订单已确认支付，卡密已发送。']);
     }
 
     public function resend(Order $order)
@@ -125,6 +156,16 @@ class OrderController extends Controller
         if ($order->status !== 'paid') {
             return response()->json(['message' => '只能对已支付订单补发卡密。'], 422);
         }
+
+        $order->load(['product', 'cards']);
+
+        if ($order->cards->isEmpty()) {
+            return response()->json(['message' => '该订单没有已发放的卡密，无法补发。'], 422);
+        }
+
+        // Previously this only wrote a log line and reported success without sending
+        // anything.
+        $this->notifications->sendOrderEmail($order);
 
         OperationLog::log('补发卡密', 'order', $order->id, "订单 {$order->order_no} 补发卡密");
 

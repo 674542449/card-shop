@@ -21,8 +21,10 @@ class ArticleController extends Controller
         if ($request->filled('is_published')) {
             $query->where('is_published', $request->is_published);
         }
-        if ($request->filled('keyword')) {
-            $query->where('title', 'ilike', '%' . $request->keyword . '%');
+        // The table's search form submits the column name (`title`); accept both.
+        $keyword = $request->input('keyword', $request->input('title'));
+        if (filled($keyword)) {
+            $query->where('title', 'ilike', '%' . $keyword . '%');
         }
 
         $articles = $query->recent()->paginate($request->get('pageSize', 20));
@@ -40,7 +42,9 @@ class ArticleController extends Controller
         $data = $request->validate([
             'title' => 'required|string|max:200',
             'slug' => 'nullable|string|max:200|unique:articles,slug',
-            'article_category_id' => 'nullable|exists:article_categories,id',
+            // articles.article_category_id is NOT NULL in the schema, so accepting null
+            // here turns a missing category into a Postgres violation and a 500.
+            'article_category_id' => 'required|exists:article_categories,id',
             'summary' => 'nullable|string|max:500',
             'content' => 'required|string',
             'cover_image' => 'nullable|string|max:500',
@@ -71,7 +75,9 @@ class ArticleController extends Controller
         $data = $request->validate([
             'title' => 'required|string|max:200',
             'slug' => 'nullable|string|max:200|unique:articles,slug,' . $article->id,
-            'article_category_id' => 'nullable|exists:article_categories,id',
+            // articles.article_category_id is NOT NULL in the schema, so accepting null
+            // here turns a missing category into a Postgres violation and a 500.
+            'article_category_id' => 'required|exists:article_categories,id',
             'summary' => 'nullable|string|max:500',
             'content' => 'required|string',
             'cover_image' => 'nullable|string|max:500',

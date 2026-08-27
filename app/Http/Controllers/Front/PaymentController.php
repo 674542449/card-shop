@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Front;
 use App\Http\Controllers\Controller;
 use App\Models\Card;
 use App\Models\Order;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,10 @@ use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
+    public function __construct(private readonly NotificationService $notifications)
+    {
+    }
+
     /**
      * Handle EPay async notification callback.
      */
@@ -169,14 +174,15 @@ class PaymentController extends Controller
     private function processPayment(string $orderNo, string $tradeNo): void
     {
         try {
-            DB::transaction(function () use ($orderNo, $tradeNo) {
+            /** @var Order|null $paidOrder */
+            $paidOrder = DB::transaction(function () use ($orderNo, $tradeNo) {
                 $order = Order::where('order_no', $orderNo)
                     ->where('status', 'pending')
                     ->lockForUpdate()
                     ->first();
 
                 if (!$order) {
-                    return; // Already processed or doesn't exist
+                    return null; // Already processed or doesn't exist
                 }
 
                 // Mark order as paid
@@ -193,7 +199,18 @@ class PaymentController extends Controller
                         'status' => 'sold',
                         'sold_at' => now(),
                     ]);
+
+                return $order;
             });
+
+            // Delivery happens after the transaction commits, and only on the call that
+            // actually performed the transition, so a duplicate gateway callback cannot
+            // send the cards twice. Without this the buyer never receives anything.
+            if ($paidOrder) {
+                $paidOrder->refresh()->load(['product', 'cards']);
+                $this->notifications->sendOrderEmail($paidOrder);
+                $this->notifications->notifyNewOrder($paidOrder);
+            }
         } catch (\Exception $e) {
             Log::error('Payment processing failed for order ' . $orderNo . ': ' . $e->getMessage());
         }

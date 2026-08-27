@@ -13,8 +13,11 @@ class CouponController extends Controller
 {
     public function index(Request $request)
     {
+        // Alias must not be `used_count`: that is a real column, and withCount would
+        // overwrite it in the payload so the admin sees a different number from the one
+        // the redemption limit is actually enforced against.
         $coupons = Coupon::with('product:id,name')
-            ->withCount('orders as used_count')
+            ->withCount('orders as orders_count')
             ->orderByDesc('id')
             ->paginate($request->get('pageSize', 20));
 

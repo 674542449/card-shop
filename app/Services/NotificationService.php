@@ -18,27 +18,39 @@ class NotificationService
         try {
             $order->loadMissing(['product', 'cards']);
 
-            $template = (string) setting('email_template', $this->defaultEmailTemplate());
+            // The seeder and the admin Settings screen both use `email_template_body`;
+            // `email_template` is kept only as a fallback for older installs.
+            $template = (string) setting(
+                'email_template_body',
+                setting('email_template', $this->defaultEmailTemplate())
+            );
             $siteName = (string) setting('site_name', '卡密商城');
 
             $cards = $order->cards->pluck('content')->implode("\n");
 
-            $body = str_replace(
-                ['{{site_name}}', '{{order_no}}', '{{product_name}}', '{{quantity}}', '{{amount}}', '{{cards}}'],
-                [
-                    e($siteName),
-                    e($order->order_no),
-                    e($order->product->name),
-                    (string) $order->quantity,
-                    number_format((float) $order->total_amount, 2, '.', ''),
-                    $cards,
-                ],
-                $template
+            $amount = number_format((float) $order->total_amount, 2, '.', '');
+
+            // {{total_amount}} is the name used by the seeded template, {{amount}} by the
+            // built-in default. Support both so either template renders correctly.
+            $placeholders = [
+                '{{site_name}}' => e($siteName),
+                '{{order_no}}' => e($order->order_no),
+                '{{product_name}}' => e($order->product->name ?? ''),
+                '{{quantity}}' => (string) $order->quantity,
+                '{{amount}}' => $amount,
+                '{{total_amount}}' => $amount,
+                '{{cards}}' => $cards,
+            ];
+
+            $body = strtr($template, $placeholders);
+
+            $subject = strtr(
+                (string) setting('email_template_subject', '{{site_name}} - 订单 {{order_no}} 卡密信息'),
+                $placeholders
             );
 
-            Mail::html($body, function ($message) use ($order, $siteName) {
-                $message->to($order->email)
-                    ->subject("{$siteName} - 订单 {$order->order_no} 卡密信息");
+            Mail::html($body, function ($message) use ($order, $subject) {
+                $message->to($order->email)->subject($subject);
             });
         } catch (\Throwable $e) {
             Log::error('Failed to send order email', [

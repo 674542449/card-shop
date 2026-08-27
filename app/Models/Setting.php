@@ -36,6 +36,14 @@ class Setting extends Model
             ['value' => $value, 'group' => $group]
         );
 
-        Cache::store('redis')->forget("setting:{$key}");
+        try {
+            Cache::forget("setting:{$key}");
+        } catch (\Throwable $e) {
+            // Unreachable cache is already effectively cleared.
+        }
+
+        // The settings map read by the setting() helper must be invalidated too,
+        // otherwise the site serves the old value for up to an hour after a save.
+        settings_forget();
     }
 }

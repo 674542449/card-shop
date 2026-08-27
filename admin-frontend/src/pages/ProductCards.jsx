@@ -28,15 +28,23 @@ export default function ProductCards() {
       valueType: 'select',
       valueEnum: {
         unsold: { text: '未售', status: 'Default' },
+        locked: { text: '锁定中', status: 'Processing' },
         sold: { text: '已售', status: 'Success' },
       },
       render: (_, record) => {
         const s = record.status;
         if (s === 'sold') return <Tag color="green">已售</Tag>;
+        if (s === 'locked') return <Tag color="orange">锁定中</Tag>;
         return <Tag color="blue">未售</Tag>;
       },
     },
-    { title: '订单号', dataIndex: 'order_no', width: 180 },
+    {
+      title: '订单号',
+      dataIndex: ['order', 'order_no'],
+      width: 180,
+      search: false,
+      render: (_, record) => record.order?.order_no || '-',
+    },
     { title: '创建时间', dataIndex: 'created_at', search: false, width: 180 },
     {
       title: '操作',
@@ -130,7 +138,8 @@ export default function ProductCards() {
         modalProps={{ destroyOnClose: true }}
         onFinish={async (values) => {
           try {
-            await importCards(productId, { cards: values.cards });
+            // The API validates a `content` field; sending `cards` always 422s.
+            await importCards(productId, { content: values.cards });
             message.success('导入成功');
             actionRef.current?.reload();
             return true;

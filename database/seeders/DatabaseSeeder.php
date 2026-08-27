@@ -17,7 +17,10 @@ class DatabaseSeeder extends Seeder
 
     private function seedAdmin(): void
     {
-        Admin::updateOrCreate(
+        // firstOrCreate, not updateOrCreate: this seeder runs on every container boot,
+        // and updateOrCreate would silently reset the password back to the default
+        // every time the stack restarts.
+        Admin::firstOrCreate(
             ['username' => 'admin'],
             ['password' => Hash::make('admin888')]
         );
@@ -32,6 +35,9 @@ class DatabaseSeeder extends Seeder
                 'site_logo' => '',
                 'site_description' => '',
                 'site_announcement' => '',
+                'contact_text' => '',
+                'contact_url' => '',
+                'contact_qr_image' => '',
             ],
 
             // Payment settings
@@ -94,9 +100,10 @@ TEMPLATE,
             ],
         ];
 
+        // firstOrCreate so that values edited in the admin UI survive a container restart.
         foreach ($settings as $group => $items) {
             foreach ($items as $key => $value) {
-                Setting::updateOrCreate(
+                Setting::firstOrCreate(
                     ['key' => $key],
                     ['group' => $group, 'value' => $value]
                 );

@@ -3,9 +3,49 @@
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
+if (!function_exists('settings_all')) {
+    /**
+     * Load every setting as a key => value map.
+     *
+     * The whole table is cached under one key rather than one key per setting. That
+     * keeps a page render to a single lookup, and — critically — it means the caller's
+     * $default is never written into the cache, so two callers asking for the same key
+     * with different fallbacks can no longer poison each other.
+     *
+     * Every failure path degrades to an empty map instead of throwing: a Redis outage
+     * or a not-yet-migrated database must not turn every page of the site into a 500.
+     *
+     * @return array<string, string|null>
+     */
+    function settings_all(): array
+    {
+        static $memo = null;
+
+        if ($memo !== null) {
+            return $memo;
+        }
+
+        $load = fn (): array => DB::table('settings')->pluck('value', 'key')->all();
+
+        try {
+            $memo = Cache::remember('settings:map', 3600, $load);
+        } catch (\Throwable $e) {
+            // Cache backend unavailable — read straight through to the database.
+            try {
+                $memo = $load();
+            } catch (\Throwable $e) {
+                // Database unavailable or not migrated yet.
+                $memo = [];
+            }
+        }
+
+        return $memo;
+    }
+}
+
 if (!function_exists('setting')) {
     /**
-     * Get a setting value from cache (Redis), falling back to DB.
+     * Get a setting value, falling back to $default when unset or blank.
      *
      * @param string $key
      * @param mixed $default
@@ -13,10 +53,23 @@ if (!function_exists('setting')) {
      */
     function setting(string $key, mixed $default = null): mixed
     {
-        return Cache::store('redis')->remember("setting:{$key}", 3600, function () use ($key, $default) {
-            $setting = DB::table('settings')->where('key', $key)->first();
-            return $setting ? $setting->value : $default;
-        });
+        $value = settings_all()[$key] ?? null;
+
+        return ($value === null || $value === '') ? $default : $value;
+    }
+}
+
+if (!function_exists('settings_forget')) {
+    /**
+     * Drop the cached settings map. Call after any write to the settings table.
+     */
+    function settings_forget(): void
+    {
+        try {
+            Cache::forget('settings:map');
+        } catch (\Throwable $e) {
+            // Nothing to do — a cache we cannot reach is already effectively cleared.
+        }
     }
 }
 
