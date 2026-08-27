@@ -18,12 +18,17 @@ if [ ! -f vendor/autoload.php ]; then
     composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 fi
 
-if [ -f artisan ]; then
-    php artisan config:cache --no-interaction 2>/dev/null || true
-    php artisan route:cache --no-interaction 2>/dev/null || true
-    php artisan view:cache --no-interaction 2>/dev/null || true
-    php artisan migrate --force --no-interaction 2>/dev/null || true
+if [ ! -f .env ]; then
+    echo "Creating .env from .env.example..."
+    cp .env.example .env
 fi
+
+if grep -q '^APP_KEY=$' .env 2>/dev/null; then
+    echo "Generating APP_KEY..."
+    php artisan key:generate --force --no-interaction
+fi
+
+php artisan migrate --force --no-interaction 2>/dev/null || true
 
 if [ -d admin-frontend ] && [ ! -f public/admin-assets/index.html ]; then
     echo "Building admin frontend in background..."
