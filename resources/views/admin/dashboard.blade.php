@@ -62,7 +62,7 @@
             </div>
             <div class="card-body">
                 <ul class="list-group list-group-flush">
-                    @foreach($orderStatusCounts as $status => $count)
+                    @foreach($orderStatusDistribution as $status => $count)
                         <li class="list-group-item d-flex justify-content-between align-items-center">
                             @switch($status)
                                 @case('pending')
@@ -113,10 +113,10 @@
                                 @foreach($recentOrders as $order)
                                     <tr>
                                         <td>
-                                            <a href="{{ route('admin.orders.show', $order) }}">{{ $order->order_no }}</a>
+                                            <a href="/admin/orders/{{ $order->id }}">{{ $order->order_no }}</a>
                                         </td>
-                                        <td>{{ $order->product_name }}</td>
-                                        <td>¥{{ number_format($order->amount, 2) }}</td>
+                                        <td>{{ $order->product->name ?? '已删除' }}</td>
+                                        <td>¥{{ number_format($order->total_amount, 2) }}</td>
                                         <td>
                                             @switch($order->status)
                                                 @case('pending')
@@ -158,8 +158,8 @@
                     <ul class="list-group list-group-flush">
                         @foreach($lowStockProducts as $product)
                             <li class="list-group-item d-flex justify-content-between align-items-center">
-                                <a href="{{ route('admin.cards.index') }}">{{ $product->name }}</a>
-                                <span class="badge bg-danger rounded-pill">{{ $product->stock }}</span>
+                                <a href="/admin/products/{{ $product->id }}/cards">{{ $product->name }}</a>
+                                <span class="badge bg-danger rounded-pill">{{ $product->stock_count }}</span>
                             </li>
                         @endforeach
                     </ul>
