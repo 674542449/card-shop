@@ -19,13 +19,20 @@ services:
     environment:
       - DB_HOST=postgres
       - REDIS_HOST=redis
+    healthcheck:
+      test: ["CMD-SHELL", "php -r \"@fsockopen('127.0.0.1', 9000) or exit(1);\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
 
   nginx:
     image: nginx:stable
     container_name: cardshop-nginx
     restart: unless-stopped
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     ports:
       - "80:80"
     volumes:
