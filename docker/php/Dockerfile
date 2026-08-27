@@ -50,6 +50,15 @@ WORKDIR /var/www/html
 # Copy project files
 COPY . .
 
+# Create required directories and set git safe directory
+RUN mkdir -p bootstrap/cache \
+    storage/app/public \
+    storage/framework/cache/data \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs \
+    && git config --global --add safe.directory /var/www/html
+
 # Install Composer dependencies
 RUN composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 
