@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\Card;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use App\Http\Controllers\Controller;
 
 class DashboardController extends Controller
 {
