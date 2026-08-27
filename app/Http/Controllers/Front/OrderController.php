@@ -106,8 +106,8 @@ class OrderController extends Controller
                     ]);
                 }
 
-                // Increment coupon usage
-                if ($couponId) {
+                // Increment coupon usage only when discount was applied
+                if ($couponId && $discountAmount > 0) {
                     Coupon::where('id', $couponId)->increment('used_count');
                 }
 

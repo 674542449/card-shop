@@ -10,6 +10,10 @@ use App\Http\Controllers\Admin;
 |--------------------------------------------------------------------------
 */
 
+// Payment callbacks (no CSRF, no blacklist check — external payment providers)
+Route::post('/payment/epay/notify', [Front\PaymentController::class, 'epayNotify']);
+Route::post('/payment/epusdt/notify', [Front\PaymentController::class, 'epusdtNotify']);
+
 Route::middleware('check.blacklist')->group(function () {
     // Home
     Route::get('/', [Front\HomeController::class, 'index']);
@@ -26,10 +30,8 @@ Route::middleware('check.blacklist')->group(function () {
     Route::get('/order/detail/{order_no}', [Front\OrderController::class, 'detail']);
     Route::post('/order/verify', [Front\OrderController::class, 'verify']);
 
-    // Payment callbacks
-    Route::post('/payment/epay/notify', [Front\PaymentController::class, 'epayNotify']);
+    // Payment return (user-facing, stays in blacklist group)
     Route::get('/payment/epay/return', [Front\PaymentController::class, 'epayReturn']);
-    Route::post('/payment/epusdt/notify', [Front\PaymentController::class, 'epusdtNotify']);
 
     // Articles
     Route::get('/articles', [Front\ArticleController::class, 'index']);
@@ -66,8 +68,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Cards
         Route::get('/products/{product}/cards', [Admin\CardController::class, 'index']);
         Route::post('/products/{product}/cards/import', [Admin\CardController::class, 'import']);
-        Route::delete('/cards/{card}', [Admin\CardController::class, 'destroy']);
         Route::delete('/cards/batch-destroy', [Admin\CardController::class, 'batchDestroy']);
+        Route::delete('/cards/{card}', [Admin\CardController::class, 'destroy']);
 
         // Orders
         Route::get('/orders', [Admin\OrderController::class, 'index']);

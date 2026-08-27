@@ -16,6 +16,13 @@ class Blacklist extends Model
         'reason',
     ];
 
+    protected function casts(): array
+    {
+        return [
+            'created_at' => 'datetime',
+        ];
+    }
+
     protected static function booted(): void
     {
         static::creating(function (Blacklist $model) {

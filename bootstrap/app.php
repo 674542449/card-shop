@@ -11,10 +11,16 @@ return Application::configure(basePath: dirname(__DIR__))
         apiPrefix: 'api/v1',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->validateCsrfTokens(except: [
+            'payment/epay/notify',
+            'payment/epusdt/notify',
+        ]);
+
         $middleware->alias([
             'admin.auth' => \App\Http\Middleware\AdminAuth::class,
             'check.blacklist' => \App\Http\Middleware\CheckBlacklist::class,
             'turnstile' => \App\Http\Middleware\VerifyTurnstile::class,
+            'api.token' => \App\Http\Middleware\ApiTokenAuth::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

@@ -33,7 +33,7 @@ class EpusdtService
             'order_id' => $order->order_no,
             'amount' => number_format((float) $order->total_amount, 2, '.', ''),
             'notify_url' => url('/payment/epusdt/notify'),
-            'redirect_url' => url("/order/detail/{$order->order_no}"),
+            'redirect_url' => url("/order/pay/{$order->order_no}"),
         ];
 
         $params['signature'] = $this->generateSign($params, $this->apiToken);
@@ -110,6 +110,6 @@ class EpusdtService
         }
         $signStr = implode('&', $parts);
 
-        return hash_hmac('md5', $signStr, $token);
+        return md5($signStr . $token);
     }
 }

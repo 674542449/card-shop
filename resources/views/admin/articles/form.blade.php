@@ -35,9 +35,9 @@
                     </div>
 
                     <div class="mb-3">
-                        <label for="excerpt" class="form-label">摘要</label>
-                        <textarea class="form-control @error('excerpt') is-invalid @enderror" id="excerpt" name="excerpt" rows="3">{{ old('excerpt', $article?->excerpt) }}</textarea>
-                        @error('excerpt')
+                        <label for="summary" class="form-label">摘要</label>
+                        <textarea class="form-control @error('summary') is-invalid @enderror" id="summary" name="summary" rows="3">{{ old('summary', $article?->summary) }}</textarea>
+                        @error('summary')
                             <div class="invalid-feedback">{{ $message }}</div>
                         @enderror
                     </div>

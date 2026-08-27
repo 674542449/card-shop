@@ -12,7 +12,7 @@ class CardController extends Controller
 {
     public function index(Request $request, Product $product)
     {
-        $query = $product->cards();
+        $query = $product->cards()->with('order');
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);

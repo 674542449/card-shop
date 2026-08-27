@@ -7,6 +7,7 @@ use App\Models\Coupon;
 use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -121,7 +122,7 @@ class OrderService
                     'order_no' => generate_order_no(),
                     'product_id' => $product->id,
                     'email' => $data['email'],
-                    'query_password' => $data['query_password'],
+                    'query_password' => Hash::make($data['query_password']),
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'total_amount' => $totalAmount,

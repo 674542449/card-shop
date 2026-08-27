@@ -13,7 +13,7 @@ if (!function_exists('setting')) {
      */
     function setting(string $key, mixed $default = null): mixed
     {
-        return Cache::remember("setting:{$key}", 3600, function () use ($key, $default) {
+        return Cache::store('redis')->remember("setting:{$key}", 3600, function () use ($key, $default) {
             $setting = DB::table('settings')->where('key', $key)->first();
             return $setting ? $setting->value : $default;
         });

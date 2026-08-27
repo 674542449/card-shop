@@ -19,7 +19,7 @@ class HomeController extends Controller
             }])
             ->get();
 
-        $query = Product::active()->ordered()->with('category');
+        $query = Product::active()->ordered()->with(['category', 'wholesalePrices']);
 
         if ($request->filled('category')) {
             $category = Category::where('slug', $request->input('category'))->first();

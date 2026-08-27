@@ -76,6 +76,11 @@ class Order extends Model
         return $this->status === 'paid';
     }
 
+    public function isPending(): bool
+    {
+        return $this->status === 'pending';
+    }
+
     public function scopeRecent(Builder $query): Builder
     {
         return $query->orderByDesc('created_at');

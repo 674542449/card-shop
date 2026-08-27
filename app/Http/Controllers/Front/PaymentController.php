@@ -134,7 +134,7 @@ class PaymentController extends Controller
         }
         $signStr = rtrim($signStr, '&') . $merchantKey;
 
-        return md5($signStr) === $sign;
+        return hash_equals(md5($signStr), $sign);
     }
 
     /**
@@ -160,7 +160,7 @@ class PaymentController extends Controller
         }
         $signStr = rtrim($signStr, '&') . $apiToken;
 
-        return md5($signStr) === $sign;
+        return hash_equals(md5($signStr), $sign);
     }
 
     /**

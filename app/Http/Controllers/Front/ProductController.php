@@ -17,7 +17,7 @@ class ProductController extends Controller
         $products = Product::active()
             ->ordered()
             ->where('category_id', $category->id)
-            ->with('category')
+            ->with(['category', 'wholesalePrices'])
             ->paginate(12);
 
         $seoTitle = $category->name . ' - ' . setting('site_name', 'CardShop');

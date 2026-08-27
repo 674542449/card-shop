@@ -85,7 +85,7 @@
                     <dd class="col-sm-8">{{ $order->paid_at ? $order->paid_at->format('Y-m-d H:i:s') : '-' }}</dd>
 
                     <dt class="col-sm-4">过期时间</dt>
-                    <dd class="col-sm-8">{{ $order->expired_at ? $order->expired_at->format('Y-m-d H:i:s') : '-' }}</dd>
+                    <dd class="col-sm-8">{{ $order->expires_at ? $order->expires_at->format('Y-m-d H:i:s') : '-' }}</dd>
                 </dl>
             </div>
         </div>

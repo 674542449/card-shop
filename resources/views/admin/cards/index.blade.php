@@ -119,11 +119,11 @@
                                 <span class="badge bg-warning">锁定</span>
                             @endif
                         </td>
-                        <td>{{ $card->order_no ?? '-' }}</td>
+                        <td>{{ $card->order?->order_no ?? '-' }}</td>
                         <td>{{ $card->created_at }}</td>
                         <td>
                             @if($card->status === 'unsold')
-                                <form action="{{ url('/admin/products/' . $product->id . '/cards/' . $card->id) }}"
+                                <form action="{{ url('/admin/cards/' . $card->id) }}"
                                       method="POST" class="d-inline confirm">
                                     @csrf
                                     @method('DELETE')
@@ -144,10 +144,9 @@
 
 {{-- 批量删除表单 --}}
 <form id="batch-delete-form" method="POST"
-      action="{{ url('/admin/products/' . $product->id . '/cards/batch-delete') }}" class="d-none">
+      action="{{ url('/admin/cards/batch-destroy') }}" class="d-none">
     @csrf
     @method('DELETE')
-    <input type="hidden" name="ids" id="batch-delete-ids">
 </form>
 
 {{-- 分页 --}}
@@ -187,9 +186,16 @@
         if (!confirm('确定要删除选中的卡密吗？')) return;
 
         const checked = document.querySelectorAll('.card-checkbox:checked');
-        const ids = Array.from(checked).map(function (cb) { return cb.value; });
-        document.getElementById('batch-delete-ids').value = ids.join(',');
-        document.getElementById('batch-delete-form').submit();
+        const form = document.getElementById('batch-delete-form');
+        form.querySelectorAll('input[name="ids[]"]').forEach(function (el) { el.remove(); });
+        checked.forEach(function (cb) {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'ids[]';
+            input.value = cb.value;
+            form.appendChild(input);
+        });
+        form.submit();
     }
 </script>
 @endpush

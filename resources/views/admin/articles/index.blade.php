@@ -10,10 +10,10 @@
         <form method="GET" action="{{ url('/admin/articles') }}" class="row g-3 align-items-end">
             <div class="col-auto">
                 <label class="form-label">分类</label>
-                <select name="category_id" class="form-select">
+                <select name="article_category_id" class="form-select">
                     <option value="">全部分类</option>
                     @foreach($categories as $category)
-                        <option value="{{ $category->id }}" {{ request('category_id') == $category->id ? 'selected' : '' }}>
+                        <option value="{{ $category->id }}" {{ request('article_category_id') == $category->id ? 'selected' : '' }}>
                             {{ $category->name }}
                         </option>
                     @endforeach

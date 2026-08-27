@@ -59,12 +59,12 @@
                             <th>数量</th>
                             <th>
                                 @php
-                                    $amountDir = request('sort') === 'total_amount' && request('direction') === 'asc' ? 'desc' : 'asc';
+                                    $amountDir = request('sort') === 'total_amount' && request('dir') === 'asc' ? 'desc' : 'asc';
                                 @endphp
-                                <a href="{{ url('/admin/orders') . '?' . http_build_query(array_merge(request()->query(), ['sort' => 'total_amount', 'direction' => $amountDir])) }}" class="text-decoration-none text-dark">
+                                <a href="{{ url('/admin/orders') . '?' . http_build_query(array_merge(request()->query(), ['sort' => 'total_amount', 'dir' => $amountDir])) }}" class="text-decoration-none text-dark">
                                     金额(¥)
                                     @if(request('sort') === 'total_amount')
-                                        <i class="bi bi-arrow-{{ request('direction') === 'asc' ? 'up' : 'down' }}"></i>
+                                        <i class="bi bi-arrow-{{ request('dir') === 'asc' ? 'up' : 'down' }}"></i>
                                     @endif
                                 </a>
                             </th>
@@ -72,12 +72,12 @@
                             <th>状态</th>
                             <th>
                                 @php
-                                    $timeDir = request('sort') === 'created_at' && request('direction') === 'asc' ? 'desc' : 'asc';
+                                    $timeDir = request('sort') === 'created_at' && request('dir') === 'asc' ? 'desc' : 'asc';
                                 @endphp
-                                <a href="{{ url('/admin/orders') . '?' . http_build_query(array_merge(request()->query(), ['sort' => 'created_at', 'direction' => $timeDir])) }}" class="text-decoration-none text-dark">
+                                <a href="{{ url('/admin/orders') . '?' . http_build_query(array_merge(request()->query(), ['sort' => 'created_at', 'dir' => $timeDir])) }}" class="text-decoration-none text-dark">
                                     时间
                                     @if(request('sort') === 'created_at')
-                                        <i class="bi bi-arrow-{{ request('direction') === 'asc' ? 'up' : 'down' }}"></i>
+                                        <i class="bi bi-arrow-{{ request('dir') === 'asc' ? 'up' : 'down' }}"></i>
                                     @endif
                                 </a>
                             </th>
