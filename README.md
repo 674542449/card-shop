@@ -51,9 +51,88 @@
 
 ## 环境要求
 
-- Docker 和 Docker Compose
-- 至少 1GB 内存
-- 开放 80 端口
+### 服务器要求
+- 操作系统：Debian 13 / Ubuntu 22.04+ / CentOS 8+（推荐 Debian 13）
+- 内存：至少 1GB（推荐 2GB）
+- 开放端口：80（HTTP）、443（HTTPS，如需）
+
+### 宿主机需安装
+
+| 软件 | 版本 | 安装方式 |
+|------|------|----------|
+| Docker | 20.10+ | 见下方安装命令 |
+| Docker Compose | v2+ | Docker 自带 |
+| Git | 2.x | 系统包管理器 |
+
+**Debian 13 / Ubuntu 一键安装：**
+
+```bash
+# 更新系统
+apt update && apt upgrade -y
+
+# 安装 Git
+apt install -y git curl
+
+# 安装 Docker
+curl -fsSL https://get.docker.com | sh
+
+# 将当前用户加入 docker 组（免 sudo）
+usermod -aG docker $USER
+
+# 验证安装
+docker --version
+docker compose version
+```
+
+**CentOS 8+ 安装：**
+
+```bash
+yum install -y git curl
+curl -fsSL https://get.docker.com | sh
+systemctl enable --now docker
+usermod -aG docker $USER
+```
+
+### 容器内自动安装的依赖
+
+以下依赖在 `docker compose up --build` 时由 Dockerfile 自动安装，无需手动操作：
+
+**系统包：**
+- libpq-dev（PostgreSQL 客户端库）
+- libzip-dev（ZIP 压缩支持）
+- libicu-dev（国际化支持）
+- unzip、git、curl
+
+**PHP 扩展：**
+
+| 扩展 | 用途 |
+|------|------|
+| pdo_pgsql | PostgreSQL 数据库连接 |
+| pgsql | PostgreSQL 原生函数 |
+| redis | Redis 缓存/会话/锁 |
+| zip | ZIP 文件处理 |
+| intl | 国际化与本地化 |
+| bcmath | 精确金额计算 |
+| opcache | PHP 字节码缓存（性能优化） |
+
+**Composer 依赖（自动安装）：**
+
+| 包名 | 用途 |
+|------|------|
+| laravel/framework ^12.0 | Laravel 框架 |
+| league/commonmark ^2.0 | Markdown 渲染（文章和商品描述） |
+
+### 外部服务（按需配置）
+
+| 服务 | 必需 | 说明 |
+|------|------|------|
+| [EPUSDT](https://github.com/GMWalletApp/epusdt) | 否 | USDT 收款需单独部署此服务 |
+| 易支付平台 | 否 | 支付宝/微信收款需注册商户 |
+| SMTP 邮箱 | 建议 | 发送卡密邮件（QQ邮箱、Gmail 等均可） |
+| Telegram Bot | 否 | 订单通知推送 |
+| Cloudflare Turnstile | 建议 | 防机器人刷单 |
+| 百度站长平台 | 否 | SEO 主动推送 |
+| Bing Webmaster | 否 | IndexNow 收录推送 |
 
 ## 安装部署
 
