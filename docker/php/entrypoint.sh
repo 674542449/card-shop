@@ -28,6 +28,7 @@ if grep -q '^APP_KEY=$' .env 2>/dev/null; then
     php artisan key:generate --force --no-interaction
 fi
 
+php artisan view:clear --no-interaction 2>/dev/null || true
 php artisan migrate --force --no-interaction 2>/dev/null || true
 
 if [ -d admin-frontend ] && [ ! -f public/admin-assets/index.html ]; then
