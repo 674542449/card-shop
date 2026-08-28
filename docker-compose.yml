@@ -19,6 +19,12 @@ services:
     environment:
       - DB_HOST=postgres
       - REDIS_HOST=redis
+      # Sized by ./install.sh from this host's CPU and RAM; the defaults here are the
+      # packaged PHP-FPM values, which allow only 5 concurrent requests.
+      - PHP_FPM_MAX_CHILDREN=${PHP_FPM_MAX_CHILDREN:-5}
+      - PHP_FPM_START_SERVERS=${PHP_FPM_START_SERVERS:-2}
+      - PHP_FPM_MIN_SPARE=${PHP_FPM_MIN_SPARE:-1}
+      - PHP_FPM_MAX_SPARE=${PHP_FPM_MAX_SPARE:-3}
     healthcheck:
       test: ["CMD-SHELL", "php -r \"@fsockopen('127.0.0.1', 9000) or exit(1);\""]
       interval: 5s
@@ -68,6 +74,20 @@ services:
     image: postgres:17
     container_name: cardshop-postgres
     restart: unless-stopped
+    # Sized by ./install.sh. The defaults are PostgreSQL's own, which assume a machine
+    # far smaller than most servers this runs on. max_connections must stay above
+    # PHP_FPM_MAX_CHILDREN — every worker holds a connection, and exhausting the pool
+    # surfaces as an intermittent failure that is painful to diagnose.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE:-512MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-4MB}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
     # Bound to loopback only. Publishing 5432 on 0.0.0.0 exposes the database to the
     # internet; the app reaches it over the internal `cardshop` network regardless.
     ports:

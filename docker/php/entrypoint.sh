@@ -3,7 +3,36 @@ set -e
 
 cd /var/www/html
 
-echo "==> [1/8] Preparing writable directories"
+echo "==> [1/8] Runtime tuning and writable directories"
+
+# PHP-FPM's packaged pool allows 5 concurrent requests. That is a floor chosen so the
+# image starts anywhere, not a value suited to any particular host — on a machine with
+# real memory it means a handful of slow connections can occupy every worker while the
+# hardware sits idle. install.sh sizes these from the actual CPU and RAM and writes them
+# to .env; compose passes them in. Written here rather than baked into the image so a
+# retune is a restart, not a rebuild.
+FPM_MAX_CHILDREN="${PHP_FPM_MAX_CHILDREN:-5}"
+FPM_START_SERVERS="${PHP_FPM_START_SERVERS:-2}"
+FPM_MIN_SPARE="${PHP_FPM_MIN_SPARE:-1}"
+FPM_MAX_SPARE="${PHP_FPM_MAX_SPARE:-3}"
+
+cat > /usr/local/etc/php-fpm.d/zz-tuning.conf <<FPMCONF
+[www]
+pm = dynamic
+pm.max_children = ${FPM_MAX_CHILDREN}
+pm.start_servers = ${FPM_START_SERVERS}
+pm.min_spare_servers = ${FPM_MIN_SPARE}
+pm.max_spare_servers = ${FPM_MAX_SPARE}
+; Recycle workers periodically so a slow leak in any one request cannot accumulate
+; across the life of the container.
+pm.max_requests = 500
+FPMCONF
+
+echo "    PHP-FPM: max_children=${FPM_MAX_CHILDREN} start=${FPM_START_SERVERS} spare=${FPM_MIN_SPARE}-${FPM_MAX_SPARE}"
+if [ "$FPM_MAX_CHILDREN" = "5" ]; then
+    echo "    (still the packaged default — run ./install.sh to size this for this server)"
+fi
+
 mkdir -p bootstrap/cache \
     storage/app/public \
     storage/app/public/uploads \
