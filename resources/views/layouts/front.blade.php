@@ -22,6 +22,14 @@
 
     @yield('structured_data')
 
+    @php $siteFavicon = setting('site_favicon'); @endphp
+    @if($siteFavicon)
+    {{-- Operator-supplied icon. type is omitted deliberately: the uploader accepts
+         .ico and .png and the browser sniffs it correctly either way. --}}
+    <link rel="icon" href="{{ $siteFavicon }}">
+    <link rel="apple-touch-icon" href="{{ $siteFavicon }}">
+    @endif
+
     <link href="{{ asset('css/front.css') }}" rel="stylesheet">
 
     @if(setting('turnstile_site_key'))
@@ -36,8 +44,14 @@
 
     <header class="site-header">
         <div class="container">
+            @php $siteLogo = setting('site_logo'); @endphp
             <a class="site-logo" href="/">
+                @if($siteLogo)
+                {{-- Height is capped in CSS, so any upload lands at the header's scale. --}}
+                <img src="{{ $siteLogo }}" alt="{{ setting('site_name', 'CardShop') }}" class="site-logo-img">
+                @else
                 <span class="logo-icon">{{ mb_substr(setting('site_name', 'C'), 0, 1) }}</span>
+                @endif
                 {{ setting('site_name', 'CardShop') }}
             </a>
 

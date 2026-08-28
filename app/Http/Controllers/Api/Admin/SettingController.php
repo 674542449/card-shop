@@ -23,7 +23,7 @@ class SettingController extends Controller
     {
         $settingGroups = [
             'site' => [
-                'site_name', 'site_description', 'site_logo',
+                'site_name', 'site_description', 'site_logo', 'site_favicon',
                 'site_announcement', 'contact_text', 'contact_url', 'contact_qr_image',
             ],
             'payment' => [

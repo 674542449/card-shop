@@ -21,6 +21,13 @@
 <script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
 
+@php
+    // Only hold the thumbnail slots open when at least one category actually has an
+    // image. A shop that has uploaded none keeps the plain text layout instead of
+    // gaining a column of empty plates.
+    $anyCategoryImage = $categories->contains(fn ($c) => filled($c->image));
+@endphp
+
 @section('content')
     @if($siteAnnouncement)
     <blockquote class="site-quote">{!! nl2br(e($siteAnnouncement)) !!}</blockquote>
@@ -36,7 +43,7 @@
                     <tr>
                         <th>
                             <span class="cat-head">
-                                @include('front.partials.category-thumb', ['category' => $category, 'size' => 20])
+                                @include('front.partials.category-thumb', ['category' => $category, 'size' => 20, 'reserve' => $anyCategoryImage])
                                 {{ $category->name }}
                             </span>
                         </th>
@@ -62,7 +69,7 @@
         @if($catProducts->isNotEmpty())
         <section class="mobile-only" aria-label="{{ $category->name }}">
             <h2 class="card-section-title">
-                @include('front.partials.category-thumb', ['category' => $category, 'size' => 22])
+                @include('front.partials.category-thumb', ['category' => $category, 'size' => 22, 'reserve' => $anyCategoryImage])
                 {{ $category->name }}
             </h2>
             <div class="product-grid">
@@ -117,7 +124,7 @@
     <div class="tag-cloud mt-3">
         @foreach($categories as $category)
         <a href="/category/{{ $category->slug }}" class="tag-item">
-            @include('front.partials.category-thumb', ['category' => $category, 'size' => 16])
+            @include('front.partials.category-thumb', ['category' => $category, 'size' => 16, 'reserve' => $anyCategoryImage])
             {{ $category->name }}
         </a>
         @endforeach

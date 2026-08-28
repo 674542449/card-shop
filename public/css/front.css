@@ -350,6 +350,16 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     background: var(--thumb-bg);
     display: block;
 }
+/* Placeholder that holds a thumbnail slot open for a category with no image, so
+   names in the same list keep one left edge. Deliberately faint — it is spacing
+   that happens to be visible, not a missing-image warning. */
+.cat-thumb-empty {
+    display: inline-block;
+    flex-shrink: 0;
+    border-radius: var(--radius);
+    background: var(--thumb-bg);
+    opacity: .5;
+}
 .cat-head {
     display: inline-flex;
     align-items: center;
@@ -702,9 +712,13 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 }
 .pd-head .pd-price-row { margin-bottom: 0; }
 
+/* Deliberately modest. This is an identity mark next to the name, stock and price —
+   not a product photo the buyer is meant to study — so it should not out-weigh the
+   text it sits beside or push the price down the page. Measured at 1265px wide the
+   old 200px plate took 27% of the column; 120px takes 16%. */
 .pd-image-wrap {
-    width: 200px;
-    height: 200px;
+    width: 120px;
+    height: 120px;
     flex-shrink: 0;
     padding: 6px;
     display: flex;
@@ -935,75 +949,81 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 /* ============================================================
    Payment Modal
    ============================================================ */
-.pay-modal-overlay {
-    display: none;
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,.5);
-    z-index: 2000;
-    align-items: center;
-    justify-content: center;
-}
-.pay-modal-overlay.open { display: flex; }
-.pay-modal {
-    background: var(--card-bg);
-    border-radius: 6px;
-    width: 400px;
-    max-width: 92vw;
-    box-shadow: 0 8px 30px rgba(0,0,0,.2);
-    overflow: hidden;
-}
-.pay-modal-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--border-color);
-    font-size: 16px;
-    font-weight: 600;
-}
-.pay-modal-close {
-    background: none;
-    border: none;
-    font-size: 20px;
-    color: var(--text-light);
-    cursor: pointer;
-}
-.pay-modal-body { padding: 20px; }
-.pay-modal-tip {
-    font-size: 13px;
-    color: var(--text-light);
-    margin-bottom: 15px;
+/* Payment method chooser, shown expanded instead of collapsed into a <select>, so
+   the buyer sees every gateway without an extra tap. The radio input stays the real
+   control and keeps the group in the accessibility tree; it is visually replaced by
+   .pay-option-inner, which is styled from the adjacent-sibling :checked state so no
+   :has() support is required. */
+.pd-form .form-group-block { align-items: flex-start; }
+.pd-form .form-group-block .form-label { padding-top: 9px; }
+
+.pay-options {
+    flex: 1;
+    min-width: 0;
+    display: grid;
+    /* auto-fill collapses to a single column on a phone with no media query. */
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
 }
 .pay-option {
+    display: block;
+    cursor: pointer;
+    /* A long gateway name wraps to two lines. Stretching every tile to the tallest
+       keeps the row of them on one baseline instead of stepping. */
+    height: 100%;
+}
+.pay-radio {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+}
+.pay-option-inner {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 15px;
+    gap: 10px;
+    height: 100%;
+    min-height: 48px;
+    padding: 8px 12px;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
-    margin-bottom: 10px;
-    cursor: pointer;
-    transition: border-color .2s;
+    border-radius: var(--radius);
+    background: var(--card-bg);
+    transition: border-color .2s, background .2s;
 }
-.pay-option:hover { border-color: var(--teal); }
-.pay-option.selected { border-color: var(--teal); background: #f0fdfa; }
-/* Gateway icons come from the operator's uploads, so the shape is not ours to
-   assume: contain keeps a non-square mark from being squeezed into the slot. */
-.pay-option img {
-    width: 32px;
-    height: 32px;
+.pay-option:hover .pay-option-inner { border-color: var(--teal); }
+.pay-radio:checked + .pay-option-inner {
+    border-color: var(--teal);
+    background: #f0fdfa;
+    box-shadow: inset 0 0 0 1px var(--teal);
+}
+/* The input is invisible, so the focus ring has to be drawn on the tile or the
+   group becomes unusable by keyboard. */
+.pay-radio:focus-visible + .pay-option-inner {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+}
+.pay-icon {
+    width: 30px;
+    height: 30px;
     flex-shrink: 0;
-    object-fit: contain;
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1;
 }
-.pay-option .pay-icon {
-    width: 32px; height: 32px;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 20px; font-weight: 700;
-    background: var(--teal); color: #fff; border-radius: 4px;
+.pay-icon-alipay { background: #1677ff; }
+.pay-icon-wechat { background: #07c160; }
+.pay-icon-usdt { background: #26a17b; }
+.pay-label {
+    font-size: 14px;
+    line-height: 1.3;
+    color: var(--text-color);
+    min-width: 0;
 }
-.pay-option .pay-label { font-size: 14px; font-weight: 500; }
 
 /* ============================================================
    Order Pages
@@ -1401,7 +1421,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .pd-sidebar { order: 2; }
     .product-grid { grid-template-columns: repeat(3, 1fr); }
     .two-col-section { grid-template-columns: 1fr; }
-    .pd-image-wrap { width: 170px; height: 170px; }
+    .pd-image-wrap { width: 108px; height: 108px; }
 }
 
 @media (max-width: 768px) {
@@ -1411,7 +1431,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     /* Image and price stay side by side rather than stacking: a full-width
        product shot would push the price and the buy form off the first screen. */
     .pd-head { gap: 14px; }
-    .pd-image-wrap { width: 120px; height: 120px; padding: 5px; }
+    .pd-image-wrap { width: 92px; height: 92px; padding: 5px; }
     /* Matches the base selector's specificity (.site-quote.cat-quote), otherwise
        the 14px base gap outranks this rule no matter where it sits in the file. */
     .site-quote.cat-quote { gap: 12px; }
@@ -1432,7 +1452,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .article-detail { padding: 20px; }
     .article-detail h1 { font-size: 18px; }
     .pd-head { gap: 12px; margin-bottom: 15px; }
-    .pd-image-wrap { width: 92px; height: 92px; padding: 4px; }
+    .pd-image-wrap { width: 72px; height: 72px; padding: 4px; }
     .cat-quote .cat-thumb-lg { width: 30px; height: 30px; }
     .empty-state { padding: 40px 0; }
     /* Card padding was still at its desktop 20-25px on a 375px screen, which is

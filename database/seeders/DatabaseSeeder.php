@@ -33,6 +33,7 @@ class DatabaseSeeder extends Seeder
             'site' => [
                 'site_name' => 'CardShop',
                 'site_logo' => '',
+                'site_favicon' => '',
                 'site_description' => '',
                 'site_announcement' => '',
                 'contact_text' => '',

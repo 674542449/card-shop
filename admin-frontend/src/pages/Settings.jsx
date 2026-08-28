@@ -52,7 +52,10 @@ export default function Settings() {
           <ProFormTextArea name="site_announcement" label="站点公告" fieldProps={{ rows: 3 }} />
           <ProFormText name="contact_text" label="联系方式文字" />
           <ProFormText name="contact_url" label="联系方式链接" />
-          <ProForm.Item name="site_logo" label="站点 Logo">
+          <ProForm.Item name="site_logo" label="站点 Logo" extra="显示在页面左上角，高度自动缩放到 30px。">
+            <ImageUploader />
+          </ProForm.Item>
+          <ProForm.Item name="site_favicon" label="浏览器图标 (Favicon)" extra="显示在浏览器标签页，建议 .ico 或 32x32 的 .png。">
             <ImageUploader />
           </ProForm.Item>
           <ProForm.Item name="contact_qr_image" label="联系二维码图片">
