@@ -38,6 +38,12 @@
        relative on purpose: a tall image scales down to something that still
        leaves the rest of the page visible on whatever screen is reading it. */
     --rich-media-max-h: 70vh;
+    /* Product detail image plate. Deliberately one number: it is the value most likely
+       to be retuned by taste, and the three breakpoint overrides below scale with it.
+       For reference, the identity block beside it (badge and stock, title, price) is
+       about 115px tall, so a value near that reads as its equal, and above it the
+       image becomes the dominant element of the row. */
+    --pd-image-size: 150px;
     --font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Microsoft YaHei", Tahoma, Arial, sans-serif;
     --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
     --shadow: 0 1px 6px rgba(0,0,0,.08);
@@ -745,8 +751,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
    measures ~115px tall, so a 112px plate reads as its partner instead of a small mark
    floating next to a taller column. */
 .pd-image-wrap {
-    width: 112px;
-    height: 112px;
+    width: var(--pd-image-size);
+    height: var(--pd-image-size);
     flex-shrink: 0;
     padding: 6px;
     display: flex;
@@ -1458,7 +1464,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .pd-sidebar { order: 2; }
     .product-grid { grid-template-columns: repeat(3, 1fr); }
     .two-col-section { grid-template-columns: 1fr; }
-    .pd-image-wrap { width: 104px; height: 104px; }
+    :root { --pd-image-size: 132px; }
 }
 
 @media (max-width: 768px) {
@@ -1468,7 +1474,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     /* Image and price stay side by side rather than stacking: a full-width
        product shot would push the price and the buy form off the first screen. */
     .pd-head { gap: 14px; }
-    .pd-image-wrap { width: 92px; height: 92px; padding: 5px; }
+    :root { --pd-image-size: 116px; }
+    .pd-image-wrap { padding: 5px; }
     /* Matches the base selector's specificity (.site-quote.cat-quote), otherwise
        the 14px base gap outranks this rule no matter where it sits in the file. */
     .site-quote.cat-quote { gap: 12px; }
@@ -1481,7 +1488,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 @media (max-width: 480px) {
     /* One step down for both rhythm tokens: the bands still read as separate,
        without spending a third of a phone screen on white space. */
-    :root { --section-gap: 20px; --block-gap: 15px; }
+    :root { --section-gap: 20px; --block-gap: 15px; --pd-image-size: 96px; }
 
     .product-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
     .pd-info { padding: 15px; }
@@ -1489,7 +1496,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .article-detail { padding: 20px; }
     .article-detail h1 { font-size: 18px; }
     .pd-head { gap: 12px; margin-bottom: 15px; }
-    .pd-image-wrap { width: 78px; height: 78px; padding: 4px; }
+    .pd-image-wrap { padding: 4px; }
     .cat-quote .cat-thumb-lg { width: 30px; height: 30px; }
     .empty-state { padding: 40px 0; }
     /* Card padding was still at its desktop 20-25px on a 375px screen, which is
