@@ -27,6 +27,18 @@ api.interceptors.request.use((config) => {
     config.headers['X-CSRF-TOKEN'] = csrfToken;
   }
 
+  // File uploads must NOT inherit the instance-level application/json header: the
+  // browser has to set multipart/form-data itself so it can append the boundary.
+  // Dropping the header here lets axios/XHR fill it in from the FormData body.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (config.headers && typeof config.headers.delete === 'function') {
+      config.headers.delete('Content-Type');
+    } else if (config.headers) {
+      delete config.headers['Content-Type'];
+      delete config.headers['content-type'];
+    }
+  }
+
   // ProTable sends pageSize; some pages forward it as per_page. Send both so the
   // page-size selector works no matter which name the controller reads.
   if (config.params && typeof config.params === 'object') {
@@ -78,6 +90,15 @@ export const getMe = () =>
 // Dashboard
 export const getDashboard = () =>
   api.get('/dashboard');
+
+// Uploads
+// Responds 200 with { url, path }; url is the public "/storage/..." string stored
+// on the model. Errors come back 422 with { message }.
+export const uploadImage = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/upload', form);
+};
 
 // Categories
 export const getCategories = (params) =>

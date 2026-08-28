@@ -22,6 +22,7 @@ class CategoryController extends Controller
             'name' => 'required|string|max:100',
             'slug' => 'nullable|string|max:100|unique:categories,slug',
             'description' => 'nullable|string|max:500',
+            'image' => 'nullable|string|max:500',
             'sort_order' => 'nullable|integer',
             'is_active' => 'boolean',
         ]);
@@ -42,6 +43,7 @@ class CategoryController extends Controller
             'name' => 'required|string|max:100',
             'slug' => 'nullable|string|max:100|unique:categories,slug,' . $category->id,
             'description' => 'nullable|string|max:500',
+            'image' => 'nullable|string|max:500',
             'sort_order' => 'nullable|integer',
             'is_active' => 'boolean',
         ]);

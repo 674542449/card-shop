@@ -3,10 +3,12 @@ set -e
 
 cd /var/www/html
 
-echo "==> [1/7] Preparing writable directories"
+echo "==> [1/8] Preparing writable directories"
 mkdir -p bootstrap/cache \
     storage/app/public \
+    storage/app/public/uploads \
     storage/framework/cache/data \
+    storage/framework/cache/purifier \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs
@@ -24,14 +26,40 @@ rm -rf storage/framework/views/*
 chown -R www-data:www-data storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
 
-echo "==> [2/7] Composer dependencies"
+echo "==> [2/8] Composer dependencies"
+# vendor/ lives on the host bind mount and survives rebuilds — but so does an *outdated*
+# vendor/. Installing only when vendor/autoload.php is absent means a newly required
+# package never arrives on an existing deployment, and the first request to hit the
+# missing class 500s. So stamp the hash of composer.json after every successful install
+# and reinstall whenever the two disagree.
+COMPOSER_STAMP="storage/.composer-installed"
+COMPOSER_HASH="$(md5sum composer.json | awk '{ print $1 }')"
+
 if [ ! -f vendor/autoload.php ]; then
-    composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+    COMPOSER_REASON="vendor/ is missing"
+elif [ ! -f "$COMPOSER_STAMP" ]; then
+    COMPOSER_REASON="no install stamp — vendor/ predates this check"
+elif [ "$(cat "$COMPOSER_STAMP")" != "$COMPOSER_HASH" ]; then
+    COMPOSER_REASON="composer.json changed since the last install"
 else
-    echo "    vendor/ present, skipping."
+    COMPOSER_REASON=""
 fi
 
-echo "==> [3/7] Environment file"
+if [ -n "$COMPOSER_REASON" ]; then
+    echo "    Installing: $COMPOSER_REASON."
+    # No `|| true`: set -e aborts the boot here. A half-installed vendor/ produces
+    # "Class not found" on every page, which is far harder to diagnose from the logs
+    # than a container that refuses to start.
+    composer install --no-dev --optimize-autoloader --no-interaction --no-progress
+    # Only reached when the install succeeded, so the stamp can never claim more than
+    # what is actually on disk.
+    echo "$COMPOSER_HASH" > "$COMPOSER_STAMP"
+    echo "    Composer install OK."
+else
+    echo "    vendor/ matches composer.json, skipping."
+fi
+
+echo "==> [3/8] Environment file"
 if [ ! -f .env ]; then
     echo "    .env missing, creating from .env.example"
     cp .env.example .env
@@ -45,7 +73,22 @@ else
     echo "    APP_KEY present."
 fi
 
-echo "==> [4/7] Waiting for PostgreSQL"
+echo "==> [4/8] Public storage symlink"
+# Uploaded images are written to storage/app/public/uploads and served from
+# /storage/uploads/..., which only resolves through the public/storage symlink.
+# public/ is on the host bind mount, so the link persists across restarts — check for
+# it rather than re-running storage:link, which reports the existing link as an error.
+if [ -L public/storage ]; then
+    echo "    Symlink present."
+elif [ -e public/storage ]; then
+    echo "    !! public/storage exists but is not a symlink. Uploaded images will 404."
+elif php artisan storage:link --no-interaction; then
+    echo "    Symlink created."
+else
+    echo "    !! storage:link failed. Uploaded images will 404 until this is fixed."
+fi
+
+echo "==> [5/8] Waiting for PostgreSQL"
 for i in $(seq 1 60); do
     if php -r '
         $h = getenv("DB_HOST") ?: "postgres";
@@ -62,7 +105,7 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-echo "==> [5/7] Migrations and seed"
+echo "==> [6/8] Migrations and seed"
 # Deliberately NOT silenced: a failed migration means the settings table is missing,
 # which turns every page into a 500. The operator needs to see it in `docker logs`.
 if php artisan migrate --force --no-interaction; then
@@ -79,7 +122,7 @@ else
     echo "    !! MIGRATIONS FAILED. The site will return 500 until this is fixed."
 fi
 
-echo "==> [6/7] Precompiling Blade views"
+echo "==> [7/8] Precompiling Blade views"
 # This is not just a warm cache, it closes a race that took the site down.
 #
 # Blade writes each compiled view with file_put_contents() and then immediately
@@ -118,18 +161,39 @@ else
     echo "    !! $BROKEN compiled view(s) are broken — those pages will return 500."
 fi
 
-echo "==> [7/7] Admin frontend assets"
+echo "==> [8/8] Admin frontend assets"
 # The built SPA is committed to the repository under public/admin-assets/, so a normal
 # deploy needs no Node toolchain at all. We only fall back to building when the assets
 # are genuinely missing, and we never hide a failure behind `|| true`.
 if [ -f public/admin-assets/index.html ]; then
     echo "    Prebuilt admin assets found."
+
+    # A committed bundle can fall behind the source it was built from, and nothing else
+    # would notice: the backend keeps working, the admin just silently runs old code.
+    # docker/php/spa-stamp.sh hashes the SPA source; the build writes that hash next to
+    # the bundle. Comparing them turns a stale deploy into a visible line here.
+    if [ -f public/admin-assets/.build-stamp ] && [ -f docker/php/spa-stamp.sh ]; then
+        WANT="$(sh docker/php/spa-stamp.sh 2>/dev/null || echo unknown)"
+        HAVE="$(cat public/admin-assets/.build-stamp)"
+        if [ "$WANT" = "unknown" ]; then
+            echo "    (could not verify the bundle is current)"
+        elif [ "$WANT" = "$HAVE" ]; then
+            echo "    Bundle matches the SPA source."
+        else
+            echo "    !! STALE BUNDLE: public/admin-assets/ was built from different source."
+            echo "    !! The admin will run outdated code. Rebuild and commit it:"
+            echo "    !!   cd admin-frontend && npm install && npm run build"
+            echo "    !!   sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp"
+        fi
+    fi
 elif [ -d admin-frontend ] && command -v npm >/dev/null 2>&1; then
     echo "    Admin assets missing. Building in the background; watch 'docker logs -f cardshop-app'."
     (
         cd admin-frontend
         if NODE_OPTIONS="--max-old-space-size=1536" npm install --no-audit --no-fund \
            && NODE_OPTIONS="--max-old-space-size=1536" npm run build; then
+            cd /var/www/html
+            sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp 2>/dev/null || true
             echo "==> Admin frontend build SUCCEEDED."
         else
             echo "==> !! Admin frontend build FAILED (most likely out of memory)."

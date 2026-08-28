@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Front;
 use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\ArticleCategory;
-use League\CommonMark\CommonMarkConverter;
+use App\Support\ContentRenderer;
 
 class ArticleController extends Controller
 {
@@ -68,11 +68,7 @@ class ArticleController extends Controller
 
         $article->increment('views');
 
-        $converter = new CommonMarkConverter([
-            'html_input' => 'strip',
-            'allow_unsafe_links' => false,
-        ]);
-        $contentHtml = $converter->convert($article->content)->getContent();
+        $contentHtml = ContentRenderer::toHtml($article->content);
 
         $relatedArticles = Article::published()
             ->where('article_category_id', $article->article_category_id)

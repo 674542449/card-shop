@@ -27,7 +27,10 @@
     ];
 
     if ($article->cover_image) {
-        $structuredData['image'] = $article->cover_image;
+        // schema.org needs an absolute URL, and the uploader now writes site-relative
+        // paths like /storage/uploads/... rather than the absolute URLs an operator
+        // used to paste in by hand.
+        $structuredData['image'] = url($article->cover_image);
     }
 @endphp
 <script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>

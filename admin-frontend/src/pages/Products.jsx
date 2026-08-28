@@ -2,16 +2,19 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
   ProTable,
   DrawerForm,
+  ProForm,
   ProFormText,
   ProFormTextArea,
   ProFormDigit,
   ProFormSwitch,
   ProFormSelect,
 } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag } from 'antd';
+import { Button, message, Popconfirm, Tag, Image } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { getProducts, createProduct, updateProduct, deleteProduct, getCategories } from '../services/api';
+import ImageUploader from '../components/ImageUploader';
+import RichTextEditor from '../components/RichTextEditor';
 
 export default function Products() {
   const actionRef = useRef();
@@ -32,6 +35,18 @@ export default function Products() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60, search: false },
+    {
+      title: '图片',
+      dataIndex: 'image',
+      search: false,
+      width: 80,
+      render: (_, record) =>
+        record.image ? (
+          <Image src={record.image} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 4 }} />
+        ) : (
+          '-'
+        ),
+    },
     { title: '名称', dataIndex: 'name' },
     {
       title: '分类',
@@ -122,7 +137,7 @@ export default function Products() {
         open={drawerVisible}
         onOpenChange={setDrawerVisible}
         initialValues={editingRecord || { sort_order: 0, is_active: true, min_quantity: 1, max_quantity: 10 }}
-        drawerProps={{ destroyOnClose: true, width: 500 }}
+        drawerProps={{ destroyOnClose: true, width: 720 }}
         onFinish={async (values) => {
           try {
             if (editingRecord) {
@@ -143,7 +158,12 @@ export default function Products() {
         <ProFormText name="name" label="商品名称" rules={[{ required: true, message: '请输入商品名称' }]} />
         <ProFormText name="slug" label="Slug" rules={[{ required: true, message: '请输入 Slug' }]} />
         <ProFormSelect name="category_id" label="分类" options={categoryOptions} rules={[{ required: true, message: '请选择分类' }]} />
-        <ProFormTextArea name="description" label="描述" />
+        <ProForm.Item name="image" label="商品图片">
+          <ImageUploader />
+        </ProForm.Item>
+        <ProForm.Item name="description" label="描述">
+          <RichTextEditor placeholder="请输入商品描述" />
+        </ProForm.Item>
         <ProFormDigit name="price" label="价格" min={0} rules={[{ required: true, message: '请输入价格' }]} fieldProps={{ precision: 2 }} />
         <ProFormDigit name="min_quantity" label="最小购买数量" min={1} />
         <ProFormDigit name="max_quantity" label="最大购买数量" min={1} />

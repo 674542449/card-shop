@@ -34,7 +34,12 @@
             <table class="product-table">
                 <thead>
                     <tr>
-                        <th>{{ $category->name }}</th>
+                        <th>
+                            <span class="cat-head">
+                                @include('front.partials.category-thumb', ['category' => $category, 'size' => 20])
+                                {{ $category->name }}
+                            </span>
+                        </th>
                         <th style="width:100px">发货模式</th>
                         <th style="width:80px">库存</th>
                         <th style="width:100px">单价</th>
@@ -43,27 +48,7 @@
                 </thead>
                 <tbody>
                     @foreach($catProducts as $product)
-                    @php $stock = $product->stockCount(); @endphp
-                    <tr>
-                        <td>
-                            <div class="prod-name-cell">
-                                @if($product->image)
-                                <img src="{{ $product->image }}" alt="{{ $product->name }}" class="prod-thumb">
-                                @endif
-                                <a href="/product/{{ $product->slug }}" class="prod-name">{{ $product->name }}</a>
-                            </div>
-                        </td>
-                        <td><span class="badge-auto">自动发货</span></td>
-                        <td class="stock-num">{{ $stock }}</td>
-                        <td class="prod-price">¥{{ number_format($product->price, 2) }}</td>
-                        <td>
-                            @if($stock > 0)
-                            <a href="/product/{{ $product->slug }}" class="btn-buy-sm">购买</a>
-                            @else
-                            <span class="text-muted" style="font-size:13px">缺货</span>
-                            @endif
-                        </td>
-                    </tr>
+                    @include('front.partials.product-row', ['product' => $product])
                     @endforeach
                 </tbody>
             </table>
@@ -76,27 +61,13 @@
         @php $catProducts = $groupedProducts->get($category->id, collect()); @endphp
         @if($catProducts->isNotEmpty())
         <section class="mobile-only" aria-label="{{ $category->name }}">
-            <h2 class="card-section-title">{{ $category->name }}</h2>
+            <h2 class="card-section-title">
+                @include('front.partials.category-thumb', ['category' => $category, 'size' => 22])
+                {{ $category->name }}
+            </h2>
             <div class="product-grid">
                 @foreach($catProducts as $product)
-                @php $stock = $product->stockCount(); @endphp
-                <div class="product-card">
-                    <a href="/product/{{ $product->slug }}">
-                        @if($product->image)
-                        <img src="{{ $product->image }}" alt="{{ $product->name }}" class="card-img">
-                        @else
-                        <div class="card-img-placeholder">&#128230;</div>
-                        @endif
-                        <div class="card-body">
-                            <div class="card-badge"><span class="badge-auto">自动发货</span></div>
-                            <div class="card-title">{{ $product->name }}</div>
-                            <div class="card-footer">
-                                <span class="card-stock">库存 {{ $stock }}</span>
-                                <span class="card-price">¥{{ number_format($product->price, 2) }}</span>
-                            </div>
-                        </div>
-                    </a>
-                </div>
+                @include('front.partials.product-card', ['product' => $product])
                 @endforeach
             </div>
         </section>
@@ -145,7 +116,10 @@
     @if($categories->isNotEmpty())
     <div class="tag-cloud mt-3">
         @foreach($categories as $category)
-        <a href="/category/{{ $category->slug }}" class="tag-item">{{ $category->name }}</a>
+        <a href="/category/{{ $category->slug }}" class="tag-item">
+            @include('front.partials.category-thumb', ['category' => $category, 'size' => 16])
+            {{ $category->name }}
+        </a>
         @endforeach
     </div>
     @endif

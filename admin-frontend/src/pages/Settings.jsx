@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ProForm, ProFormText, ProFormTextArea, ProFormDigit } from '@ant-design/pro-components';
 import { Card, Tabs, Spin, message } from 'antd';
 import { getSettings, updateSettings } from '../services/api';
+import ImageUploader from '../components/ImageUploader';
 
 export default function Settings() {
   const [loading, setLoading] = useState(true);
@@ -51,7 +52,12 @@ export default function Settings() {
           <ProFormTextArea name="site_announcement" label="站点公告" fieldProps={{ rows: 3 }} />
           <ProFormText name="contact_text" label="联系方式文字" />
           <ProFormText name="contact_url" label="联系方式链接" />
-          <ProFormText name="contact_qr_image" label="联系二维码图片" placeholder="输入图片URL" />
+          <ProForm.Item name="site_logo" label="站点 Logo">
+            <ImageUploader />
+          </ProForm.Item>
+          <ProForm.Item name="contact_qr_image" label="联系二维码图片">
+            <ImageUploader />
+          </ProForm.Item>
         </>
       ),
     },

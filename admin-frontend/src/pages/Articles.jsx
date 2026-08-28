@@ -2,14 +2,17 @@ import React, { useRef, useState, useEffect } from 'react';
 import {
   ProTable,
   DrawerForm,
+  ProForm,
   ProFormText,
   ProFormTextArea,
   ProFormSwitch,
   ProFormSelect,
 } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag } from 'antd';
+import { Button, message, Popconfirm, Tag, Image } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
 import { getArticles, createArticle, updateArticle, deleteArticle, getArticleCategories } from '../services/api';
+import ImageUploader from '../components/ImageUploader';
+import RichTextEditor from '../components/RichTextEditor';
 
 export default function Articles() {
   const actionRef = useRef();
@@ -29,11 +32,24 @@ export default function Articles() {
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60, search: false },
+    {
+      title: '封面',
+      dataIndex: 'cover_image',
+      search: false,
+      width: 80,
+      render: (_, record) =>
+        record.cover_image ? (
+          <Image src={record.cover_image} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 4 }} />
+        ) : (
+          '-'
+        ),
+    },
     { title: '标题', dataIndex: 'title' },
     {
       title: '分类',
       dataIndex: 'article_category_id',
-      render: (_, record) => record.category?.name || '-',
+      // The API eager-loads articleCategory, which serialises as article_category.
+      render: (_, record) => record.article_category?.name || '-',
       valueType: 'select',
       fieldProps: { options: categoryOptions },
     },
@@ -115,7 +131,7 @@ export default function Articles() {
         open={drawerVisible}
         onOpenChange={setDrawerVisible}
         initialValues={editingRecord || { is_published: false }}
-        drawerProps={{ destroyOnClose: true, width: 600 }}
+        drawerProps={{ destroyOnClose: true, width: 800 }}
         onFinish={async (values) => {
           try {
             if (editingRecord) {
@@ -137,8 +153,12 @@ export default function Articles() {
         <ProFormText name="slug" label="Slug" rules={[{ required: true, message: '请输入 Slug' }]} />
         <ProFormSelect name="article_category_id" label="分类" options={categoryOptions} />
         <ProFormTextArea name="summary" label="摘要" fieldProps={{ rows: 3 }} />
-        <ProFormTextArea name="content" label="内容" rules={[{ required: true, message: '请输入内容' }]} fieldProps={{ rows: 12 }} />
-        <ProFormText name="cover_image" label="封面图片" placeholder="输入图片URL" />
+        <ProForm.Item name="content" label="内容" rules={[{ required: true, message: '请输入内容' }]}>
+          <RichTextEditor placeholder="请输入文章内容" height={360} />
+        </ProForm.Item>
+        <ProForm.Item name="cover_image" label="封面图片">
+          <ImageUploader />
+        </ProForm.Item>
         <ProFormSwitch name="is_published" label="发布" />
         <ProFormText name="seo_title" label="SEO 标题" />
         <ProFormTextArea name="seo_description" label="SEO 描述" />

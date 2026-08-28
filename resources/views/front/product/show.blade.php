@@ -25,6 +25,13 @@
                 : 'https://schema.org/OutOfStock',
         ],
     ];
+
+    // schema.org/Product accepts "image"; it wants an absolute URL, while
+    // $product->image is stored site-relative ("/storage/uploads/..."). Set as an
+    // array key rather than written into the markup, for the same reason as above.
+    if (!empty($product->image)) {
+        $structuredData['image'] = url($product->image);
+    }
 @endphp
 <script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
@@ -39,13 +46,39 @@
         {{-- Left: Product Info + Order Form --}}
         <div class="pd-main">
             <div class="pd-info">
-                <div class="pd-meta">
-                    <span class="badge-auto">自动发货</span>
-                    <span class="pd-stock">库存 <strong>{{ $stockCount }}</strong> 件</span>
-                </div>
-                <h2 class="pd-title">{{ $product->name }}</h2>
-                <div class="pd-price-row">
-                    <span class="pd-price">¥{{ number_format($product->price, 2) }}</span>
+                {{--
+                    Image sits beside the identity block (badge / stock / title /
+                    price), not above it, so the price stays at the top of the
+                    viewport on every screen size. .pd-head is a plain flex row:
+                    with no image, .pd-head-info simply takes the full width and
+                    the block reads exactly as it did before — no reserved gap.
+                    The image itself is letterboxed inside a fixed square plate
+                    (see .pd-image-wrap) so neither a tall nor a wide upload can
+                    stretch the page or distort itself.
+
+                    No width/height attributes here on purpose: the plate is a
+                    fixed square, so it already reserves the space and there is no
+                    shift to prevent, and hardcoding a ratio we do not know would
+                    make the browser reserve the wrong one. Not lazy-loaded either
+                    — this is the page's main image, above the fold.
+                --}}
+                <div class="pd-head">
+                    @if($product->image)
+                    <div class="pd-image-wrap">
+                        <img src="{{ $product->image }}" alt="{{ $product->name }} 商品图"
+                             class="pd-image" decoding="async" fetchpriority="high">
+                    </div>
+                    @endif
+                    <div class="pd-head-info">
+                        <div class="pd-meta">
+                            <span class="badge-auto">自动发货</span>
+                            <span class="pd-stock">库存 <strong>{{ $stockCount }}</strong> 件</span>
+                        </div>
+                        <h2 class="pd-title">{{ $product->name }}</h2>
+                        <div class="pd-price-row">
+                            <span class="pd-price">¥{{ number_format($product->price, 2) }}</span>
+                        </div>
+                    </div>
                 </div>
 
                 @if($product->wholesalePrices->count() > 0)

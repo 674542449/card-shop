@@ -60,6 +60,9 @@ Route::prefix('api/admin')->group(function () {
         // Dashboard
         Route::get('/dashboard', [ApiAdmin\DashboardController::class, 'index']);
 
+        // Uploads (image picker + rich text editor)
+        Route::post('/upload', [ApiAdmin\UploadController::class, 'store']);
+
         // Categories
         Route::get('/categories', [ApiAdmin\CategoryController::class, 'index']);
         Route::post('/categories', [ApiAdmin\CategoryController::class, 'store']);
