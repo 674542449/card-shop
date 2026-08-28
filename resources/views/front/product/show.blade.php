@@ -7,21 +7,26 @@
 @section('og_type', 'product')
 
 @section('structured_data')
-<script type="application/ld+json">
-{
-    "@context": "https://schema.org",
-    "@type": "Product",
-    "name": "{{ e($product->name) }}",
-    "description": "{{ e($product->seo_description ?: Str::limit(strip_tags($descriptionHtml), 200)) }}",
-    "url": "{{ url('/product/' . $product->slug) }}",
-    "offers": {
-        "@type": "Offer",
-        "priceCurrency": "CNY",
-        "price": "{{ $product->price }}",
-        "availability": "{{ $stockCount > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock' }}"
-    }
-}
-</script>
+@php
+    // See the note in front/home.blade.php: a literal "@context" in the template is
+    // parsed as the @context Blade directive and produces an unclosed if().
+    $structuredData = [
+        '@context' => 'https://schema.org',
+        '@type' => 'Product',
+        'name' => $product->name,
+        'description' => $product->seo_description ?: Str::limit(strip_tags($descriptionHtml), 200),
+        'url' => url('/product/' . $product->slug),
+        'offers' => [
+            '@type' => 'Offer',
+            'priceCurrency' => 'CNY',
+            'price' => (string) $product->price,
+            'availability' => $stockCount > 0
+                ? 'https://schema.org/InStock'
+                : 'https://schema.org/OutOfStock',
+        ],
+    ];
+@endphp
+<script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
 
 @section('content')

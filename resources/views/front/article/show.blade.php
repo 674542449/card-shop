@@ -7,24 +7,30 @@
 @section('og_type', 'article')
 
 @section('structured_data')
-<script type="application/ld+json">
-{
-    "@context": "https://schema.org",
-    "@type": "Article",
-    "headline": "{{ e($article->title) }}",
-    "description": "{{ e($article->seo_description ?: $article->summary ?: Str::limit(strip_tags($contentHtml), 200)) }}",
-    "url": "{{ url('/articles/' . $article->slug) }}",
-    "datePublished": "{{ $article->created_at->toIso8601String() }}",
-    "dateModified": "{{ $article->updated_at->toIso8601String() }}",
-    @if($article->cover_image)
-    "image": "{{ $article->cover_image }}",
-    @endif
-    "publisher": {
-        "@type": "Organization",
-        "name": "{{ e(setting('site_name', 'CardShop')) }}"
+@php
+    // See the note in front/home.blade.php: a literal "@context" in the template is
+    // parsed as the @context Blade directive and produces an unclosed if().
+    $structuredData = [
+        '@context' => 'https://schema.org',
+        '@type' => 'Article',
+        'headline' => $article->title,
+        'description' => $article->seo_description
+            ?: $article->summary
+            ?: Str::limit(strip_tags($contentHtml), 200),
+        'url' => url('/articles/' . $article->slug),
+        'datePublished' => $article->created_at?->toIso8601String(),
+        'dateModified' => $article->updated_at?->toIso8601String(),
+        'publisher' => [
+            '@type' => 'Organization',
+            'name' => setting('site_name', 'CardShop'),
+        ],
+    ];
+
+    if ($article->cover_image) {
+        $structuredData['image'] = $article->cover_image;
     }
-}
-</script>
+@endphp
+<script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
 
 @section('content')

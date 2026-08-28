@@ -98,6 +98,26 @@ else
     echo "    !! View precompilation failed — see the error above."
 fi
 
+# Syntax-check the generated PHP. A Blade template can compile "successfully" into
+# PHP that does not parse — a literal "@context" in JSON-LD, for example, is the real
+# @context directive and expands to an unclosed if(). That only shows up as a 500 at
+# request time, so check it here where it is visible in the startup log.
+BROKEN=0
+for VIEW in storage/framework/views/*.php; do
+    [ -e "$VIEW" ] || continue
+    if ! php -l "$VIEW" >/dev/null 2>&1; then
+        BROKEN=$((BROKEN + 1))
+        echo "    !! Compiled view does not parse: $VIEW"
+        php -l "$VIEW" 2>&1 | head -2 | sed 's/^/       /'
+        grep -o 'PATH .* ENDPATH' "$VIEW" | sed 's/^/       source: /'
+    fi
+done
+if [ "$BROKEN" -eq 0 ]; then
+    echo "    All compiled views parse cleanly."
+else
+    echo "    !! $BROKEN compiled view(s) are broken — those pages will return 500."
+fi
+
 echo "==> [7/7] Admin frontend assets"
 # The built SPA is committed to the repository under public/admin-assets/, so a normal
 # deploy needs no Node toolchain at all. We only fall back to building when the assets

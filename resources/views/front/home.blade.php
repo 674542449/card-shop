@@ -5,15 +5,20 @@
 @section('meta_keywords', setting('seo_default_keywords', ''))
 
 @section('structured_data')
-<script type="application/ld+json">
-{
-    "@context": "https://schema.org",
-    "@type": "WebSite",
-    "name": "{{ e($siteName) }}",
-    "url": "{{ url('/') }}",
-    "description": "{{ e(setting('seo_default_description', '')) }}"
-}
-</script>
+@php
+    // Built as an array, not as literal JSON in the template: "@context" at the start
+    // of a line is the real @context Blade directive, which compiles to an unclosed
+    // if() and takes the whole page down with a 500. Inside @php the content is stored
+    // as a raw block before directives are compiled, so it is safe here.
+    $structuredData = [
+        '@context' => 'https://schema.org',
+        '@type' => 'WebSite',
+        'name' => $siteName,
+        'url' => url('/'),
+        'description' => setting('seo_default_description', ''),
+    ];
+@endphp
+<script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
 
 @section('content')
