@@ -30,7 +30,7 @@
     <link rel="apple-touch-icon" href="{{ $siteFavicon }}">
     @endif
 
-    <link href="{{ asset('css/front.css') }}" rel="stylesheet">
+    <link href="{{ asset_versioned('css/front.css') }}" rel="stylesheet">
 
     @if(setting('turnstile_site_key'))
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
@@ -110,7 +110,7 @@
         <button class="fab-btn fab-top" id="back-to-top" title="回到顶部">&#8593;</button>
     </div>
 
-    <script src="{{ asset('js/front.js') }}"></script>
+    <script src="{{ asset_versioned('js/front.js') }}"></script>
     @yield('scripts')
 </body>
 </html>

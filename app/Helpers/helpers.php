@@ -59,6 +59,31 @@ if (!function_exists('setting')) {
     }
 }
 
+if (!function_exists('asset_versioned')) {
+    /**
+     * asset() with a cache-busting version derived from the file's mtime.
+     *
+     * nginx serves everything under public/ with `Cache-Control: public, immutable`
+     * and a 30-day expiry. Without a version in the URL that is a trap rather than an
+     * optimisation: a returning visitor keeps the stylesheet they cached weeks ago and
+     * never sees a deploy. Changing the file changes its mtime, which changes the URL,
+     * which is exactly the condition `immutable` is safe under.
+     */
+    function asset_versioned(string $path): string
+    {
+        static $stamps = [];
+
+        if (!array_key_exists($path, $stamps)) {
+            $full = public_path($path);
+            $stamps[$path] = is_file($full) ? (string) filemtime($full) : null;
+        }
+
+        $url = asset($path);
+
+        return $stamps[$path] ? $url . '?v=' . $stamps[$path] : $url;
+    }
+}
+
 if (!function_exists('settings_forget')) {
     /**
      * Drop the cached settings map. Call after any write to the settings table.

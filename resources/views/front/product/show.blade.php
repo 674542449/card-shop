@@ -153,27 +153,21 @@
                     @php
                         // CreateOrderRequest requires payment_method, so this field is not
                         // optional — without it every checkout fails validation.
-                        // The mark is the first character of the label, rendered on a coloured
-                        // plate — no icon files to upload, and it degrades to something legible
-                        // for a gateway we have not styled.
                         $payMethods = [];
                         if (setting('epay_api_url') && setting('epay_merchant_id') && setting('epay_merchant_key')) {
-                            $payMethods['alipay'] = ['label' => '支付宝', 'mark' => '支', 'tint' => 'alipay'];
-                            $payMethods['wechat'] = ['label' => '微信支付', 'mark' => '微', 'tint' => 'wechat'];
+                            $payMethods['alipay'] = '支付宝';
+                            $payMethods['wechat'] = '微信支付';
                         }
                         if (setting('epusdt_api_url') && setting('epusdt_api_token')) {
-                            $payMethods['usdt_trc20'] = ['label' => 'USDT TRC20', 'mark' => '₮', 'tint' => 'usdt'];
-                            $payMethods['usdt_bep20'] = ['label' => 'USDT BEP20', 'mark' => '₮', 'tint' => 'usdt'];
-                            $payMethods['usdt_polygon'] = ['label' => 'USDT Polygon', 'mark' => '₮', 'tint' => 'usdt'];
+                            $payMethods['usdt_trc20'] = 'USDT TRC20';
+                            $payMethods['usdt_bep20'] = 'USDT BEP20';
+                            $payMethods['usdt_polygon'] = 'USDT Polygon';
                         }
                         // Nothing configured yet: still offer the default gateways so the form
                         // stays usable and the operator sees a payment error rather than a
                         // validation error they cannot act on.
                         if (empty($payMethods)) {
-                            $payMethods = [
-                                'alipay' => ['label' => '支付宝', 'mark' => '支', 'tint' => 'alipay'],
-                                'wechat' => ['label' => '微信支付', 'mark' => '微', 'tint' => 'wechat'],
-                            ];
+                            $payMethods = ['alipay' => '支付宝', 'wechat' => '微信支付'];
                         }
 
                         $selectedPay = old('payment_method', array_key_first($payMethods));
@@ -187,13 +181,15 @@
                     <div class="form-group form-group-block">
                         <label class="form-label">支付方式</label>
                         <div class="pay-options" role="radiogroup" aria-label="支付方式">
-                            @foreach($payMethods as $value => $method)
+                            @foreach($payMethods as $value => $label)
                             <label class="pay-option">
                                 <input type="radio" name="payment_method" value="{{ $value }}"
                                        class="pay-radio" @checked($selectedPay === $value) required>
                                 <span class="pay-option-inner">
-                                    <span class="pay-icon pay-icon-{{ $method['tint'] }}">{{ $method['mark'] }}</span>
-                                    <span class="pay-label">{{ $method['label'] }}</span>
+                                    <span class="pay-icon">
+                                        @include('front.partials.pay-icon', ['method' => $value])
+                                    </span>
+                                    <span class="pay-label">{{ $label }}</span>
                                 </span>
                             </label>
                             @endforeach
