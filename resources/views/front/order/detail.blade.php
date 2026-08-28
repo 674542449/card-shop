@@ -11,19 +11,21 @@
     <div class="page-card" style="margin-bottom:15px">
         <div class="page-card-body text-center" style="padding:25px;">
             @if($order->isPaid())
-            <div style="font-size:48px;color:var(--teal);">&#9989;</div>
+            {{-- Decorative: the heading underneath states the status in words, so the
+                 glyph is hidden from assistive tech rather than read out as "check mark". --}}
+            <div style="font-size:48px;color:var(--teal);" aria-hidden="true">&#9989;</div>
             <h3 style="font-size:18px;margin:8px 0 4px;">支付成功</h3>
             <p style="color:var(--text-light);font-size:13px;">订单已完成，卡密信息如下</p>
             @elseif($order->isExpired() || $order->status === 'expired')
-            <div style="font-size:48px;">&#9200;</div>
+            <div style="font-size:48px;" aria-hidden="true">&#9200;</div>
             <h3 style="font-size:18px;margin:8px 0 4px;">订单已过期</h3>
             <p style="color:var(--text-light);font-size:13px;">此订单已超过支付时限</p>
             @elseif($order->status === 'closed')
-            <div style="font-size:48px;">&#10060;</div>
+            <div style="font-size:48px;" aria-hidden="true">&#10060;</div>
             <h3 style="font-size:18px;margin:8px 0 4px;">订单已关闭</h3>
             <p style="color:var(--text-light);font-size:13px;">此订单已被关闭</p>
             @else
-            <div style="font-size:48px;">&#9203;</div>
+            <div style="font-size:48px;" aria-hidden="true">&#9203;</div>
             <h3 style="font-size:18px;margin:8px 0 4px;">待支付</h3>
             <p style="color:var(--text-light);font-size:13px;margin-bottom:12px;">请尽快完成支付</p>
             <a href="/order/pay/{{ $order->order_no }}" class="btn-submit" style="display:inline-block;width:auto;padding:8px 30px;">继续支付</a>

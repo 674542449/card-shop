@@ -10,8 +10,14 @@
 --}}
 <div class="product-card">
     <a href="/product/{{ $product->slug }}">
+        {{-- alt="" on purpose: the whole card is one link and .card-title inside it
+             already carries the product name, so a descriptive alt would make a
+             screen reader announce the name twice for one link. Same reasoning as
+             the table thumbnail in product-row.blade.php.
+             width/height are the square the stylesheet renders (aspect-ratio 1/1),
+             not the file's own dimensions — they exist to reserve the box. --}}
         @if($product->image)
-        <img src="{{ $product->image }}" alt="{{ $product->name }}" class="card-img"
+        <img src="{{ $product->image }}" alt="" class="card-img"
              width="400" height="400" loading="lazy" decoding="async">
         @else
         @include('front.partials.image-placeholder', ['class' => 'card-img-placeholder'])

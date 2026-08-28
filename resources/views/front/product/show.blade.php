@@ -125,12 +125,23 @@
                                value="{{ old('email') }}" required placeholder="接收卡密信息">
                     </div>
 
+                    {{--
+                        No .form-input-wrap here. .pd-form .form-group is a flex row and
+                        .pd-form .form-input carries flex:1, so the input has to be a
+                        DIRECT child of .form-group to stretch. Wrapped, it fell back to
+                        its intrinsic width and rendered ~37px narrower than every other
+                        field in the column — a permanent visible misalignment.
+
+                        The wrapper only ever existed as the positioning context for a
+                        password visibility toggle. Nothing in public/js/front.js creates
+                        that toggle and no template renders one, so the wrapper was
+                        carrying a feature that does not exist. It and its stylesheet
+                        rules are gone.
+                    --}}
                     <div class="form-group">
                         <label class="form-label">查询密码</label>
-                        <div class="form-input-wrap">
-                            <input type="password" name="query_password" id="query_password" class="form-input"
-                                   minlength="6" required placeholder="至少6位，用于查询订单">
-                        </div>
+                        <input type="password" name="query_password" id="query_password" class="form-input"
+                               minlength="6" required placeholder="至少6位，用于查询订单">
                     </div>
 
                     <div class="form-group">
@@ -170,11 +181,18 @@
                     </div>
 
                     @if(setting('turnstile_site_key'))
-                    <div style="margin: 12px 0;">
+                    {{-- Same wrapper class as the one on front/order/query.blade.php so a
+                         single rule indents the widget to the form's 80px label column on
+                         both pages instead of two different inline margins. --}}
+                    <div class="form-turnstile">
                         <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}"></div>
                     </div>
                     @endif
 
+                    {{-- Left inline: this row appears on no other page, so pulling it into
+                         front.css would buy nothing but would put the buy form's headline
+                         figure at the mercy of a rule landing. The classes worth sharing
+                         (.form-turnstile, .form-error) are the ones that repeat. --}}
                     <div style="display:flex;justify-content:space-between;align-items:baseline;margin:15px 0 10px;">
                         <span style="color:var(--text-muted);font-size:14px;">应付金额</span>
                         <span id="total-price" style="font-size:22px;font-weight:700;color:var(--price-color);">¥{{ number_format($product->price * $product->min_quantity, 2) }}</span>
@@ -193,7 +211,22 @@
                 <div class="pd-tab-header">
                     <span class="active">商品描述</span>
                 </div>
-                <div class="pd-tab-content">
+                {{--
+                    .rich-text is the shared marker for a block that prints operator
+                    HTML from the admin editor unescaped. The article body carries it
+                    too (front/article/show.blade.php); those two are the only such
+                    blocks on the site, and any third one must carry it as well.
+
+                    It exists because that HTML arrives with hard inline dimensions —
+                    wangEditor writes style="width:1600px;height:1200px" and
+                    HTMLPurifier passes width/height through — which outrank the
+                    stylesheet's `img { height: auto }` and stretch the picture.
+                    front.css handles that today by naming .pd-tab-content and
+                    .article-detail .content side by side; .rich-text is the single
+                    hook those two can collapse into. Keep the page class as well —
+                    it is what the existing padding and type rules key on.
+                --}}
+                <div class="pd-tab-content rich-text">
                     {!! $descriptionHtml !!}
                 </div>
             </div>

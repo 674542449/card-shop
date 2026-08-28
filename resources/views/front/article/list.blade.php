@@ -32,10 +32,13 @@
 
             <div class="pagination-wrap">{{ $articles->links() }}</div>
             @else
-            <div class="text-center" style="padding:60px 0;color:var(--text-light)">
-                <div style="font-size:48px;margin-bottom:15px">&#128209;</div>
+            {{-- Same .empty-state block as front/product/list.blade.php: one wrapper, one
+                 stylesheet rule, and the quiet SVG mark instead of an emoji that renders
+                 at a different weight and colour on every platform. --}}
+            <div class="empty-state">
+                @include('front.partials.image-placeholder', ['class' => 'empty-state-glyph'])
                 <p>暂无文章</p>
-                <a href="/" class="btn-buy-sm" style="margin-top:10px">返回首页</a>
+                <a href="/" class="btn-buy-sm">返回首页</a>
             </div>
             @endif
         </div>

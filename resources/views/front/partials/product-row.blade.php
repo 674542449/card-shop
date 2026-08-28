@@ -13,6 +13,8 @@
 <tr>
     <td>
         <div class="prod-name-cell">
+            {{-- alt="" on purpose: the product name follows immediately in the same
+                 cell, so the thumbnail is decorative to a screen reader. --}}
             @if($product->image)
             <img src="{{ $product->image }}" alt="" class="prod-thumb"
                  width="40" height="40" loading="lazy" decoding="async">

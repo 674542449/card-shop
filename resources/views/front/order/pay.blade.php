@@ -34,7 +34,7 @@
     @if($expired)
     <div class="page-card">
         <div class="page-card-body text-center" style="padding:40px 20px;">
-            <div style="font-size:48px;margin-bottom:10px;">&#9200;</div>
+            <div style="font-size:48px;margin-bottom:10px;" aria-hidden="true">&#9200;</div>
             <h3 style="font-size:18px;margin-bottom:8px;">订单已过期</h3>
             <p style="color:var(--text-light);margin-bottom:15px;">此订单已超过支付时限，请重新下单。</p>
             <a href="/" class="btn-submit" style="display:inline-block;width:auto;padding:8px 30px;">返回首页</a>
@@ -61,7 +61,7 @@
     @else
     <div class="page-card" style="margin-bottom:15px">
         <div class="page-card-body text-center" style="padding:30px;">
-            <div style="font-size:36px;margin-bottom:10px;">&#9203;</div>
+            <div style="font-size:36px;margin-bottom:10px;" aria-hidden="true">&#9203;</div>
             <h3 style="font-size:16px;margin-bottom:5px;">等待支付</h3>
             <p style="color:var(--text-light);font-size:13px;">请按照支付页面提示完成支付</p>
         </div>

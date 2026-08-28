@@ -78,10 +78,11 @@
         @endforeach
     </div>
     @else
-    <div class="text-center" style="padding:60px 0;color:var(--text-light)">
-        <div style="font-size:48px;margin-bottom:15px">&#128235;</div>
+    {{-- Same .empty-state block as the product and article lists. --}}
+    <div class="empty-state">
+        @include('front.partials.image-placeholder', ['class' => 'empty-state-glyph'])
         <p>暂无订单记录</p>
-        <a href="/" class="btn-buy-sm" style="margin-top:10px">去购买</a>
+        <a href="/" class="btn-buy-sm">去购买</a>
     </div>
     @endif
 @endsection

@@ -16,7 +16,7 @@
                                value="{{ old('email') }}" required placeholder="购买时使用的邮箱">
                     </div>
                     @error('email')
-                    <div style="color:var(--price-color);font-size:13px;margin:-8px 0 10px 80px;">{{ $message }}</div>
+                    <div class="form-error">{{ $message }}</div>
                     @enderror
 
                     <div class="form-group">
@@ -25,11 +25,14 @@
                                required placeholder="购买时设置的查询密码">
                     </div>
                     @error('query_password')
-                    <div style="color:var(--price-color);font-size:13px;margin:-8px 0 10px 80px;">{{ $message }}</div>
+                    <div class="form-error">{{ $message }}</div>
                     @enderror
 
+                    {{-- Same .form-turnstile wrapper as the buy form on the product page:
+                         the indent to the label column is a stylesheet rule, not two
+                         hand-tuned inline margins that can drift apart. --}}
                     @if(setting('turnstile_site_key'))
-                    <div style="margin:12px 0 12px 80px;">
+                    <div class="form-turnstile">
                         <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}"></div>
                     </div>
                     @endif

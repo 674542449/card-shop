@@ -54,14 +54,26 @@
                     <span>{{ $article->views }} 次阅读</span>
                 </div>
 
+                {{--
+                    Cover banner. Same shape as .pd-image-wrap on the product page: a slot
+                    with a fixed ratio, and the image fills it. Styling lives in front.css
+                    under .article-detail .article-cover — the slot reserves the band before
+                    the file arrives, so the article text does not jump as it loads, and no
+                    upload can set its own size. No width/height attributes: the slot's
+                    aspect-ratio already reserves the space and the file's own dimensions
+                    are unknown. Not lazy-loaded — it is above the fold on this page.
+                --}}
                 @if($article->cover_image)
-                <div style="margin-bottom:20px;">
-                    <img src="{{ $article->cover_image }}" alt="{{ $article->title }}"
-                         style="width:100%;max-height:400px;object-fit:cover;border-radius:4px;">
+                <div class="article-cover">
+                    <img src="{{ $article->cover_image }}" alt="{{ $article->title }} 封面图"
+                         decoding="async" fetchpriority="high">
                 </div>
                 @endif
 
-                <div class="content">
+                {{-- .rich-text: the shared marker for editor-authored HTML printed
+                     unescaped — see the full note in front/product/show.blade.php. The
+                     .content class stays; front.css keys the article's type rules on it. --}}
+                <div class="content rich-text">
                     {!! $contentHtml !!}
                 </div>
             </article>
