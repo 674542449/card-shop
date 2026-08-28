@@ -157,18 +157,21 @@
                         $payMethods = [];
                         if (setting('epay_api_url') && setting('epay_merchant_id') && setting('epay_merchant_key')) {
                             $payMethods['alipay'] = '支付宝';
-                            $payMethods['wechat'] = '微信支付';
+                            $payMethods['wechat'] = '微信';
                         }
+                        // Network names only. The Tether mark beside each one already
+                        // says USDT, and repeating it five characters at a time is what
+                        // pushed the row past the width it has.
                         if (setting('epusdt_api_url') && setting('epusdt_api_token')) {
-                            $payMethods['usdt_trc20'] = 'USDT TRC20';
-                            $payMethods['usdt_bep20'] = 'USDT BEP20';
-                            $payMethods['usdt_polygon'] = 'USDT Polygon';
+                            $payMethods['usdt_trc20'] = 'TRC20';
+                            $payMethods['usdt_bep20'] = 'BEP20';
+                            $payMethods['usdt_polygon'] = 'Polygon';
                         }
                         // Nothing configured yet: still offer the default gateways so the form
                         // stays usable and the operator sees a payment error rather than a
                         // validation error they cannot act on.
                         if (empty($payMethods)) {
-                            $payMethods = ['alipay' => '支付宝', 'wechat' => '微信支付'];
+                            $payMethods = ['alipay' => '支付宝', 'wechat' => '微信'];
                         }
 
                         $selectedPay = old('payment_method', array_key_first($payMethods));

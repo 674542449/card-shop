@@ -1029,10 +1029,12 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .pay-option {
     display: block;
     cursor: pointer;
-    /* Equal share of the row, but never so narrow that the label is unreadable or the
-       tile untappable — below that width the container scrolls instead. */
-    flex: 1 1 0;
-    min-width: 104px;
+    /* Grow to share the row, but never shrink below the label. Equal-width tiles
+       (flex-basis 0) sized every gateway to the widest one and truncated the rest;
+       with five methods that meant no label fitted. Refusing to shrink means the
+       text is always complete and the strip scrolls when the row genuinely runs
+       out of room, rather than silently cutting words. */
+    flex: 1 0 auto;
 }
 .pay-radio {
     position: absolute;
@@ -1043,10 +1045,11 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .pay-option-inner {
     display: flex;
     align-items: center;
-    gap: 10px;
+    justify-content: center;
+    gap: 8px;
     height: 100%;
-    min-height: 48px;
-    padding: 8px 12px;
+    min-height: 46px;
+    padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: var(--radius);
     background: var(--card-bg);
@@ -1066,8 +1069,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 }
 /* The marks carry their own colour, so this is just a fixed box to hold one. */
 .pay-icon {
-    width: 26px;
-    height: 26px;
+    width: 22px;
+    height: 22px;
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -1082,12 +1085,9 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     font-size: 13px;
     line-height: 1.3;
     color: var(--text-color);
-    min-width: 0;
-    /* Keep the row honest: a long gateway name is clipped rather than allowed to
-       wrap and make one tile taller than its neighbours. */
+    /* No ellipsis. A payment method the buyer cannot read is worse than a strip
+       they have to scroll — the tile is sized to the full label instead. */
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* ============================================================
