@@ -24,7 +24,9 @@ class PaymentController extends Controller
 
         // Verify signature
         if (!$this->verifyEpaySignature($params)) {
-            Log::warning('EPay notify: invalid signature', $params);
+            Log::warning('EPay notify: invalid signature', $this->logContext($params, [
+                'out_trade_no', 'trade_no', 'pid', 'trade_status', 'money', 'sign',
+            ]));
             return 'fail';
         }
 
@@ -119,7 +121,9 @@ class PaymentController extends Controller
             // Answered 200 deliberately: a bad signature will never become good, so
             // asking for a retry would just repeat a rejected callback ten times. The
             // log line is the alert — a genuine one here means a misconfigured token.
-            Log::warning('EPUSDT notify: invalid signature', $params);
+            Log::warning('EPUSDT notify: invalid signature', $this->logContext($params, [
+                'order_id', 'trade_id', 'status', 'amount', 'actual_amount', 'signature',
+            ]));
 
             return response('invalid signature', 200)->header('Content-Type', 'text/plain');
         }
@@ -136,7 +140,9 @@ class PaymentController extends Controller
         $tradeNo = $params['trade_id'] ?? '';
 
         if (!$orderNo) {
-            Log::warning('EPUSDT notify: missing order_id', $params);
+            Log::warning('EPUSDT notify: missing order_id', $this->logContext($params, [
+                'trade_id', 'status', 'amount',
+            ]));
 
             return response('missing order_id', 200)->header('Content-Type', 'text/plain');
         }
@@ -151,6 +157,31 @@ class PaymentController extends Controller
         return $this->processPayment($orderNo, $tradeNo, (string) ($params['amount'] ?? ''), 'epusdt')
             ? response('ok', 200)->header('Content-Type', 'text/plain')
             : response('fulfilment failed, please retry', 500)->header('Content-Type', 'text/plain');
+    }
+
+    /**
+     * A bounded summary of an unauthenticated callback body, for logging.
+     *
+     * Both notify routes are CSRF-exempt and reachable by anyone, and both used to
+     * pass the whole of $request->all() as log context BEFORE any verification. The
+     * framework default writes one never-rotated storage/logs/laravel.log on the same
+     * disk as everything else, so that was an open invitation to append megabytes per
+     * request — and to bury the genuine signature-failure alert while doing it.
+     *
+     * Named keys only, each truncated: an attacker controls the key names too, so an
+     * allowlist is the bound, not a length cap on whatever arrives.
+     */
+    private function logContext(array $params, array $keys): array
+    {
+        $context = ['ip' => request()->ip()];
+
+        foreach ($keys as $key) {
+            if (isset($params[$key]) && is_scalar($params[$key])) {
+                $context[$key] = mb_substr((string) $params[$key], 0, 100);
+            }
+        }
+
+        return $context;
     }
 
     /**

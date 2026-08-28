@@ -46,6 +46,30 @@ class Coupon extends Model
     }
 
     /**
+     * Give back a use that was claimed at checkout but never turned into a sale.
+     *
+     * The claim happens when the order is CREATED — that placement is deliberate,
+     * it is the concurrency gate that stops two simultaneous buyers both passing
+     * isValid() on a single-use coupon. The consequence was that nothing gave the
+     * use back when the order then expired or was closed, so max_uses counted
+     * checkout attempts rather than sales: every abandoned cart permanently burned
+     * a promotional slot, and three per IP per half hour was enough to exhaust a
+     * launch coupon on purpose.
+     *
+     * Call this only on the branch where the status claim succeeded — the
+     * conditional UPDATE guarantees exactly one caller gets there per order. The
+     * used_count > 0 guard is belt and braces so no path can drive it negative.
+     */
+    public static function release(?int $couponId): void
+    {
+        if (!$couponId) {
+            return;
+        }
+
+        static::where('id', $couponId)->where('used_count', '>', 0)->decrement('used_count');
+    }
+
+    /**
      * Check if the coupon is currently valid for use.
      */
     public function isValid(): bool

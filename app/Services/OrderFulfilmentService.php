@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Card;
+use App\Models\Coupon;
 use App\Models\Order;
 use Closure;
 use Illuminate\Database\Eloquent\Collection;
@@ -48,6 +49,21 @@ class OrderFulfilmentService
                 'payment_no' => $tradeNo,
                 'paid_at' => now(),
             ],
+            // 'expired' is here because a buyer paying at T+30:01 is ordinary, not
+            // hostile. Nothing tells the gateway our 30-minute deadline, and BEpusdt
+            // retries a failed callback for about two hours — so a real payment
+            // routinely arrives after the expiry job (or the buyer's own pay-page
+            // poll) has flipped the order and released its cards. This used to be
+            // dropped in silence and acked to the gateway as handled: money taken,
+            // no cards, no log line, and no admin action that could repair it.
+            //
+            // Fulfilling it is safe because nothing else is relaxed —
+            // verifyGatewayPayment still checks the channel and the amount, and
+            // allocateCards re-allocates from unsold stock, which is exactly where
+            // the released cards went. 'closed' is deliberately NOT here: that
+            // status is an operator's decision, and overriding it automatically is
+            // not this code's call. It alerts instead.
+            ['pending', 'expired'],
         );
     }
 
@@ -72,30 +88,52 @@ class OrderFulfilmentService
                 'paid_at' => now(),
                 'payment_method' => $locked->payment_method ?: 'manual',
             ],
+            // Wider than the gateway's set, and deliberately so: this IS the repair
+            // path. An operator confirming payment on an expired or closed order is
+            // asserting that money arrived out of band, which is the one case the
+            // automatic path cannot resolve. Refusing it here left a paid order with
+            // no way back short of editing the database by hand.
+            ['pending', 'expired', 'closed'],
         );
     }
 
     /**
-     * @param Closure(Order): ?string $verify     Null to proceed, a refusal reason to stop.
-     * @param Closure(Order): array   $attributes Order columns to write on success.
+     * @param Closure(Order): ?string $verify       Null to proceed, a refusal reason to stop.
+     * @param Closure(Order): array   $attributes   Order columns to write on success.
+     * @param list<string>            $fromStatuses Statuses this transition may start from.
      */
     private function transition(
         string $orderNo,
         string $source,
         Closure $verify,
         Closure $attributes,
+        array $fromStatuses = ['pending'],
     ): OrderFulfilmentResult {
         /** @var OrderFulfilmentResult $result */
-        $result = DB::transaction(function () use ($orderNo, $source, $verify, $attributes) {
-            // The row lock is taken before the pending check is decided, so a
+        $result = DB::transaction(function () use ($orderNo, $source, $verify, $attributes, $fromStatuses) {
+            // The row lock is taken before the status check is decided, so a
             // gateway callback and an operator click arriving together serialise
             // here and the loser finds the order already paid.
             $order = Order::where('order_no', $orderNo)
-                ->where('status', 'pending')
+                ->whereIn('status', $fromStatuses)
                 ->lockForUpdate()
                 ->first();
 
             if (!$order) {
+                // Separate the benign miss from the expensive one. A repeat callback
+                // on an order already paid is what this branch was written for. Any
+                // OTHER status means a verified payment arrived for a sale we will
+                // not complete — nothing downstream ever looks at that, so it has to
+                // be raised here or it is lost entirely.
+                $existing = Order::where('order_no', $orderNo)->first();
+
+                if ($existing && $existing->status !== 'paid') {
+                    return OrderFulfilmentResult::orphaned(
+                        $existing,
+                        "订单状态为 {$existing->status}，支付到达时无法自动发货。"
+                    );
+                }
+
                 return OrderFulfilmentResult::skipped('订单不是待支付状态，无法确认支付。');
             }
 
@@ -114,8 +152,13 @@ class OrderFulfilmentService
                     'available' => $cards->count(),
                 ]);
 
+                // Flagged for an operator when it is a gateway callback: the buyer
+                // has paid and there is nothing to give them. On the manual path the
+                // operator is already reading the reason in the 422.
                 return OrderFulfilmentResult::refused(
-                    "库存不足，无法发货：需要 {$order->quantity} 张，可用 {$cards->count()} 张。"
+                    "库存不足，无法发货：需要 {$order->quantity} 张，可用 {$cards->count()} 张。",
+                    $order,
+                    $source !== 'manual',
                 );
             }
 
@@ -124,6 +167,18 @@ class OrderFulfilmentService
                 'order_id' => $order->id,
                 'sold_at' => now(),
             ]);
+
+            // Re-take the coupon use if this order had already been written off.
+            // Expiring or closing an order gives its coupon use back, which is right
+            // while the order is dead — but a late gateway payment brings it back to
+            // life, and without this the buyer would keep the discount while the
+            // coupon kept the slot. Deliberately not gated on max_uses: the sale is
+            // already paid for, so this is restoring the count, not granting a use.
+            if ($order->status !== 'pending'
+                && $order->coupon_id
+                && (float) $order->discount_amount > 0) {
+                Coupon::where('id', $order->coupon_id)->increment('used_count');
+            }
 
             $order->update($attributes($order));
 
@@ -137,8 +192,40 @@ class OrderFulfilmentService
         if ($result->wasFulfilled()) {
             $order = $result->order;
             $order->refresh()->load(['product', 'cards']);
-            $this->notifications->sendOrderEmail($order);
+
+            // A failed send is not a failed sale — the cards are delivered and the
+            // buyer can still read them at /order/query — but the operator has to
+            // learn about it from something other than silence.
+            if (!$this->notifications->sendOrderEmail($order)) {
+                $this->notifications->sendTelegramNotification(
+                    "<b>卡密邮件发送失败</b>\n订单号: <code>" . e($order->order_no) . "</code>\n"
+                    . '邮箱: ' . e($order->email) . "\n请检查邮件配置，买家仍可在订单查询页自取卡密。"
+                );
+            }
+
             $this->notifications->notifyNewOrder($order);
+        }
+
+        // Money reached the gateway and no card left the shelf. Nothing else in the
+        // system reports this: the callback is acked as handled (correctly — a retry
+        // would land in the same state), no email is sent, and the admin order list
+        // shows an ordinary unpaid order. Without this the first anyone hears of it
+        // is the buyer asking where their cards are.
+        if ($result->needsOperatorAttention && $result->order) {
+            Log::error('Verified payment could not be fulfilled', [
+                'order_no' => $result->order->order_no,
+                'status' => $result->order->status,
+                'source' => $source,
+                'reason' => $result->reason,
+            ]);
+
+            $this->notifications->sendTelegramNotification(
+                "<b>⚠ 支付已到账但未发货</b>\n订单号: <code>" . e($result->order->order_no) . "</code>\n"
+                . '订单状态: ' . e($result->order->status) . "\n"
+                . '支付渠道: ' . e($source) . "\n"
+                . '原因: ' . e((string) $result->reason) . "\n"
+                . '请核对网关流水后在后台手动确认支付。'
+            );
         }
 
         return $result;
@@ -147,14 +234,15 @@ class OrderFulfilmentService
     /**
      * The cards this order will deliver.
      *
-     * Normally these are the ones locked at checkout, and today that is always the
-     * case: both entry points require the order to still be pending, and every path
-     * that releases a pending order's locked cards moves the order out of pending in
-     * the same transaction — the expiry job, the buyer-facing expiry in
-     * Front\OrderController::pay, and the admin's close. So the fallback below is
-     * unreachable as the code stands. It is kept as defence in depth, because the
-     * failure it prevents — marking an order paid while allocating nothing, and
-     * emailing the buyer an empty card list — is worse than a redundant query.
+     * Normally these are the ones locked at checkout. The fallback used to be dead
+     * code kept as defence in depth; it is now the live path for the case that
+     * matters most. Both entry points accept an 'expired' order, and expiring an
+     * order is precisely what releases its locked cards — so a payment arriving
+     * after the deadline finds nothing held and is served from unsold stock instead.
+     *
+     * If that stock is gone the caller refuses and raises an operator alert rather
+     * than marking the order paid with nothing allocated, which would email the
+     * buyer an empty card list.
      *
      * Both branches take a row lock: without it two operators confirming two orders
      * for the same product can be handed the same rows and sell one card twice.

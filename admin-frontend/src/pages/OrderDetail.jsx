@@ -109,16 +109,28 @@ export default function OrderDetail() {
           返回订单列表
         </Button>
         {order.status === 'pending' && (
-          <>
-            <Popconfirm title="确认关闭此订单？" onConfirm={handleClose}>
-              <Button loading={actionLoading}>关闭订单</Button>
-            </Popconfirm>
-            <Popconfirm title="确认标记为已支付？" onConfirm={handleMarkPaid}>
-              <Button type="primary" loading={actionLoading}>
-                标记已支付
-              </Button>
-            </Popconfirm>
-          </>
+          <Popconfirm title="确认关闭此订单？" onConfirm={handleClose}>
+            <Button loading={actionLoading}>关闭订单</Button>
+          </Popconfirm>
+        )}
+        {/* Also offered on expired and closed orders, because that is the case this
+            button matters most in: a gateway payment that arrived after the order
+            lapsed cannot be delivered automatically, and this is the only way to
+            complete the sale. Restricted to pending, the repair existed in the API
+            and was unreachable from the screen the operator is looking at. */}
+        {['pending', 'expired', 'closed'].includes(order.status) && (
+          <Popconfirm
+            title={
+              order.status === 'pending'
+                ? '确认标记为已支付？'
+                : '该订单已失效。确认在网关流水中查到这笔付款后再标记，系统会重新分配卡密并发货。'
+            }
+            onConfirm={handleMarkPaid}
+          >
+            <Button type="primary" loading={actionLoading}>
+              标记已支付
+            </Button>
+          </Popconfirm>
         )}
         {order.status === 'paid' && (
           <Popconfirm title="确认重新发送邮件？" onConfirm={handleResend}>

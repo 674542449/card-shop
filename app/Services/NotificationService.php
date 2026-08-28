@@ -12,7 +12,17 @@ class NotificationService
     /**
      * Send order completion email with card details to the buyer.
      */
-    public function sendOrderEmail(Order $order): void
+    /**
+     * @return bool Whether the mail was handed to the transport without error.
+     *
+     * It returns a value because the caller has to know. This used to be `void` with
+     * a catch-all that only wrote a log line, so 补发卡密 in the admin reported
+     * "卡密已重新发送" whether or not anything was sent — and the shipped .env.example
+     * has MAIL_HOST and MAIL_FROM_ADDRESS empty, which throws before the transport is
+     * even reached. The one tool for repairing a failed delivery was as blind as the
+     * failure it existed to repair.
+     */
+    public function sendOrderEmail(Order $order): bool
     {
         try {
             $order->loadMissing(['product', 'cards']);
@@ -47,6 +57,16 @@ class NotificationService
             // and a card containing a tag injects it into the email body.
             $body = strtr($template, array_map(fn ($v) => e($v), $values));
 
+            // Mail::html sends text/html, and the SEEDED template is pure plain text
+            // whose entire structure is newlines — HTML collapses every one of them,
+            // so on a fresh install the buyer's card secrets arrived as a single
+            // run-on paragraph. The built-in fallback template below wraps {{cards}}
+            // in <pre> and needs no help, hence the test for markup rather than a
+            // blanket nl2br.
+            if (!preg_match('/<[a-z][^>]*>/i', $template)) {
+                $body = nl2br($body);
+            }
+
             // The subject is a mail header, not HTML. Escaping it turned a site name
             // with an & into "A&amp;B" in the buyer's inbox, so it gets the raw values.
             $subject = strtr(
@@ -57,12 +77,16 @@ class NotificationService
             Mail::html($body, function ($message) use ($order, $subject) {
                 $message->to($order->email)->subject($subject);
             });
+
+            return true;
         } catch (\Throwable $e) {
             Log::error('Failed to send order email', [
                 'order_no' => $order->order_no,
                 'email' => $order->email,
                 'error' => $e->getMessage(),
             ]);
+
+            return false;
         }
     }
 

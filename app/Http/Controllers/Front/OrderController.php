@@ -12,11 +12,13 @@ use App\Models\Product;
 use App\Services\EpusdtService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
@@ -258,6 +260,12 @@ class OrderController extends Controller
                     'status' => 'unsold',
                     'locked_at' => null,
                 ]);
+
+            // The coupon use goes back with the cards — it was claimed when the order
+            // was created, before any money moved.
+            if ($order->coupon_id && (float) $order->discount_amount > 0) {
+                Coupon::release($order->coupon_id);
+            }
         });
     }
 
@@ -309,12 +317,58 @@ class OrderController extends Controller
         // Case-insensitive: a buyer who typed Buyer@Example.com at checkout and
         // buyer@example.com at the query form is the same person, and telling them
         // their order does not exist is indistinguishable from losing it.
-        return Order::whereRaw('lower(email) = ?', [mb_strtolower($email)])
+        $candidates = Order::whereRaw('lower(email) = ?', [mb_strtolower($email)])
+            // The 25-row window is applied by the DATABASE, before any password is
+            // checked, so a row outside it can never match however correct the
+            // password. Nobody verifies the email at checkout and nothing ever
+            // deletes an expired order, so 25 junk orders placed against a stranger's
+            // address used to push their real one out of the window permanently and
+            // lock them out of cards they had paid for. Restricting the window to
+            // orders that are paid or still live means evicting someone now costs the
+            // attacker 25 completed purchases.
+            ->where(function ($q) {
+                $q->where('status', 'paid')
+                  ->orWhere(function ($q2) {
+                      $q2->where('status', 'pending')->where('expires_at', '>', now());
+                  });
+            })
             ->orderByDesc('created_at')
             ->limit(25)
-            ->get()
+            ->get();
+
+        if ($candidates->isEmpty()) {
+            // Equalise the cost of "this address has never bought here" with a real
+            // check. Without it the reply time says exactly what the deliberately
+            // identical error message refuses to: an unknown address returns in
+            // single-digit ms, a known one after a bcrypt at cost 12.
+            Hash::check($password, $this->timingPaddingHash());
+
+            return $candidates;
+        }
+
+        return $candidates
             ->filter(fn (Order $order) => Hash::check($password, $order->query_password))
             ->values();
+    }
+
+    /**
+     * A real bcrypt hash of a value nobody knows, used only to spend the time a
+     * genuine verification would have spent.
+     *
+     * Computed once and cached rather than hard-coded: a hand-written hash that did
+     * not parse would make password_verify() return false immediately and pay none
+     * of the cost, which is the entire point of it.
+     */
+    private function timingPaddingHash(): string
+    {
+        try {
+            return Cache::rememberForever(
+                'order-auth-timing-padding',
+                fn () => Hash::make(Str::random(40))
+            );
+        } catch (\Throwable $e) {
+            return Hash::make(Str::random(40));
+        }
     }
 
     /**
@@ -331,18 +385,28 @@ class OrderController extends Controller
     }
 
     /**
-     * Rate limit on the email as well as the IP.
+     * Rate limit the (email, IP) pair, the IP, and the email.
      *
-     * An IP-only bucket is useless here: the attacker chooses the IP. Keying on the
-     * target address too means guessing one buyer's password is limited no matter how
-     * many addresses the attacker rotates through.
+     * An IP-only bucket is useless here: the attacker chooses the IP. But an
+     * email-only bucket was worse than useless — it is keyed on the TARGET's
+     * identifier, which anyone who knows the address can spend. Five cheap POSTs
+     * every fifteen minutes locked a paying buyer out of the only self-service route
+     * to the cards they had bought, indefinitely, and /order/verify needs no
+     * Turnstile and no order to exist.
+     *
+     * So the tight bucket is on the pair — an attacker now has to burn one IP per
+     * five attempts — while a much wider email bucket still bounds a distributed
+     * guess against one buyer without being cheap enough to weaponise.
      */
     private function tooManyAttempts(Request $request, string $email): bool
     {
-        $emailKey = 'order-auth-email|' . sha1(mb_strtolower($email));
+        $emailHash = sha1(mb_strtolower($email));
+
+        $pairKey = 'order-auth-pair|' . $emailHash . '|' . $request->ip();
+        $emailKey = 'order-auth-email|' . $emailHash;
         $ipKey = 'order-auth-ip|' . $request->ip();
 
-        foreach ([$emailKey => 5, $ipKey => 20] as $key => $max) {
+        foreach ([$pairKey => 5, $emailKey => 50, $ipKey => 20] as $key => $max) {
             if (RateLimiter::tooManyAttempts($key, $max)) {
                 return true;
             }
@@ -350,6 +414,7 @@ class OrderController extends Controller
 
         // Hit before checking the password, and never cleared on success: a success
         // must not reset a bucket an attacker can manufacture successes in.
+        RateLimiter::hit($pairKey, 900);
         RateLimiter::hit($emailKey, 900);
         RateLimiter::hit($ipKey, 900);
 

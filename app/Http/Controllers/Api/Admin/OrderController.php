@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Card;
+use App\Models\Coupon;
 use App\Models\OperationLog;
 use App\Models\Order;
 use App\Services\NotificationService;
@@ -108,6 +109,12 @@ class OrderController extends Controller
                 ->where('status', 'locked')
                 ->update(['status' => 'unsold', 'order_id' => null, 'locked_at' => null]);
 
+            // Claimed at checkout before any money moved, so closing the order has to
+            // give it back — otherwise max_uses counts abandoned carts, not sales.
+            if ($order->coupon_id && (float) $order->discount_amount > 0) {
+                Coupon::release($order->coupon_id);
+            }
+
             return true;
         });
 
@@ -122,8 +129,12 @@ class OrderController extends Controller
 
     public function markPaid(Order $order)
     {
-        if ($order->status !== 'pending') {
-            return response()->json(['message' => '只能确认待支付订单。'], 422);
+        // Expired and closed are allowed on purpose. This is the repair path for a
+        // payment that reached the gateway after the order lapsed and could not be
+        // delivered automatically — refusing everything but 'pending' meant those
+        // sales could only be fixed by editing the database by hand.
+        if (!in_array($order->status, ['pending', 'expired', 'closed'], true)) {
+            return response()->json(['message' => '该订单无法确认支付。'], 422);
         }
 
         // Confirming payment runs the same fulfilment the gateway callback runs —
@@ -155,9 +166,14 @@ class OrderController extends Controller
             return response()->json(['message' => '该订单没有已发放的卡密，无法补发。'], 422);
         }
 
-        // Previously this only wrote a log line and reported success without sending
-        // anything.
-        $this->notifications->sendOrderEmail($order);
+        // Reported before the send is confirmed is the same bug this method was
+        // written to fix, one layer down: sendOrderEmail used to swallow every
+        // failure, so the operator closed the ticket believing mail went out.
+        if (!$this->notifications->sendOrderEmail($order)) {
+            return response()->json([
+                'message' => '邮件发送失败，请检查邮件配置后重试。买家仍可在订单查询页自行获取卡密。',
+            ], 500);
+        }
 
         OperationLog::log('补发卡密', 'order', $order->id, "订单 {$order->order_no} 补发卡密");
 

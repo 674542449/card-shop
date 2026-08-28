@@ -167,15 +167,32 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
-        if ($product->orders()->count() > 0) {
+        $deleted = DB::transaction(function () use ($product) {
+            // Re-check under a row lock. The count used to be read outside any
+            // transaction and the cards deleted on their own: an order created in the
+            // gap had its cards deleted out from under it, and then orders.product_id
+            // (restrictOnDelete) aborted the product delete — leaving a live pending
+            // order holding rows that no longer exist.
+            $locked = Product::whereKey($product->id)->lockForUpdate()->first();
+
+            if (!$locked || $locked->orders()->count() > 0) {
+                return false;
+            }
+
+            // Scoped to unsold. A locked or sold card belongs to an order, and an
+            // order is exactly what the guard above has just ruled out.
+            $locked->cards()->where('status', 'unsold')->delete();
+            $locked->wholesalePrices()->delete();
+            $locked->delete();
+
+            return true;
+        });
+
+        if (!$deleted) {
             return response()->json(['message' => '该商品有关联订单，无法删除。'], 422);
         }
 
-        $product->cards()->delete();
-        $product->wholesalePrices()->delete();
-
         OperationLog::log('删除商品', 'product', $product->id, $product->name);
-        $product->delete();
 
         return response()->json(['message' => 'ok']);
     }

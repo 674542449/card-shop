@@ -125,20 +125,19 @@ class OrderController extends Controller
 
         $order = Order::with(['product', 'cards'])
             ->where('order_no', $orderNo)
-            ->where('email', $request->query('email'))
+            // Case-insensitive, matching the buyer-facing lookup. A buyer who typed
+            // Buyer@Example.com at checkout is the same person as buyer@example.com.
+            ->whereRaw('lower(email) = ?', [mb_strtolower((string) $request->query('email'))])
             ->first();
 
-        if (!$order) {
+        // ONE response for "no such (order, email) pair" and for "wrong password".
+        // Two distinct answers — 404 versus 403 — told a caller which pairs are real,
+        // and this endpoint emits card secrets on success. The buyer-facing path
+        // merges these two cases deliberately; this one had not.
+        if (!$order || !Hash::check($request->query('query_password'), $order->query_password)) {
             return response()->json([
-                'message' => '订单不存在',
+                'message' => '订单不存在或查询密码错误',
             ], 404);
-        }
-
-        // Verify query password
-        if (!Hash::check($request->query('query_password'), $order->query_password)) {
-            return response()->json([
-                'message' => '查询密码错误',
-            ], 403);
         }
 
         $response = [

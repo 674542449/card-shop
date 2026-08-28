@@ -13,6 +13,15 @@ use App\Http\Controllers\Api\Admin as ApiAdmin;
 // Payment callbacks (no CSRF, no blacklist check — external payment providers).
 // EPay-compatible gateways call notify_url with GET in some deployments and POST in
 // others, so accept both rather than silently 405-ing half of them.
+//
+// Deliberately NOT throttled. Laravel's throttle is keyed on the caller's IP, and the
+// caller here is the gateway — one address for every buyer's callback. BEpusdt sends a
+// pending callback per order per minute, so any limit low enough to be worth having
+// would 429 real payment notifications on a busy day, and a dropped callback means a
+// paid order that never delivers. The flooding these endpoints invite is bounded
+// instead where it does no such damage: PaymentController::logContext caps what an
+// unauthenticated body can write to the log, config/logging.php rotates it daily with
+// 14-day retention, and nginx already applies limit_req 30r/s per IP.
 Route::match(['get', 'post'], '/payment/epay/notify', [Front\PaymentController::class, 'epayNotify']);
 Route::match(['get', 'post'], '/payment/epusdt/notify', [Front\PaymentController::class, 'epusdtNotify']);
 

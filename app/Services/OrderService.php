@@ -137,6 +137,29 @@ class OrderService
                 Card::whereIn('id', $cards->pluck('id'))
                     ->update(['order_id' => $order->id]);
 
+                // This path applied the discount and stored coupon_id but never
+                // touched used_count — the counter is written in exactly one place in
+                // the codebase, and it was the web checkout. So on /api/v1/orders,
+                // max_uses was a check with no act: isValid() read a number nothing
+                // ever incremented, and a max_uses=1 100%-off coupon stayed redeemable
+                // forever while the admin list kept showing 0/1.
+                //
+                // The conditional UPDATE is the gate, not bookkeeping: isValid() above
+                // is a check-then-act two concurrent callers both pass, so the limit
+                // has to be enforced by the write itself.
+                if ($coupon && bccomp($discountAmount, '0', 2) > 0) {
+                    $claimed = Coupon::where('id', $coupon->id)
+                        ->where(function ($q) {
+                            $q->where('max_uses', '<=', 0)
+                              ->orWhereColumn('used_count', '<', 'max_uses');
+                        })
+                        ->increment('used_count');
+
+                    if ($claimed === 0) {
+                        throw new RuntimeException('优惠券已达使用上限');
+                    }
+                }
+
                 return $order;
             } catch (\Throwable $e) {
                 // Release cards if order creation fails
@@ -211,6 +234,13 @@ class OrderService
                 $lockedCards = $order->cards()->where('status', 'locked')->get();
                 $this->cardService->releaseCards($lockedCards);
 
+                // The coupon goes back with the cards. Inside the claimed branch, so
+                // the same conditional UPDATE that stops a double release of the
+                // cards stops a double release of the coupon.
+                if ($order->coupon_id && (float) $order->discount_amount > 0) {
+                    Coupon::release($order->coupon_id);
+                }
+
                 return true;
             });
 
@@ -233,7 +263,13 @@ class OrderService
             throw new RuntimeException('只能重发已支付订单的卡密');
         }
 
-        $this->notificationService->sendOrderEmail($order);
+        // Propagated, not swallowed. Nothing calls this today — the admin goes
+        // straight to Api\Admin\OrderController::resend — but a resend that reports
+        // success without sending is the exact bug that method just had, and leaving
+        // a second copy of it here is how it comes back.
+        if (!$this->notificationService->sendOrderEmail($order)) {
+            throw new RuntimeException('邮件发送失败，请检查邮件配置');
+        }
     }
 
     /**
@@ -252,10 +288,24 @@ class OrderService
         }
 
         DB::transaction(function () use ($order) {
-            $order->update(['status' => 'closed']);
+            // Conditional, like every other status write: the checks above read a
+            // model loaded before the transaction, so a gateway callback can pay the
+            // order in the gap and an unconditional write would stamp 'closed' over
+            // a completed sale.
+            $claimed = Order::where('id', $order->id)
+                ->whereIn('status', ['pending', 'expired'])
+                ->update(['status' => 'closed']);
+
+            if ($claimed === 0) {
+                throw new RuntimeException('订单状态已变化，请刷新后重试');
+            }
 
             $lockedCards = $order->cards()->where('status', 'locked')->get();
             $this->cardService->releaseCards($lockedCards);
+
+            if ($order->coupon_id && (float) $order->discount_amount > 0) {
+                Coupon::release($order->coupon_id);
+            }
         });
     }
 }
