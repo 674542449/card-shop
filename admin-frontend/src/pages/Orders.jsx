@@ -1,9 +1,15 @@
 import React, { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProTable } from '@ant-design/pro-components';
-import { Tag, Button } from 'antd';
+import { Tag, Button, message } from 'antd';
 import { ExportOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { getOrders, exportOrders } from '../services/api';
+
+// Laravel serialises timestamps to UTC ISO strings. Rendering them raw showed the
+// operator a time 8 hours behind the app's Asia/Shanghai clock; dayjs converts to the
+// viewer's local zone.
+const fmt = (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '-');
 
 const statusMap = {
   pending: { text: '待支付', color: 'orange' },
@@ -12,10 +18,17 @@ const statusMap = {
   expired: { text: '已过期', color: 'red' },
 };
 
+// Must match the values the backend actually stores: CreateOrderRequest allows the
+// three usdt_* variants, and OrderController::markPaid writes 'manual'. The old map
+// had a bare 'usdt' that is never stored and was missing 'manual' entirely, so those
+// orders showed a raw enum value.
 const paymentMethodMap = {
   alipay: '支付宝',
-  wechat: '微信',
-  usdt: 'USDT',
+  wechat: '微信支付',
+  usdt_trc20: 'USDT (TRC20)',
+  usdt_bep20: 'USDT (BEP20)',
+  usdt_polygon: 'USDT (Polygon)',
+  manual: '人工确认',
 };
 
 export default function Orders() {
@@ -25,15 +38,18 @@ export default function Orders() {
   const handleExport = async () => {
     try {
       const res = await exportOrders({});
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      // The endpoint returns CSV, not a spreadsheet; the .xlsx name made Excel warn
+      // about a corrupt file on every export.
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' }));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', 'orders.xlsx');
+      link.setAttribute('download', 'orders.csv');
       document.body.appendChild(link);
       link.click();
       link.remove();
+      window.URL.revokeObjectURL(url);
     } catch {
-      // ignore
+      message.error('导出失败');
     }
   };
 
@@ -59,11 +75,9 @@ export default function Orders() {
       dataIndex: 'payment_method',
       width: 100,
       valueType: 'select',
-      valueEnum: {
-        alipay: { text: '支付宝' },
-        wechat: { text: '微信' },
-        usdt: { text: 'USDT' },
-      },
+      valueEnum: Object.fromEntries(
+        Object.entries(paymentMethodMap).map(([value, text]) => [value, { text }])
+      ),
       render: (_, record) => paymentMethodMap[record.payment_method] || record.payment_method || '-',
     },
     {
@@ -87,7 +101,7 @@ export default function Orders() {
       dataIndex: 'created_at',
       valueType: 'dateRange',
       width: 180,
-      render: (_, record) => record.created_at,
+      render: (_, record) => fmt(record.created_at),
       search: {
         transform: (value) => ({
           start_date: value[0],
@@ -117,10 +131,11 @@ export default function Orders() {
       request={async (params) => {
         const { current, pageSize, ...rest } = params;
         const res = await getOrders({ page: current, per_page: pageSize, ...rest });
-        const d = res.data?.data || res.data;
+        const body = res.data ?? {};
+        const list = Array.isArray(body) ? body : (body.data ?? []);
         return {
-          data: d.data || d,
-          total: d.total || d.length,
+          data: list,
+          total: Array.isArray(body) ? list.length : (body.total ?? list.length),
           success: true,
         };
       }}

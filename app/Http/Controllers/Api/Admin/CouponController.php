@@ -16,10 +16,18 @@ class CouponController extends Controller
         // Alias must not be `used_count`: that is a real column, and withCount would
         // overwrite it in the payload so the admin sees a different number from the one
         // the redemption limit is actually enforced against.
-        $coupons = Coupon::with('product:id,name')
-            ->withCount('orders as orders_count')
-            ->orderByDesc('id')
-            ->paginate($request->get('pageSize', 20));
+        $query = Coupon::with('product:id,name')->withCount('orders as orders_count');
+
+        // The table renders a search form for these two; without the filters it
+        // submitted them and got the unfiltered list back.
+        if (filled($request->input('code'))) {
+            $query->where('code', 'ilike', '%' . $request->input('code') . '%');
+        }
+        if ($request->filled('type')) {
+            $query->where('type', $request->input('type'));
+        }
+
+        $coupons = $query->orderByDesc('id')->paginate($request->get('pageSize', 20));
 
         $products = Product::where('is_active', true)->ordered()->get(['id', 'name']);
 
@@ -37,7 +45,9 @@ class CouponController extends Controller
             'type' => 'required|in:fixed,percent',
             'value' => 'required|numeric|min:0.01',
             'product_id' => 'nullable|exists:products,id',
-            'max_uses' => 'nullable|integer|min:1',
+            // 0 is the unlimited sentinel and the column default, so min:1 made every
+            // coupon created with the default impossible to save again.
+            'max_uses' => 'nullable|integer|min:0',
             'is_active' => 'boolean',
             'expires_at' => 'nullable|date',
         ]);
@@ -59,7 +69,9 @@ class CouponController extends Controller
             'type' => 'required|in:fixed,percent',
             'value' => 'required|numeric|min:0.01',
             'product_id' => 'nullable|exists:products,id',
-            'max_uses' => 'nullable|integer|min:1',
+            // 0 is the unlimited sentinel and the column default, so min:1 made every
+            // coupon created with the default impossible to save again.
+            'max_uses' => 'nullable|integer|min:0',
             'is_active' => 'boolean',
             'expires_at' => 'nullable|date',
         ]);

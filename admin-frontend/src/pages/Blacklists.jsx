@@ -24,7 +24,7 @@ export default function Blacklists() {
     },
     { title: '值', dataIndex: 'value', copyable: true },
     { title: '原因', dataIndex: 'reason', search: false, ellipsis: true },
-    { title: '创建时间', dataIndex: 'created_at', search: false, width: 180 },
+    { title: '创建时间', dataIndex: 'created_at', valueType: 'dateTime', search: false, width: 180 },
     {
       title: '操作',
       valueType: 'option',
@@ -59,10 +59,11 @@ export default function Blacklists() {
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getBlacklists({ page: params.current, per_page: params.pageSize, ...params });
-          const d = res.data?.data || res.data;
+          const body = res.data ?? {};
+          const list = Array.isArray(body) ? body : (body.data ?? []);
           return {
-            data: d.data || d,
-            total: d.total || d.length,
+            data: list,
+            total: Array.isArray(body) ? list.length : (body.total ?? list.length),
             success: true,
           };
         }}

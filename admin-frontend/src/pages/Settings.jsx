@@ -118,6 +118,11 @@ export default function Settings() {
     <Card title="系统设置">
       <ProForm
         form={form}
+        // Without this, clearing the logo or the QR code submits no key at all and the
+        // old image is kept. Fields on tabs the operator never opened stay unregistered
+        // and so remain absent from the payload either way, and SettingController only
+        // writes keys the request actually carries — so nothing else gets wiped.
+        omitNil={false}
         initialValues={initialValues}
         onFinish={handleSave}
         submitter={{

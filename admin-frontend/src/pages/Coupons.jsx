@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import dayjs from 'dayjs';
 import {
   ProTable,
   ModalForm,
@@ -82,7 +83,8 @@ export default function Coupons() {
       width: 180,
       // Reading the node instead of the record made this dead: ProTable renders a null
       // cell as "-", which is truthy, so "永不过期" never appeared.
-      render: (_, record) => record.expires_at || '永不过期',
+      render: (_, record) =>
+        record.expires_at ? dayjs(record.expires_at).format('YYYY-MM-DD HH:mm') : '永不过期',
     },
     {
       title: '操作',
@@ -127,10 +129,11 @@ export default function Coupons() {
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getCoupons({ page: params.current, per_page: params.pageSize, ...params });
-          const d = res.data?.data || res.data;
+          const body = res.data ?? {};
+          const list = Array.isArray(body) ? body : (body.data ?? []);
           return {
-            data: d.data || d,
-            total: d.total || d.length,
+            data: list,
+            total: Array.isArray(body) ? list.length : (body.total ?? list.length),
             success: true,
           };
         }}
@@ -156,7 +159,15 @@ export default function Coupons() {
         modalProps={{ destroyOnClose: true }}
         onFinish={async (values) => {
           try {
-            const data = { ...values, product_id: values.product_id || null };
+            // omitNil removes cleared fields from `values`, so without restoring them
+            // here "clear the expiry" and "reset the usage limit" both save as no-ops.
+            // 0 is the unlimited sentinel for max_uses, and the column is NOT NULL.
+            const data = {
+              ...values,
+              product_id: values.product_id || null,
+              expires_at: values.expires_at ?? null,
+              max_uses: values.max_uses ?? 0,
+            };
             if (editingRecord) {
               await updateCoupon(editingRecord.id, data);
               message.success('更新成功');
@@ -182,7 +193,7 @@ export default function Coupons() {
           ]}
           rules={[{ required: true, message: '请选择类型' }]}
         />
-        <ProFormDigit name="value" label="优惠值" min={0} rules={[{ required: true, message: '请输入优惠值' }]} extra="固定金额填写金额数值，百分比填写百分比数值(如10表示10%)" />
+        <ProFormDigit name="value" label="优惠值" min={0.01} rules={[{ required: true, message: '请输入优惠值' }]} extra="固定金额填写金额数值，百分比填写百分比数值(如10表示10%)" />
         <ProFormSelect name="product_id" label="适用商品" options={productOptions} placeholder="留空表示全部商品" />
         <ProFormDigit name="max_uses" label="最大使用次数" min={0} placeholder="留空表示不限" />
         <ProFormSwitch name="is_active" label="启用" />

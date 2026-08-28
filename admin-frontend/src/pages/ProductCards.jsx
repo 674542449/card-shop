@@ -52,7 +52,8 @@ export default function ProductCards() {
       search: false,
       render: (_, record) => record.order?.order_no || '-',
     },
-    { title: '创建时间', dataIndex: 'created_at', search: false, width: 180 },
+    // valueType dateTime converts the UTC ISO string the API sends into local time.
+    { title: '创建时间', dataIndex: 'created_at', valueType: 'dateTime', search: false, width: 180 },
     {
       title: '操作',
       valueType: 'option',
@@ -83,8 +84,10 @@ export default function ProductCards() {
       return;
     }
     try {
-      await batchDeleteCards(selectedRowKeys);
-      message.success('批量删除成功');
+      // Only unsold cards are deletable, so report the server's own count instead of
+      // claiming success for rows it refused to touch.
+      const res = await batchDeleteCards(selectedRowKeys);
+      message.success(res.data?.message || '批量删除成功');
       setSelectedRowKeys([]);
       actionRef.current?.reload();
     } catch (err) {
@@ -113,10 +116,11 @@ export default function ProductCards() {
         }}
         request={async (params) => {
           const res = await getProductCards(productId, { page: params.current, per_page: params.pageSize, ...params });
-          const d = res.data?.data || res.data;
+          const body = res.data ?? {};
+          const list = Array.isArray(body) ? body : (body.data ?? []);
           return {
-            data: d.data || d,
-            total: d.total || d.length,
+            data: list,
+            total: Array.isArray(body) ? list.length : (body.total ?? list.length),
             success: true,
           };
         }}

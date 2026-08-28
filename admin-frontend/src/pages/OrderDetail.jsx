@@ -3,9 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ProCard, ProDescriptions } from '@ant-design/pro-components';
 import { Button, Tag, Spin, message, Popconfirm, Space, Typography } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
 import { getOrder, closeOrder, markPaid, resendOrder } from '../services/api';
 
 const { Paragraph } = Typography;
+
+// Timestamps arrive as UTC ISO strings; rendering them raw showed a time 8 hours
+// behind the app's Asia/Shanghai clock.
+const fmt = (v) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-');
 
 const statusMap = {
   pending: { text: '待支付', color: 'orange' },
@@ -14,10 +19,14 @@ const statusMap = {
   expired: { text: '已过期', color: 'red' },
 };
 
+// Kept in step with the values the backend really stores.
 const paymentMethodMap = {
   alipay: '支付宝',
-  wechat: '微信',
-  usdt: 'USDT',
+  wechat: '微信支付',
+  usdt_trc20: 'USDT (TRC20)',
+  usdt_bep20: 'USDT (BEP20)',
+  usdt_polygon: 'USDT (Polygon)',
+  manual: '人工确认',
 };
 
 export default function OrderDetail() {
@@ -132,11 +141,12 @@ export default function OrderDetail() {
           <ProDescriptions.Item label="支付方式">
             {paymentMethodMap[order.payment_method] || order.payment_method || '-'}
           </ProDescriptions.Item>
-          <ProDescriptions.Item label="优惠券">{order.coupon_code || '-'}</ProDescriptions.Item>
+          {/* orders has no coupon_code column; the controller eager-loads the relation. */}
+          <ProDescriptions.Item label="优惠券">{order.coupon?.code || '-'}</ProDescriptions.Item>
           <ProDescriptions.Item label="优惠金额">¥{order.discount_amount || 0}</ProDescriptions.Item>
           <ProDescriptions.Item label="IP">{order.ip || '-'}</ProDescriptions.Item>
-          <ProDescriptions.Item label="创建时间">{order.created_at}</ProDescriptions.Item>
-          <ProDescriptions.Item label="支付时间">{order.paid_at || '-'}</ProDescriptions.Item>
+          <ProDescriptions.Item label="创建时间">{fmt(order.created_at)}</ProDescriptions.Item>
+          <ProDescriptions.Item label="支付时间">{fmt(order.paid_at)}</ProDescriptions.Item>
         </ProDescriptions>
       </ProCard>
 

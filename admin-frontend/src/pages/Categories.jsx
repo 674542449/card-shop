@@ -86,10 +86,11 @@ export default function Categories() {
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getCategories({ page: params.current, per_page: params.pageSize, ...params });
-          const d = res.data?.data || res.data;
+          const body = res.data ?? {};
+          const list = Array.isArray(body) ? body : (body.data ?? []);
           return {
-            data: d.data || d,
-            total: d.total || d.length,
+            data: list,
+            total: Array.isArray(body) ? list.length : (body.total ?? list.length),
             success: true,
           };
         }}
@@ -115,11 +116,16 @@ export default function Categories() {
         modalProps={{ destroyOnClose: true }}
         onFinish={async (values) => {
           try {
+            // ProForm's omitNil strips null values out of `values` entirely, so clearing
+            // the thumbnail would submit no `image` key at all and the old URL would
+            // survive the save. Put it back explicitly.
+            const payload = { ...values, image: values.image ?? null };
+
             if (editingRecord) {
-              await updateCategory(editingRecord.id, values);
+              await updateCategory(editingRecord.id, payload);
               message.success('更新成功');
             } else {
-              await createCategory(values);
+              await createCategory(payload);
               message.success('创建成功');
             }
             actionRef.current?.reload();

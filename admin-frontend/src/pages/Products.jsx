@@ -118,10 +118,11 @@ export default function Products() {
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getProducts({ page: params.current, per_page: params.pageSize, ...params });
-          const d = res.data?.data || res.data;
+          const body = res.data ?? {};
+          const list = Array.isArray(body) ? body : (body.data ?? []);
           return {
-            data: d.data || d,
-            total: d.total || d.length,
+            data: list,
+            total: Array.isArray(body) ? list.length : (body.total ?? list.length),
             success: true,
           };
         }}
@@ -147,11 +148,15 @@ export default function Products() {
         drawerProps={{ destroyOnClose: true, width: 720 }}
         onFinish={async (values) => {
           try {
+            // omitNil drops null values from `values`, so a cleared image would submit
+            // no `image` key and the old URL would silently stay.
+            const payload = { ...values, image: values.image ?? null };
+
             if (editingRecord) {
-              await updateProduct(editingRecord.id, values);
+              await updateProduct(editingRecord.id, payload);
               message.success('更新成功');
             } else {
-              await createProduct(values);
+              await createProduct(payload);
               message.success('创建成功');
             }
             actionRef.current?.reload();
@@ -171,7 +176,9 @@ export default function Products() {
         <ProForm.Item name="description" label="描述">
           <RichTextEditor placeholder="请输入商品描述" />
         </ProForm.Item>
-        <ProFormDigit name="price" label="价格" min={0} rules={[{ required: true, message: '请输入价格' }]} fieldProps={{ precision: 2 }} />
+        {/* min matches the server's numeric|min:0.01, so 0 is rejected in the field
+            rather than on a round trip. */}
+        <ProFormDigit name="price" label="价格" min={0.01} rules={[{ required: true, message: '请输入价格' }]} fieldProps={{ precision: 2 }} />
         <ProFormDigit name="min_quantity" label="最小购买数量" min={1} />
         <ProFormDigit name="max_quantity" label="最大购买数量" min={1} />
         <ProFormSwitch name="is_active" label="上架" />

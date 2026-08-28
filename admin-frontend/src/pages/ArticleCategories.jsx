@@ -57,10 +57,11 @@ export default function ArticleCategories() {
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getArticleCategories({ page: params.current, per_page: params.pageSize, ...params });
-          const d = res.data?.data || res.data;
+          const body = res.data ?? {};
+          const list = Array.isArray(body) ? body : (body.data ?? []);
           return {
-            data: d.data || d,
-            total: d.total || d.length,
+            data: list,
+            total: Array.isArray(body) ? list.length : (body.total ?? list.length),
             success: true,
           };
         }}

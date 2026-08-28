@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ProLayout } from '@ant-design/pro-components';
 import {
@@ -79,6 +79,20 @@ export default function AdminLayout() {
   const location = useLocation();
   const [adminInfo, setAdminInfo] = useState(null);
 
+  // '/admin' is a prefix of every admin route, so left to itself the 仪表盘 entry stays
+  // highlighted everywhere. Pick the longest entry that actually matches, which also
+  // keeps 商品管理 lit on /admin/products/3/cards and 订单管理 on /admin/orders/9.
+  const selectedKey = useMemo(() => {
+    const path = location.pathname.replace(/\/+$/, '') || '/admin';
+    const candidates = menuRoutes.route.routes
+      .map((r) => r.path)
+      .filter((p) => p !== '/admin')
+      .filter((p) => path === p || path.startsWith(`${p}/`))
+      .sort((a, b) => b.length - a.length);
+
+    return candidates[0] || '/admin';
+  }, [location.pathname]);
+
   useEffect(() => {
     getMe()
       .then((res) => setAdminInfo(res.data?.data || res.data))
@@ -115,6 +129,7 @@ export default function AdminLayout() {
       fixedHeader
       {...menuRoutes}
       location={{ pathname: location.pathname }}
+      menuProps={{ selectedKeys: [selectedKey] }}
       menuItemRender={(item, dom) => (
         <a
           onClick={(e) => {

@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { ProTable } from '@ant-design/pro-components';
+import dayjs from 'dayjs';
 import { getLogs } from '../services/api';
 
 export default function Logs() {
@@ -22,7 +23,9 @@ export default function Logs() {
       dataIndex: 'created_at',
       width: 180,
       valueType: 'dateRange',
-      render: (_, record) => record.created_at,
+      // Timestamps arrive as UTC ISO strings; format them into the viewer's local time.
+      render: (_, record) =>
+        record.created_at ? dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss') : '-',
       search: {
         transform: (value) => ({
           start_date: value[0],
@@ -42,10 +45,11 @@ export default function Logs() {
       request={async (params) => {
         const { current, pageSize, ...rest } = params;
         const res = await getLogs({ page: current, per_page: pageSize, ...rest });
-        const d = res.data?.data || res.data;
+        const body = res.data ?? {};
+        const list = Array.isArray(body) ? body : (body.data ?? []);
         return {
-          data: d.data || d,
-          total: d.total || d.length,
+          data: list,
+          total: Array.isArray(body) ? list.length : (body.total ?? list.length),
           success: true,
         };
       }}

@@ -62,7 +62,7 @@ export default function Articles() {
         record.is_published ? <Tag color="green">已发布</Tag> : <Tag color="default">草稿</Tag>,
     },
     { title: '浏览量', dataIndex: 'views', search: false, width: 80 },
-    { title: '创建时间', dataIndex: 'created_at', search: false, width: 180 },
+    { title: '创建时间', dataIndex: 'created_at', valueType: 'dateTime', search: false, width: 180 },
     {
       title: '操作',
       valueType: 'option',
@@ -106,10 +106,11 @@ export default function Articles() {
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getArticles({ page: params.current, per_page: params.pageSize, ...params });
-          const d = res.data?.data || res.data;
+          const body = res.data ?? {};
+          const list = Array.isArray(body) ? body : (body.data ?? []);
           return {
-            data: d.data || d,
-            total: d.total || d.length,
+            data: list,
+            total: Array.isArray(body) ? list.length : (body.total ?? list.length),
             success: true,
           };
         }}
@@ -135,11 +136,15 @@ export default function Articles() {
         drawerProps={{ destroyOnClose: true, width: 800 }}
         onFinish={async (values) => {
           try {
+            // omitNil would drop a cleared cover image from the payload, leaving the
+            // old one in place while the toast reports success.
+            const payload = { ...values, cover_image: values.cover_image ?? null };
+
             if (editingRecord) {
-              await updateArticle(editingRecord.id, values);
+              await updateArticle(editingRecord.id, payload);
               message.success('更新成功');
             } else {
-              await createArticle(values);
+              await createArticle(payload);
               message.success('创建成功');
             }
             actionRef.current?.reload();
@@ -152,7 +157,12 @@ export default function Articles() {
       >
         <ProFormText name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]} />
         <ProFormText name="slug" label="Slug" rules={[{ required: true, message: '请输入 Slug' }]} />
-        <ProFormSelect name="article_category_id" label="分类" options={categoryOptions} />
+        <ProFormSelect
+          name="article_category_id"
+          label="分类"
+          options={categoryOptions}
+          rules={[{ required: true, message: '请选择分类' }]}
+        />
         <ProFormTextArea name="summary" label="摘要" fieldProps={{ rows: 3 }} />
         <ProForm.Item name="content" label="内容" rules={[{ required: true, message: '请输入内容' }]}>
           <RichTextEditor placeholder="请输入文章内容" height={360} />
