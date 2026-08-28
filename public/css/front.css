@@ -1111,6 +1111,76 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 }
 .page-card-body { padding: 20px; }
 
+/* ----- Order detail status header -----
+   A row, not a centred stack. The stacked version — 48px glyph, heading, help
+   text, 25px padding — cost ~160px of vertical space to say one word that the
+   status pill in the table below already says, and pushed the card secrets (the
+   thing the buyer came for) off the first screen on a phone. */
+.order-state-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    margin-bottom: 15px;
+}
+.order-state-card .os-glyph {
+    font-size: 26px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+.order-state-card.is-paid .os-glyph { color: var(--teal); }
+/* min-width:0 so the flex item may shrink below its text's intrinsic width —
+   without it a long note pushes the button off the right edge instead of
+   ellipsising. */
+.order-state-card .os-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+.order-state-card .os-text strong {
+    font-size: 16px;
+    color: var(--text-color);
+}
+.order-state-card .os-text small {
+    font-size: 12px;
+    color: var(--text-light);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.order-state-card .os-action { flex-shrink: 0; }
+
+/* Header of a .page-card whose title shares the line with buttons. */
+.card-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+}
+.card-panel-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+.card-panel-actions .btn-buy-sm {
+    padding: 3px 12px;
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+@media (max-width: 400px) {
+    /* 下载 TXT + 复制 + the title stop fitting on one line here, and the panel
+       title is the half that can afford to give up its share. */
+    .card-panel-actions .btn-buy-sm { padding: 3px 9px; font-size: 12px; }
+    .card-panel-header > span:first-child {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+}
+
 .order-info-table {
     width: 100%;
     font-size: 14px;
@@ -1155,6 +1225,145 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     word-break: break-all;
 }
 .card-content-list li:last-child { border-bottom: none; }
+
+/* ----- Order query results -----
+   One order per line at EVERY width. Three rules do that job together and all
+   three are load-bearing:
+     table-layout: fixed  — content can no longer widen a column, so a long
+                            product name cannot shove the row into overflow;
+     nowrap + ellipsis    — and it cannot wrap to a second line either;
+     percentage widths    — the two text columns share whatever the fixed-width
+                            columns leave, at any viewport.
+   Below the breakpoints, columns are dropped in order of how little they earn
+   their width (time first, then quantity) rather than everything being squeezed
+   until nothing is legible. */
+/* Safety net only. table-layout:fixed means the table cannot exceed its
+   container, but if a future column ever does overflow it scrolls here rather
+   than making the whole page scroll sideways. */
+.order-table-wrap {
+    overflow-x: auto;
+    margin-bottom: var(--block-gap);
+}
+
+.order-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    background: var(--card-bg);
+    box-shadow: var(--shadow-sm);
+    border-radius: var(--radius);
+    overflow: hidden;
+    border: 1px solid var(--border-color);
+}
+.order-table thead th {
+    background: var(--table-header-bg);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 14px;
+    padding: 10px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+.order-table tbody td {
+    padding: 11px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 14px;
+    color: var(--text-muted);
+    vertical-align: middle;
+}
+.order-table tbody tr:last-child td { border-bottom: none; }
+.order-table tbody tr:hover { background: #fafafa; }
+
+.order-table th,
+.order-table td {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 176px, not a percentage. generate_order_no() produces YmdHis + 5 digits — 19
+   monospace characters, a constant — so the column that holds it wants a constant
+   width. As 23% it fitted on a desktop and clipped the last digits at 621px, which
+   is the one width where the full number had just come back. */
+.order-table .oc-no { width: 176px; font-family: monospace; font-size: 13px; }
+.order-table .oc-name { width: auto; color: var(--text-color); }
+.order-table .oc-qty { width: 56px; text-align: center; }
+.order-table .oc-amount { width: 94px; color: var(--price-color); font-weight: 700; }
+.order-table .oc-status { width: 88px; }
+.order-table .oc-time { width: 132px; font-size: 13px; }
+.order-table .oc-action { width: 74px; text-align: right; }
+.order-table .oc-action .btn-buy-sm { padding: 3px 12px; font-size: 13px; }
+
+/* The order number has two forms; exactly one is displayed at any width. */
+.order-table .oc-no-tail { display: none; }
+
+@media (max-width: 860px) {
+    /* The timestamp is the first thing to go: two orders placed minutes apart are
+       told apart by the number, not the clock. */
+    .order-table .oc-time { display: none; }
+}
+
+@media (max-width: 700px) {
+    /* Quantity goes next. It is one digit — almost always 1 — and the detail page
+       states it. Dropped at 700 rather than at 620 with everything else, because
+       620 is exactly where the full 19-digit order number comes back: with both
+       arriving at once the product name was squeezed to 63px there, narrower than
+       on a phone. */
+    .order-table .oc-qty { display: none; }
+}
+
+@media (max-width: 620px) {
+    .order-table thead th,
+    .order-table tbody td { padding: 10px 8px; font-size: 13px; }
+
+    /* An ellipsised 18-digit number is indistinguishable from every other
+       ellipsised 18-digit number. The tail is the part that actually differs. */
+    .order-table .oc-no { width: 76px; font-size: 12px; }
+    .order-table .oc-no-full { display: none; }
+    .order-table .oc-no-tail { display: inline; }
+
+    .order-table .oc-amount { width: 78px; font-size: 13px; }
+    .order-table .oc-status { width: 70px; }
+    .order-table .oc-status .order-status { padding: 2px 6px; font-size: 12px; }
+    .order-table .oc-action { width: 58px; }
+    .order-table .oc-action .btn-buy-sm { padding: 3px 9px; font-size: 12px; }
+}
+
+@media (max-width: 460px) {
+    /* Phones. Every fixed column is cut to what its own longest realistic value
+       needs and not a pixel more — the tail form of the order number, a four-figure
+       amount, 待支付, 查看 — so what is left over goes to the product name rather
+       than to padding.
+
+       460, not 400, because a step boundary inside the phone range is worse than a
+       tight column: measured, a 414px phone landed on the roomier widths and gave
+       the product name 70px while a 390px phone gave it 112px. Widening the device
+       must not narrow the content. Every phone width now takes this branch. */
+    .order-table thead th,
+    .order-table tbody td { padding: 9px 4px; font-size: 12px; }
+    .order-table .oc-no { width: 58px; }
+    .order-table .oc-amount { width: 64px; font-size: 12px; }
+    .order-table .oc-status { width: 56px; }
+    .order-table .oc-status .order-status { padding: 2px 5px; }
+    .order-table .oc-action { width: 46px; }
+    .order-table .oc-action .btn-buy-sm { padding: 3px 6px; }
+}
+
+@media (max-width: 345px) {
+    /* Five columns cannot all say something useful in 290px: measured on a 320px
+       screen the product name was left 32px, which is two characters — the list
+       stopped telling you which order was which.
+
+       So the order number goes here and only here. It is the field the buyer reads
+       least (an 18-digit token) and the one always available one tap away on the
+       detail page, whereas name, amount and status are what the list is FOR. The
+       cost is real — two identical orders placed the same day become
+       indistinguishable in the list — and it is the cheapest thing to give up.
+
+       345px, not 400px: 360 and 375 are ordinary phone widths and they keep the
+       column. Only 320px-class devices reach this rule. */
+    .order-table .oc-no { display: none; }
+}
 
 /* ============================================================
    Article Pages
@@ -1669,20 +1878,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .article-detail .article-cover { aspect-ratio: 16 / 9; }
 }
 
-/* ----- Viewport-only utilities -----
-   The product list no longer uses these — it is one markup that reflows. They
-   stay for front/order/result.blade.php, which really does render two different
-   things (a table of card secrets, and a stacked copy of them) rather than one
-   thing at two widths. */
-@media (max-width: 768px) {
-    .desktop-only { display: none !important; }
-}
-/* 768.02px, not 769px. Viewport widths are fractional under browser zoom and on
-   any device with a non-integer pixel ratio, so at 768.5px neither 768 nor 769
-   matched and the order result page showed BOTH copies of the card secrets. */
-@media (min-width: 768.02px) {
-    .mobile-only { display: none !important; }
-}
+/* The .desktop-only / .mobile-only utilities used to live here for
+   front/order/result.blade.php, the last page rendering the same data twice.
+   That page is now one table that reflows, so nothing referenced them and they
+   are gone; .order-table below is what replaced them. */
 
 /* ----- Utility ----- */
 .text-center { text-align: center; }

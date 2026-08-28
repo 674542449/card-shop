@@ -378,6 +378,62 @@ class OrderController extends Controller
     }
 
     /**
+     * Download the order's card secrets as a .txt file.
+     *
+     * Gated identically to detail(): the cards are the product, so the file must be
+     * no easier to reach than the page it is linked from. Order numbers are
+     * guessable, which is exactly why the session check — not the URL — is what
+     * authorises this.
+     */
+    public function downloadCards(string $orderNo)
+    {
+        $order = Order::where('order_no', $orderNo)
+            ->with(['product', 'cards'])
+            ->firstOrFail();
+
+        if (!$this->isVerified($order)) {
+            return redirect('/order/query')
+                ->withErrors(['error' => '请先验证身份后下载卡密']);
+        }
+
+        if (!$order->isPaid() || $order->cards->isEmpty()) {
+            return redirect('/order/detail/' . $order->order_no)
+                ->withErrors(['error' => '该订单暂无可下载的卡密']);
+        }
+
+        // CRLF and a BOM because the buyer opens this in Notepad on Windows more
+        // often than anywhere else, and without either they get one run-on line of
+        // mojibake instead of their cards.
+        $lines = [
+            '订单编号: ' . $order->order_no,
+            '商品名称: ' . ($order->product->name ?? '—'),
+            '购买数量: ' . $order->quantity,
+            '支付时间: ' . ($order->paid_at ? $order->paid_at->format('Y-m-d H:i:s') : '—'),
+            str_repeat('-', 40),
+        ];
+
+        foreach ($order->cards as $card) {
+            $lines[] = $card->content;
+        }
+
+        $body = "\xEF\xBB\xBF" . implode("\r\n", $lines) . "\r\n";
+
+        // The order number is generated, not user input, but it is being written
+        // into a response header — so it is filtered rather than trusted.
+        $safeNo = preg_replace('/[^A-Za-z0-9_-]/', '', $order->order_no);
+
+        return response($body, 200, [
+            'Content-Type' => 'text/plain; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename="cards-' . $safeNo . '.txt"',
+            // Card secrets must not sit in a shared proxy or the browser's disk
+            // cache after the buyer closes the tab.
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, private',
+            'Pragma' => 'no-cache',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+    }
+
+    /**
      * AJAX endpoint to verify email and query password.
      */
     public function verify(Request $request): JsonResponse

@@ -41,6 +41,11 @@ Route::middleware('check.blacklist')->group(function () {
     Route::post('/order/query', [Front\OrderController::class, 'query'])
         ->middleware(['turnstile', 'throttle:10,1']);
     Route::get('/order/detail/{order_no}', [Front\OrderController::class, 'detail']);
+    // Same session gate as the detail page it is linked from — it serves exactly the
+    // content that page already shows, as a file. Throttled anyway: it reads every
+    // card row for the order, which is more work than rendering the page.
+    Route::get('/order/cards/{order_no}/download', [Front\OrderController::class, 'downloadCards'])
+        ->middleware('throttle:30,1');
     Route::post('/order/verify', [Front\OrderController::class, 'verify'])
         ->middleware('throttle:20,1');
 

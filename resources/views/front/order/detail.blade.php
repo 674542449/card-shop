@@ -7,30 +7,38 @@
         <a href="/order/query" style="color:var(--text-light);font-size:13px">&larr; 返回订单列表</a>
     </div>
 
-    {{-- Status Header --}}
-    <div class="page-card" style="margin-bottom:15px">
-        <div class="page-card-body text-center" style="padding:25px;">
-            @if($order->isPaid())
-            {{-- Decorative: the heading underneath states the status in words, so the
-                 glyph is hidden from assistive tech rather than read out as "check mark". --}}
-            <div style="font-size:48px;color:var(--teal);" aria-hidden="true">&#9989;</div>
-            <h3 style="font-size:18px;margin:8px 0 4px;">支付成功</h3>
-            <p style="color:var(--text-light);font-size:13px;">订单已完成，卡密信息如下</p>
-            @elseif($order->isExpired() || $order->status === 'expired')
-            <div style="font-size:48px;" aria-hidden="true">&#9200;</div>
-            <h3 style="font-size:18px;margin:8px 0 4px;">订单已过期</h3>
-            <p style="color:var(--text-light);font-size:13px;">此订单已超过支付时限</p>
-            @elseif($order->status === 'closed')
-            <div style="font-size:48px;" aria-hidden="true">&#10060;</div>
-            <h3 style="font-size:18px;margin:8px 0 4px;">订单已关闭</h3>
-            <p style="color:var(--text-light);font-size:13px;">此订单已被关闭</p>
-            @else
-            <div style="font-size:48px;" aria-hidden="true">&#9203;</div>
-            <h3 style="font-size:18px;margin:8px 0 4px;">待支付</h3>
-            <p style="color:var(--text-light);font-size:13px;margin-bottom:12px;">请尽快完成支付</p>
-            <a href="/order/pay/{{ $order->order_no }}" class="btn-submit" style="display:inline-block;width:auto;padding:8px 30px;">继续支付</a>
-            @endif
-        </div>
+    {{--
+        Status header. It used to be a centred stack — a 48px glyph over a heading
+        over a line of help text, inside 25px of padding — which spent about 160px
+        of vertical space restating the one word already shown as a pill further
+        down the page. Laid out as a row it says the same thing in ~60px, so the
+        card secrets are on screen without scrolling.
+    --}}
+    @php
+        // Glyph is decorative: the heading beside it states the status in words, so
+        // it is hidden from assistive tech rather than read out as "check mark".
+        $states = [
+            'paid' => ['&#9989;', '支付成功', '订单已完成，卡密信息如下', 'is-paid'],
+            'expired' => ['&#9200;', '订单已过期', '此订单已超过支付时限', 'is-expired'],
+            'closed' => ['&#10060;', '订单已关闭', '此订单已被关闭', 'is-closed'],
+            'pending' => ['&#9203;', '待支付', '请尽快完成支付', 'is-pending'],
+        ];
+
+        $stateKey = $order->isPaid() ? 'paid'
+            : (($order->isExpired() || $order->status === 'expired') ? 'expired'
+            : ($order->status === 'closed' ? 'closed' : 'pending'));
+
+        [$glyph, $stateTitle, $stateNote, $stateClass] = $states[$stateKey];
+    @endphp
+    <div class="page-card order-state-card {{ $stateClass }}">
+        <span class="os-glyph" aria-hidden="true">{!! $glyph !!}</span>
+        <span class="os-text">
+            <strong>{{ $stateTitle }}</strong>
+            <small>{{ $stateNote }}</small>
+        </span>
+        @if($stateKey === 'pending')
+        <a href="/order/pay/{{ $order->order_no }}" class="btn-buy-sm os-action">继续支付</a>
+        @endif
     </div>
 
     {{-- Order Info --}}
@@ -61,15 +69,7 @@
                 </tr>
                 <tr>
                     <th>订单状态</th>
-                    <td>
-                        @switch($order->status)
-                            @case('pending') <span class="order-status pending">待支付</span> @break
-                            @case('paid') <span class="order-status paid">已支付</span> @break
-                            @case('expired') <span class="order-status expired">已过期</span> @break
-                            @case('closed') <span class="order-status closed">已关闭</span> @break
-                            @default <span class="order-status">{{ $order->status }}</span>
-                        @endswitch
-                    </td>
+                    <td>@include('front.partials.order-status', ['status' => $order->status])</td>
                 </tr>
                 @if($order->paid_at)
                 <tr><th>支付时间</th><td>{{ $order->paid_at->format('Y-m-d H:i:s') }}</td></tr>
@@ -82,10 +82,17 @@
     {{-- Card Contents --}}
     @if($order->isPaid() && $cards->count() > 0)
     <div class="page-card" style="margin-bottom:15px">
-        <div class="page-card-header" style="display:flex;justify-content:space-between;align-items:center;">
+        <div class="page-card-header card-panel-header">
             <span>卡密信息</span>
-            <button type="button" class="btn-buy-sm btn-copy" data-target="card-content-text"
-                    style="padding:3px 14px;font-size:13px;">复制</button>
+            <span class="card-panel-actions">
+                {{-- A real link, not a JS blob download. The cards live behind the
+                     same session check as this page, so the server can gate the file
+                     the same way it gates the page — and the download still works
+                     with JS off, which for the one artefact the buyer paid for is
+                     worth more than saving a round trip. --}}
+                <a href="/order/cards/{{ $order->order_no }}/download" class="btn-buy-sm">下载 TXT</a>
+                <button type="button" class="btn-buy-sm btn-copy" data-target="card-content-text">复制</button>
+            </span>
         </div>
         <div class="page-card-body" style="padding:0;">
             <ul class="card-content-list">
