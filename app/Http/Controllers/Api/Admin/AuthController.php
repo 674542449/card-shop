@@ -67,6 +67,47 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * Change the signed-in administrator's own password.
+     *
+     * Until this existed there was no way to move off the seeded password from inside
+     * the product at all.
+     */
+    public function changePassword(Request $request)
+    {
+        $request->validate([
+            'current_password' => ['required', 'string'],
+            'new_password' => ['required', 'string', 'min:12', 'confirmed'],
+        ], [
+            'current_password.required' => '请输入当前密码。',
+            'new_password.required' => '请输入新密码。',
+            'new_password.min' => '新密码至少需要 12 个字符。',
+            'new_password.confirmed' => '两次输入的新密码不一致。',
+        ]);
+
+        /** @var \App\Models\Admin $admin */
+        $admin = $request->attributes->get('admin');
+
+        if (!Hash::check($request->input('current_password'), $admin->password)) {
+            return response()->json(['message' => '当前密码不正确。'], 422);
+        }
+
+        $admin->update(['password' => Hash::make($request->input('new_password'))]);
+
+        // Rotate the session so any other session holding the old credentials is not
+        // silently left signed in, and hand the SPA the token that rotation produced.
+        $request->session()->regenerate();
+        $request->session()->put('admin_id', $admin->id);
+        $request->session()->put('admin_username', $admin->username);
+
+        OperationLog::log('修改密码', 'admin', $admin->id, '管理员修改了自己的密码');
+
+        return response()->json([
+            'message' => '密码已更新。',
+            'csrf_token' => csrf_token(),
+        ]);
+    }
+
     public function me(Request $request)
     {
         $admin = $request->attributes->get('admin');

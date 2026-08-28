@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ProForm, ProFormText, ProFormTextArea, ProFormDigit } from '@ant-design/pro-components';
-import { Card, Tabs, Spin, message } from 'antd';
-import { getSettings, updateSettings } from '../services/api';
+import { Card, Tabs, Spin, message, Alert } from 'antd';
+import { getSettings, updateSettings, changePassword } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 
 export default function Settings() {
@@ -117,7 +117,64 @@ export default function Settings() {
     },
   ];
 
+  const handlePasswordChange = async (values) => {
+    try {
+      await changePassword(values);
+      message.success('密码已更新');
+      return true;
+    } catch (err) {
+      message.error(err.response?.data?.message || '密码修改失败');
+      return false;
+    }
+  };
+
   return (
+    <>
+    <Card title="修改密码" style={{ marginBottom: 16 }}>
+      <Alert
+        type="warning"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="如果你还在使用安装时的初始密码，请立即修改。"
+        description="后台地址是公开可访问的，初始密码写在项目文档里。"
+      />
+      <ProForm
+        onFinish={handlePasswordChange}
+        submitter={{
+          searchConfig: { submitText: '修改密码' },
+          resetButtonProps: false,
+        }}
+      >
+        <ProFormText.Password
+          name="current_password"
+          label="当前密码"
+          rules={[{ required: true, message: '请输入当前密码' }]}
+        />
+        <ProFormText.Password
+          name="new_password"
+          label="新密码"
+          rules={[
+            { required: true, message: '请输入新密码' },
+            { min: 12, message: '新密码至少 12 个字符' },
+          ]}
+        />
+        <ProFormText.Password
+          name="new_password_confirmation"
+          label="确认新密码"
+          dependencies={['new_password']}
+          rules={[
+            { required: true, message: '请再次输入新密码' },
+            ({ getFieldValue }) => ({
+              validator: (_, value) =>
+                !value || getFieldValue('new_password') === value
+                  ? Promise.resolve()
+                  : Promise.reject(new Error('两次输入的密码不一致')),
+            }),
+          ]}
+        />
+      </ProForm>
+    </Card>
+
     <Card title="系统设置">
       <ProForm
         form={form}
@@ -137,5 +194,6 @@ export default function Settings() {
         <Tabs items={tabItems} />
       </ProForm>
     </Card>
+    </>
   );
 }

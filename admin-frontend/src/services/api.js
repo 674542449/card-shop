@@ -87,6 +87,14 @@ export const logout = async () => {
 export const getMe = () =>
   api.get('/me');
 
+// The server rotates the session (and therefore the CSRF token) on a password change,
+// so the new token has to be adopted or every later write returns 419.
+export const changePassword = async (data) => {
+  const res = await api.post('/password', data);
+  setCsrfToken(res.data?.csrf_token);
+  return res;
+};
+
 // Dashboard
 export const getDashboard = () =>
   api.get('/dashboard');

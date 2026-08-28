@@ -6,6 +6,7 @@ use App\Models\Admin;
 use App\Models\Setting;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,15 +16,56 @@ class DatabaseSeeder extends Seeder
         $this->seedSettings();
     }
 
+    /**
+     * Create the first administrator, once.
+     *
+     * There is deliberately no default password. This seeder runs on every container
+     * boot, the repository and the README are public, and /admin is reachable from the
+     * internet — a well-known constant here means anyone who finds the host owns the
+     * panel, and through it every card secret, every buyer's email, and the payment
+     * gateway credentials.
+     *
+     * ADMIN_PASSWORD from .env is used when set. When it is not, a random one is
+     * generated and printed to the boot log once, which keeps a first install usable
+     * without ever shipping a password an attacker already knows.
+     */
     private function seedAdmin(): void
     {
-        // firstOrCreate, not updateOrCreate: this seeder runs on every container boot,
-        // and updateOrCreate would silently reset the password back to the default
-        // every time the stack restarts.
-        Admin::firstOrCreate(
-            ['username' => 'admin'],
-            ['password' => Hash::make('admin888')]
-        );
+        $username = (string) (env('ADMIN_USERNAME') ?: 'admin');
+
+        // Never touch an existing account: the operator may have changed the password,
+        // and this runs on every restart.
+        if (Admin::where('username', $username)->exists()) {
+            return;
+        }
+
+        $password = (string) env('ADMIN_PASSWORD', '');
+        $generated = false;
+
+        if (mb_strlen($password) < 12) {
+            $password = Str::password(20, symbols: false);
+            $generated = true;
+        }
+
+        Admin::create([
+            'username' => $username,
+            'password' => Hash::make($password),
+        ]);
+
+        if ($generated) {
+            $banner = str_repeat('=', 64);
+            $this->command?->getOutput()->writeln([
+                '',
+                $banner,
+                '  管理员账号已创建 / Administrator account created',
+                "  用户名 username: {$username}",
+                "  密码   password: {$password}",
+                '  这条信息只出现一次，请立即保存并登录后修改。',
+                '  This is shown once. Save it now and change it after logging in.',
+                $banner,
+                '',
+            ]);
+        }
     }
 
     private function seedSettings(): void

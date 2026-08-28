@@ -25,12 +25,18 @@ Route::middleware('check.blacklist')->group(function () {
     Route::get('/product/{slug}', [Front\ProductController::class, 'show']);
 
     // Orders
-    Route::post('/order/create', [Front\OrderController::class, 'create'])->middleware('turnstile');
+    // Throttles are an outer bound that runs before the controller, so an attacker
+    // cannot make the app spend a bcrypt verification or a stock-locking transaction
+    // per request. Creating an order locks cards, so it is the tightest of the three.
+    Route::post('/order/create', [Front\OrderController::class, 'create'])
+        ->middleware(['turnstile', 'throttle:5,1']);
     Route::get('/order/pay/{order_no}', [Front\OrderController::class, 'pay']);
     Route::get('/order/query', [Front\OrderController::class, 'queryForm']);
-    Route::post('/order/query', [Front\OrderController::class, 'query'])->middleware('turnstile');
+    Route::post('/order/query', [Front\OrderController::class, 'query'])
+        ->middleware(['turnstile', 'throttle:10,1']);
     Route::get('/order/detail/{order_no}', [Front\OrderController::class, 'detail']);
-    Route::post('/order/verify', [Front\OrderController::class, 'verify']);
+    Route::post('/order/verify', [Front\OrderController::class, 'verify'])
+        ->middleware('throttle:20,1');
 
     // Payment return (user-facing, stays in blacklist group)
     Route::get('/payment/epay/return', [Front\PaymentController::class, 'epayReturn']);
@@ -56,6 +62,7 @@ Route::prefix('api/admin')->group(function () {
     Route::middleware('admin.auth')->group(function () {
         Route::post('/logout', [ApiAdmin\AuthController::class, 'logout']);
         Route::get('/me', [ApiAdmin\AuthController::class, 'me']);
+        Route::post('/password', [ApiAdmin\AuthController::class, 'changePassword']);
 
         // Dashboard
         Route::get('/dashboard', [ApiAdmin\DashboardController::class, 'index']);

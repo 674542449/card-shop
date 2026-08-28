@@ -33,13 +33,26 @@ class OrderController extends Controller
 
                 // Validate quantity range
                 if ($quantity < $product->min_quantity || $quantity > $product->max_quantity) {
-                    throw new \Exception("购买数量必须在 {$product->min_quantity} 到 {$product->max_quantity} 之间");
+                    throw new \RuntimeException("购买数量必须在 {$product->min_quantity} 到 {$product->max_quantity} 之间");
                 }
 
                 // Check stock
                 $stockCount = $product->stockCount();
                 if ($stockCount < $quantity) {
-                    throw new \Exception('库存不足，当前库存: ' . $stockCount);
+                    throw new \RuntimeException('库存不足，当前库存: ' . $stockCount);
+                }
+
+                // Creating an order locks cards out of sale until it expires, so a slow
+                // drip of orders is enough to empty the shelf without ever paying. The
+                // per-minute throttle on the route does not stop that on its own; this
+                // caps how much stock one visitor can hold at a time.
+                $held = Order::where('ip', $request->ip())
+                    ->where('status', 'pending')
+                    ->where('expires_at', '>', now())
+                    ->count();
+
+                if ($held >= 3) {
+                    throw new \RuntimeException('您有未完成的订单，请先完成支付或等待订单过期');
                 }
 
                 // Calculate price
@@ -53,16 +66,16 @@ class OrderController extends Controller
                     $coupon = Coupon::where('code', $validated['coupon_code'])->first();
 
                     if (!$coupon) {
-                        throw new \Exception('优惠码不存在');
+                        throw new \RuntimeException('优惠码不存在');
                     }
 
                     if (!$coupon->isValid()) {
-                        throw new \Exception('优惠码已过期或已达使用上限');
+                        throw new \RuntimeException('优惠码已过期或已达使用上限');
                     }
 
                     // Check if coupon is product-specific
                     if ($coupon->product_id && $coupon->product_id !== $product->id) {
-                        throw new \Exception('该优惠码不适用于此商品');
+                        throw new \RuntimeException('该优惠码不适用于此商品');
                     }
 
                     $discountAmount = $coupon->calculateDiscount($totalAmount);
@@ -96,7 +109,7 @@ class OrderController extends Controller
                     ->get();
 
                 if ($cards->count() < $quantity) {
-                    throw new \Exception('库存不足，请稍后重试');
+                    throw new \RuntimeException('库存不足，请稍后重试');
                 }
 
                 foreach ($cards as $card) {
@@ -107,9 +120,22 @@ class OrderController extends Controller
                     ]);
                 }
 
-                // Increment coupon usage only when discount was applied
+                // The conditional UPDATE is the gate, not bookkeeping. isValid() above
+                // is a check-then-act that two concurrent buyers both pass, so the limit
+                // has to be enforced by the write itself: whichever transaction loses
+                // the row lock re-evaluates the predicate against the committed row,
+                // affects zero rows, and rolls its own order back.
                 if ($couponId && $discountAmount > 0) {
-                    Coupon::where('id', $couponId)->increment('used_count');
+                    $claimed = Coupon::where('id', $couponId)
+                        ->where(function ($q) {
+                            $q->where('max_uses', '<=', 0)
+                              ->orWhereColumn('used_count', '<', 'max_uses');
+                        })
+                        ->increment('used_count');
+
+                    if ($claimed === 0) {
+                        throw new \RuntimeException('优惠码已达使用上限');
+                    }
                 }
 
                 return $order;
@@ -124,9 +150,17 @@ class OrderController extends Controller
 
             return redirect('/order/pay/' . $order->order_no);
 
-        } catch (\Exception $e) {
-            Log::error('Order creation failed: ' . $e->getMessage());
-            return back()->withInput()->withErrors(['error' => $e->getMessage()]);
+        } catch (\Throwable $e) {
+            Log::error('Order creation failed: ' . $e->getMessage(), ['exception' => $e]);
+
+            // Only the RuntimeExceptions thrown deliberately above carry a message meant
+            // for the buyer. Anything else — a QueryException above all — would put
+            // schema or configuration detail on the page.
+            $message = $e instanceof \RuntimeException
+                ? $e->getMessage()
+                : '下单失败，请稍后重试';
+
+            return back()->withInput()->withErrors(['error' => $message]);
         }
     }
 
@@ -143,7 +177,7 @@ class OrderController extends Controller
             // Order numbers are predictable (timestamp + 5 digits), so knowing one must
             // not be enough to read the card secrets. Require the same session proof the
             // detail page requires.
-            if (session('order_verified_email') !== $order->email) {
+            if (!$this->isVerified($order)) {
                 return redirect('/order/query')
                     ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
             }
@@ -157,15 +191,36 @@ class OrderController extends Controller
         }
 
         if ($order->isExpired()) {
-            // Release locked cards
-            Card::where('order_id', $order->id)
-                ->where('status', 'locked')
-                ->update([
-                    'order_id' => null,
-                    'status' => 'unsold',
-                    'locked_at' => null,
-                ]);
-            $order->update(['status' => 'expired']);
+            // A payment callback can be committing right now. Claim the row with a
+            // conditional UPDATE first: whoever wins holds the lock for the whole
+            // window, so this either expires an order that is genuinely still pending,
+            // or affects nothing because the callback already marked it paid. Releasing
+            // the cards before claiming would hand the buyer's paid-for cards to the
+            // next visitor.
+            DB::transaction(function () use ($order) {
+                $claimed = Order::where('id', $order->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'expired']);
+
+                if ($claimed === 0) {
+                    return;
+                }
+
+                Card::where('order_id', $order->id)
+                    ->where('status', 'locked')
+                    ->update([
+                        'order_id' => null,
+                        'status' => 'unsold',
+                        'locked_at' => null,
+                    ]);
+            });
+
+            $order->refresh();
+
+            if ($order->isPaid()) {
+                return redirect('/order/query')
+                    ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
+            }
 
             return view('front.order.pay', [
                 'order' => $order,
@@ -199,27 +254,81 @@ class OrderController extends Controller
     {
         $validated = $request->validated();
 
-        $firstOrder = Order::where('email', $validated['email'])
-            ->orderBy('created_at')
-            ->first();
-
-        if (!$firstOrder) {
-            return back()->withInput()->withErrors(['error' => '未找到相关订单']);
+        if ($this->tooManyAttempts($request, $validated['email'])) {
+            return back()->withInput()->withErrors(['error' => '尝试次数过多，请稍后再试']);
         }
 
-        if (!Hash::check($validated['query_password'], $firstOrder->query_password)) {
-            return back()->withInput()->withErrors(['error' => '查询密码错误']);
+        $matched = $this->matchOrders($validated['email'], $validated['query_password']);
+
+        if ($matched->isEmpty()) {
+            // One message for "no such email" and for "wrong password". Two different
+            // messages would tell an attacker which email addresses have bought here.
+            return back()->withInput()->withErrors(['error' => '邮箱或查询密码错误']);
         }
 
-        // Set session verification flag
-        session(['order_verified_email' => $validated['email']]);
+        $this->grantAccess($matched);
 
-        $orders = Order::where('email', $validated['email'])
-            ->with('product')
-            ->recent()
-            ->get();
+        return view('front.order.result', ['orders' => $matched->load('product')]);
+    }
 
-        return view('front.order.result', compact('orders'));
+    /**
+     * Find the orders for an email whose query password matches.
+     *
+     * Previously only the OLDEST order for the address was consulted. That meant a
+     * password could never be rotated — and worse, anyone who placed the first order
+     * against someone else's email address held the password that unlocked every order
+     * that person placed afterwards.
+     *
+     * Bounded to the 25 most recent, because each candidate costs a bcrypt verification
+     * and this endpoint is reachable by anyone.
+     */
+    private function matchOrders(string $email, string $password)
+    {
+        return Order::where('email', $email)
+            ->orderByDesc('created_at')
+            ->limit(25)
+            ->get()
+            ->filter(fn (Order $order) => Hash::check($password, $order->query_password))
+            ->values();
+    }
+
+    /**
+     * Record which specific orders this session has proven ownership of.
+     */
+    private function grantAccess($orders): void
+    {
+        session(['order_verified_ids' => $orders->pluck('id')->all()]);
+    }
+
+    private function isVerified(Order $order): bool
+    {
+        return in_array($order->id, session('order_verified_ids', []), true);
+    }
+
+    /**
+     * Rate limit on the email as well as the IP.
+     *
+     * An IP-only bucket is useless here: the attacker chooses the IP. Keying on the
+     * target address too means guessing one buyer's password is limited no matter how
+     * many addresses the attacker rotates through.
+     */
+    private function tooManyAttempts(Request $request, string $email): bool
+    {
+        $emailKey = 'order-auth-email|' . sha1(mb_strtolower($email));
+        $ipKey = 'order-auth-ip|' . $request->ip();
+
+        foreach ([$emailKey => 5, $ipKey => 20] as $key => $max) {
+            if (RateLimiter::tooManyAttempts($key, $max)) {
+                return true;
+            }
+        }
+
+        // Hit before checking the password, and never cleared on success: a success
+        // must not reset a bucket an attacker can manufacture successes in.
+        RateLimiter::hit($emailKey, 900);
+        RateLimiter::hit($ipKey, 900);
+
+        return false;
     }
 
     /**
@@ -231,7 +340,7 @@ class OrderController extends Controller
             ->with(['product', 'cards'])
             ->firstOrFail();
 
-        $verified = session('order_verified_email') === $order->email;
+        $verified = $this->isVerified($order);
 
         if (!$verified) {
             return redirect('/order/query')
@@ -255,38 +364,24 @@ class OrderController extends Controller
 
         // This endpoint is not behind the turnstile that protects /order/query, so
         // without a limiter it is a free brute-force oracle for query passwords.
-        $key = 'order-verify|' . $request->ip();
-
-        if (RateLimiter::tooManyAttempts($key, 10)) {
+        if ($this->tooManyAttempts($request, $request->input('email'))) {
             return response()->json([
                 'success' => false,
                 'message' => '尝试次数过多，请稍后再试',
             ], 429);
         }
 
-        RateLimiter::hit($key, 300);
+        $matched = $this->matchOrders($request->input('email'), $request->input('query_password'));
 
-        $firstOrder = Order::where('email', $request->input('email'))
-            ->orderBy('created_at')
-            ->first();
-
-        if (!$firstOrder) {
+        if ($matched->isEmpty()) {
+            // Deliberately identical to the "no such email" case — see query().
             return response()->json([
                 'success' => false,
-                'message' => '未找到相关订单',
+                'message' => '邮箱或查询密码错误',
             ]);
         }
 
-        if (!Hash::check($request->input('query_password'), $firstOrder->query_password)) {
-            return response()->json([
-                'success' => false,
-                'message' => '查询密码错误',
-            ]);
-        }
-
-        RateLimiter::clear($key);
-
-        session(['order_verified_email' => $request->input('email')]);
+        $this->grantAccess($matched);
 
         return response()->json([
             'success' => true,

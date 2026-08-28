@@ -200,9 +200,22 @@ docker compose exec app php artisan storage:link
 
 - 前台：`http://你的IP`
 - 后台：`http://你的IP/admin`
-- 默认管理员：`admin` / `admin888`
 
-> **首次登录后请立即修改管理员密码。**
+**管理员密码不再有固定默认值。** 首次启动时会自动生成一个随机密码并打印在容器日志里，只显示一次：
+
+```bash
+docker logs cardshop-app | grep -A6 "管理员账号已创建"
+```
+
+也可以在 `.env` 里预先设置 `ADMIN_PASSWORD`（至少 12 位），首次启动就用它建号。
+
+忘记密码时用这个命令重置（生产镜像没有安装 tinker）：
+
+```bash
+docker compose exec app php artisan admin:password
+```
+
+登录后在「系统设置 → 修改密码」里可以随时更改。
 
 ## 部署后配置
 
