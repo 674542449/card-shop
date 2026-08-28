@@ -9,6 +9,7 @@ use App\Models\Card;
 use App\Models\Coupon;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\EpusdtService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -457,49 +458,28 @@ class OrderController extends Controller
      */
     private function initiateEpusdtPayment(Order $order): ?string
     {
-        $apiUrl = setting('epusdt_api_url');
-        $apiToken = setting('epusdt_api_token');
+        // EpusdtService is the single implementation: it checks the gateway's
+        // status_code rather than only the HTTP status, and it is the one that knows
+        // how to pin the payment to the chain the buyer chose. This method used to
+        // carry a second copy that did neither.
+        $chain = str_replace('usdt_', '', (string) $order->payment_method);
 
-        if (!$apiUrl || !$apiToken) {
-            Log::error('EPUSDT not configured');
+        try {
+            $result = app(EpusdtService::class)->createPayment($order, $chain);
+        } catch (\Throwable $e) {
+            Log::error('EPUSDT payment error: ' . $e->getMessage(), ['order_no' => $order->order_no]);
+
             return null;
         }
 
-        try {
-            $params = [
-                'order_id' => $order->order_no,
-                'amount' => (float) $order->total_amount,
-                'notify_url' => url('/payment/epusdt/notify'),
-                'redirect_url' => url('/order/pay/' . $order->order_no),
-            ];
+        if (empty($result['payment_url'])) {
+            Log::error('EPUSDT returned no payment_url', ['order_no' => $order->order_no]);
 
-            // Generate signature
-            ksort($params);
-            $signStr = '';
-            foreach ($params as $k => $v) {
-                if ($v !== '') {
-                    $signStr .= $k . '=' . $v . '&';
-                }
-            }
-            $signStr = rtrim($signStr, '&') . $apiToken;
-            $params['signature'] = md5($signStr);
-
-            $response = Http::post(rtrim($apiUrl, '/') . '/api/v1/order/create-transaction', $params);
-
-            if ($response->successful()) {
-                $data = $response->json();
-                if (isset($data['data']['payment_url'])) {
-                    $paymentUrl = $data['data']['payment_url'];
-                    session(['payment_url_' . $order->order_no => $paymentUrl]);
-                    return $paymentUrl;
-                }
-            }
-
-            Log::error('EPUSDT payment initiation failed', ['response' => $response->body()]);
-        } catch (\Exception $e) {
-            Log::error('EPUSDT payment error: ' . $e->getMessage());
+            return null;
         }
 
-        return null;
+        session(['payment_url_' . $order->order_no => $result['payment_url']]);
+
+        return $result['payment_url'];
     }
 }

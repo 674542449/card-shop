@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ProForm, ProFormText, ProFormTextArea, ProFormDigit } from '@ant-design/pro-components';
+import { ProForm, ProFormText, ProFormTextArea, ProFormDigit, ProFormSelect } from '@ant-design/pro-components';
 import { Card, Tabs, Spin, message, Alert } from 'antd';
 import { getSettings, updateSettings, changePassword } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
@@ -105,11 +105,20 @@ export default function Settings() {
     },
     {
       key: 'epusdt',
-      label: 'EPUSDT 支付',
+      label: 'USDT 支付',
       children: (
         <>
-          <ProFormText name="epusdt_api_url" label="EPUSDT 网关地址" />
-          <ProFormText name="epusdt_api_token" label="EPUSDT Token" />
+          <ProFormSelect
+            name="usdt_gateway"
+            label="网关类型"
+            options={[
+              { label: 'epusdt（原版）', value: 'epusdt' },
+              { label: 'BEpusdt（v03413/BEpusdt）', value: 'bepusdt' },
+            ]}
+            extra="两者接口地址和签名算法相同，但只有 BEpusdt 支持指定收款链。选错会导致签名校验失败、所有 USDT 支付无法创建，请按你实际部署的版本选择。"
+          />
+          <ProFormText name="epusdt_api_url" label="网关地址" placeholder="如 https://pay.example.com" />
+          <ProFormText name="epusdt_api_token" label="接口 Token" />
         </>
       ),
     },

@@ -29,7 +29,7 @@ class SettingController extends Controller
             ],
             'payment' => [
                 'epay_api_url', 'epay_merchant_id', 'epay_merchant_key',
-                'epusdt_api_url', 'epusdt_api_token',
+                'epusdt_api_url', 'epusdt_api_token', 'usdt_gateway',
             ],
             'email' => [
                 'email_template_subject', 'email_template_body',

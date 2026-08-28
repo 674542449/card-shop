@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Front;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Services\OrderFulfilmentService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
@@ -105,39 +105,52 @@ class PaymentController extends Controller
     }
 
     /**
-     * Handle EPUSDT async notification callback.
+     * Handle the EPUSDT / BEpusdt async notification callback.
+     *
+     * Both send the same JSON body and sign it the same way, so one handler serves
+     * either gateway. status is 1 pending, 2 paid, 3 expired; only 2 delivers.
      */
-    public function epusdtNotify(Request $request): JsonResponse
+    public function epusdtNotify(Request $request): Response
     {
         $params = $request->all();
 
         // Verify signature
         if (!$this->verifyEpusdtSignature($params)) {
+            // Answered 200 deliberately: a bad signature will never become good, so
+            // asking for a retry would just repeat a rejected callback ten times. The
+            // log line is the alert — a genuine one here means a misconfigured token.
             Log::warning('EPUSDT notify: invalid signature', $params);
-            return response()->json(['status' => 400, 'message' => 'invalid signature']);
+
+            return response('invalid signature', 200)->header('Content-Type', 'text/plain');
         }
 
-        // Check status
-        $status = $params['status'] ?? 0;
-        if ((int) $status !== 2) {
-            // Status 2 = payment successful in EPUSDT
-            return response()->json(['status' => 200]);
+        $status = (int) ($params['status'] ?? 0);
+        if ($status !== 2) {
+            // 1 (pending) arrives every minute until the order resolves, and 3
+            // (expired) once. Neither is retried by the gateway; acknowledge and
+            // let the scheduled expiry job release the cards.
+            return response('ok', 200)->header('Content-Type', 'text/plain');
         }
 
         $orderNo = $params['order_id'] ?? '';
         $tradeNo = $params['trade_id'] ?? '';
 
         if (!$orderNo) {
-            return response()->json(['status' => 400, 'message' => 'missing order_id']);
+            Log::warning('EPUSDT notify: missing order_id', $params);
+
+            return response('missing order_id', 200)->header('Content-Type', 'text/plain');
         }
 
         // `amount` is the fiat figure EPUSDT echoes back; `actual_amount` is the USDT
         // figure and would never match the order total.
-        // Same reasoning as epayNotify: a non-200 asks EPUSDT to send the callback
-        // again rather than leaving a paid order stranded.
+        // BEpusdt wants a 200 carrying the body "ok" to treat a success callback as
+        // delivered, and retries with backoff otherwise — up to ten times over about
+        // two hours. Original epusdt only checks the status code, so "ok" satisfies
+        // both. A non-200 asks for that retry rather than leaving a paid order
+        // stranded.
         return $this->processPayment($orderNo, $tradeNo, (string) ($params['amount'] ?? ''), 'epusdt')
-            ? response()->json(['status' => 200])
-            : response()->json(['status' => 500, 'message' => 'fulfilment failed, please retry'], 500);
+            ? response('ok', 200)->header('Content-Type', 'text/plain')
+            : response('fulfilment failed, please retry', 500)->header('Content-Type', 'text/plain');
     }
 
     /**

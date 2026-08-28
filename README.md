@@ -13,7 +13,13 @@
 
 ### 支付
 - **易支付** — 支付宝、微信扫码支付
-- **EPUSDT** — USDT 链上支付，支持 TRC20 / BEP20 / Polygon 三条链
+- **USDT 链上支付** — 支持 TRC20 / BEP20 / Polygon 三条链，网关可选
+  [epusdt](https://github.com/assimon/epusdt) 或
+  [BEpusdt](https://github.com/v03413/BEpusdt)
+
+  两者接口地址和签名算法完全相同，在**系统设置 → USDT 支付 → 网关类型**里选择即可。
+  区别只有一处：只有 BEpusdt 支持 `trade_type` 参数，也就是**把收款锁定到买家选的那条链**；
+  原版 epusdt 收到这个参数会因签名不匹配而拒绝下单，所以必须按实际部署的版本选对。
 
 ### 后台管理
 - 仪表盘（销售统计、趋势图、库存预警）
@@ -145,7 +151,7 @@ usermod -aG docker $USER
 
 | 服务 | 必需 | 说明 |
 |------|------|------|
-| [EPUSDT](https://github.com/GMWalletApp/epusdt) | 否 | USDT 收款需单独部署此服务 |
+| [epusdt](https://github.com/assimon/epusdt) 或 [BEpusdt](https://github.com/v03413/BEpusdt) | 否 | USDT 收款需单独部署其中一个，部署后在后台选择对应的网关类型 |
 | 易支付平台 | 否 | 支付宝/微信收款需注册商户 |
 | SMTP 邮箱 | 建议 | 发送卡密邮件（QQ邮箱、Gmail 等均可） |
 | Telegram Bot | 否 | 订单通知推送 |

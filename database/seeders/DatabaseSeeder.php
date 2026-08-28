@@ -92,6 +92,11 @@ class DatabaseSeeder extends Seeder
                 'epay_merchant_key' => '',
                 'epusdt_api_url' => '',
                 'epusdt_api_token' => '',
+                // 'epusdt' (original) or 'bepusdt'. They share an endpoint and a
+                // signature; only BEpusdt understands trade_type, and sending one to
+                // original epusdt breaks its signature check, so this cannot be
+                // guessed at runtime.
+                'usdt_gateway' => 'epusdt',
             ],
 
             // Email settings
