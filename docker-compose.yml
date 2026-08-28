@@ -19,6 +19,9 @@ services:
     environment:
       - DB_HOST=postgres
       - REDIS_HOST=redis
+      # Must be a container env var, not just a .env line: bootstrap/app.php reads it
+      # before .env is parsed.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
       # Sized by ./install.sh from this host's CPU and RAM; the defaults here are the
       # packaged PHP-FPM values, which allow only 5 concurrent requests.
       - PHP_FPM_MAX_CHILDREN=${PHP_FPM_MAX_CHILDREN:-5}
@@ -54,6 +57,9 @@ services:
     environment:
       - DB_HOST=postgres
       - REDIS_HOST=redis
+      # Must be a container env var, not just a .env line: bootstrap/app.php reads it
+      # before .env is parsed.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
 
   nginx:
     image: nginx:stable

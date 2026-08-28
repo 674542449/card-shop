@@ -20,6 +20,30 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping();
     })
     ->withMiddleware(function (Middleware $middleware) {
+        // Behind a CDN or reverse proxy the origin sees the proxy's address and a plain
+        // HTTP request. Two things break without trusting the forwarded headers: every
+        // visitor shares one IP, which collapses the per-IP rate limits and the
+        // blacklist into global ones, and Laravel builds http:// asset URLs that an
+        // HTTPS page then refuses to load as mixed content.
+        //
+        // Read from a real container environment variable rather than .env: this
+        // closure runs while the kernel is being resolved, before .env is parsed.
+        // docker-compose.yml passes it through.
+        //
+        // SECURITY: '*' trusts X-Forwarded-For from anyone who can reach the origin
+        // directly, letting them present any IP they like and walk past the rate
+        // limits. Only use '*' when port 80 is firewalled to the CDN; otherwise list
+        // the CDN's ranges here instead.
+        $trustedProxies = trim((string) env('TRUSTED_PROXIES', ''));
+
+        if ($trustedProxies !== '') {
+            $middleware->trustProxies(
+                at: $trustedProxies === '*'
+                    ? '*'
+                    : array_values(array_filter(array_map('trim', explode(',', $trustedProxies)))),
+            );
+        }
+
         $middleware->validateCsrfTokens(except: [
             'payment/epay/notify',
             'payment/epusdt/notify',
