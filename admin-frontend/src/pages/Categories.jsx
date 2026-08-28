@@ -40,7 +40,8 @@ export default function Categories() {
       dataIndex: 'is_active',
       search: false,
       width: 80,
-      render: (val) => (val ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>),
+      render: (_, record) =>
+        record.is_active ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>,
     },
     {
       title: '操作',

@@ -19,7 +19,14 @@ export default function ProductCards() {
       dataIndex: 'content',
       search: false,
       ellipsis: true,
-      render: (val) => val ? `${val.substring(0, 30)}...` : '-',
+      // ProTable's render receives the already-rendered node first, not the raw value.
+      // With ellipsis:true that node is a Tooltip element, so calling a string method
+      // on it throws. The raw value only ever lives on `record`.
+      render: (_, record) => {
+        const content = record.content ?? '';
+        if (!content) return '-';
+        return content.length > 30 ? `${content.slice(0, 30)}…` : content;
+      },
     },
     {
       title: '状态',

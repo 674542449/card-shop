@@ -58,7 +58,8 @@ export default function Articles() {
       dataIndex: 'is_published',
       search: false,
       width: 100,
-      render: (val) => (val ? <Tag color="green">已发布</Tag> : <Tag color="default">草稿</Tag>),
+      render: (_, record) =>
+        record.is_published ? <Tag color="green">已发布</Tag> : <Tag color="default">草稿</Tag>,
     },
     { title: '浏览量', dataIndex: 'views', search: false, width: 80 },
     { title: '创建时间', dataIndex: 'created_at', search: false, width: 180 },

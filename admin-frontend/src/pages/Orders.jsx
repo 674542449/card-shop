@@ -52,7 +52,7 @@ export default function Orders() {
       dataIndex: 'total_amount',
       search: false,
       width: 100,
-      render: (val) => `¥${val}`,
+      render: (_, record) => `¥${record.total_amount}`,
     },
     {
       title: '支付方式',

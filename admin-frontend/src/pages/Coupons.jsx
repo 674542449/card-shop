@@ -51,7 +51,8 @@ export default function Coupons() {
       dataIndex: 'value',
       search: false,
       width: 100,
-      render: (val, record) => (record.type === 'percent' ? `${val}%` : `¥${val}`),
+      render: (_, record) =>
+        record.type === 'percent' ? `${record.value}%` : `¥${record.value}`,
     },
     {
       title: '适用商品',
@@ -71,14 +72,17 @@ export default function Coupons() {
       dataIndex: 'is_active',
       search: false,
       width: 80,
-      render: (val) => (val ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>),
+      render: (_, record) =>
+        record.is_active ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>,
     },
     {
       title: '过期时间',
       dataIndex: 'expires_at',
       search: false,
       width: 180,
-      render: (val) => val || '永不过期',
+      // Reading the node instead of the record made this dead: ProTable renders a null
+      // cell as "-", which is truthy, so "永不过期" never appeared.
+      render: (_, record) => record.expires_at || '永不过期',
     },
     {
       title: '操作',

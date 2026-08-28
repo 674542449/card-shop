@@ -55,14 +55,21 @@ export default function Products() {
       valueType: 'select',
       fieldProps: { options: categoryOptions },
     },
-    { title: '价格', dataIndex: 'price', search: false, width: 100, render: (val) => `¥${val}` },
+    {
+      title: '价格',
+      dataIndex: 'price',
+      search: false,
+      width: 100,
+      render: (_, record) => `¥${record.price}`,
+    },
     { title: '库存', dataIndex: 'stock_count', search: false, width: 80 },
     {
       title: '状态',
       dataIndex: 'is_active',
       search: false,
       width: 80,
-      render: (val) => (val ? <Tag color="green">上架</Tag> : <Tag color="red">下架</Tag>),
+      render: (_, record) =>
+        record.is_active ? <Tag color="green">上架</Tag> : <Tag color="red">下架</Tag>,
     },
     { title: '排序', dataIndex: 'sort_order', search: false, width: 80 },
     {
