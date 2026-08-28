@@ -39,7 +39,8 @@
 @section('content')
     @php $announcement = setting('site_announcement', ''); @endphp
     @if($announcement)
-    <blockquote class="site-quote">{!! nl2br(e($announcement)) !!}</blockquote>
+    {{-- See the note in front/home.blade.php: sanitised editor HTML, not raw text. --}}
+    <blockquote class="site-quote">{!! \App\Support\ContentRenderer::toHtml($announcement) !!}</blockquote>
     @endif
 
     <div class="pd-layout">

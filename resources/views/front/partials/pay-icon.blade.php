@@ -12,13 +12,15 @@
 @php $payIconKey = str_starts_with((string) ($method ?? ''), 'usdt_') ? 'usdt' : ($method ?? ''); @endphp
 
 @if($payIconKey === 'alipay')
+    {{-- Alipay's identity is a blue plate carrying 支. Drawing that stroke as a path by
+         hand produced a shape that read as neither the logo nor a character, so the
+         glyph itself is used: it cannot render wrong on a device that has a Chinese
+         font, which every visitor to this shop does. --}}
     <svg class="pay-svg" viewBox="0 0 32 32" role="img" aria-hidden="true" focusable="false">
         <rect width="32" height="32" rx="7" fill="#1677ff"/>
-        <g fill="#fff">
-            <rect x="8" y="9" width="16" height="2" rx="1"/>
-            <rect x="15" y="6" width="2" height="9" rx="1"/>
-            <path d="M9 22.4c0-2 1.8-3.2 4.2-3.2 3 0 6.3 1.2 9.8 2.6l-.9 2.2c-3.2-1.3-6.1-2.4-8.5-2.4-1.3 0-2.1.5-2.1 1.2 0 .7.7 1.2 1.9 1.2 1.7 0 3-1 4-2.6l2 1.1c-1.4 2.2-3.4 3.6-6.1 3.6-2.6 0-4.3-1.4-4.3-3.4z"/>
-        </g>
+        <text x="16" y="23" text-anchor="middle" fill="#fff"
+              font-size="20" font-weight="700"
+              font-family="-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif">支</text>
     </svg>
 @elseif($payIconKey === 'wechat')
     <svg class="pay-svg" viewBox="0 0 32 32" role="img" aria-hidden="true" focusable="false">

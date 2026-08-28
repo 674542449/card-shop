@@ -3,6 +3,7 @@ import { ProForm, ProFormText, ProFormTextArea, ProFormDigit } from '@ant-design
 import { Card, Tabs, Spin, message, Alert } from 'antd';
 import { getSettings, updateSettings, changePassword } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
+import RichTextEditor from '../components/RichTextEditor';
 
 export default function Settings() {
   const [loading, setLoading] = useState(true);
@@ -49,7 +50,9 @@ export default function Settings() {
         <>
           <ProFormText name="site_name" label="站点名称" />
           <ProFormTextArea name="site_description" label="站点描述" fieldProps={{ rows: 3 }} />
-          <ProFormTextArea name="site_announcement" label="站点公告" fieldProps={{ rows: 3 }} />
+          <ProForm.Item name="site_announcement" label="站点公告" extra="显示在首页和商品详情页顶部。">
+            <RichTextEditor placeholder="支持加粗、颜色、链接、图片等" height={220} />
+          </ProForm.Item>
           <ProFormText name="contact_text" label="联系方式文字" />
           <ProFormText name="contact_url" label="联系方式链接" />
           <ProForm.Item name="site_logo" label="站点 Logo" extra="显示在页面左上角，高度自动缩放到 30px。">

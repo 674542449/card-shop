@@ -30,7 +30,10 @@
 
 @section('content')
     @if($siteAnnouncement)
-    <blockquote class="site-quote">{!! nl2br(e($siteAnnouncement)) !!}</blockquote>
+    {{-- The announcement is authored in the admin's rich text editor, so it arrives as
+         HTML. ContentRenderer sanitises it with the same allowlist used for product
+         descriptions, and still renders an older plain-text announcement correctly. --}}
+    <blockquote class="site-quote">{!! \App\Support\ContentRenderer::toHtml($siteAnnouncement) !!}</blockquote>
     @endif
 
     {{-- Desktop: Product Tables grouped by category --}}
