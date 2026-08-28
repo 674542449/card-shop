@@ -3,7 +3,7 @@ set -e
 
 cd /var/www/html
 
-echo "==> [1/6] Preparing writable directories"
+echo "==> [1/7] Preparing writable directories"
 mkdir -p bootstrap/cache \
     storage/app/public \
     storage/framework/cache/data \
@@ -24,14 +24,14 @@ rm -rf storage/framework/views/*
 chown -R www-data:www-data storage bootstrap/cache
 chmod -R 775 storage bootstrap/cache
 
-echo "==> [2/6] Composer dependencies"
+echo "==> [2/7] Composer dependencies"
 if [ ! -f vendor/autoload.php ]; then
     composer install --no-dev --optimize-autoloader --no-interaction --no-progress
 else
     echo "    vendor/ present, skipping."
 fi
 
-echo "==> [3/6] Environment file"
+echo "==> [3/7] Environment file"
 if [ ! -f .env ]; then
     echo "    .env missing, creating from .env.example"
     cp .env.example .env
@@ -45,7 +45,7 @@ else
     echo "    APP_KEY present."
 fi
 
-echo "==> [4/6] Waiting for PostgreSQL"
+echo "==> [4/7] Waiting for PostgreSQL"
 for i in $(seq 1 60); do
     if php -r '
         $h = getenv("DB_HOST") ?: "postgres";
@@ -62,7 +62,7 @@ for i in $(seq 1 60); do
     sleep 1
 done
 
-echo "==> [5/6] Migrations and seed"
+echo "==> [5/7] Migrations and seed"
 # Deliberately NOT silenced: a failed migration means the settings table is missing,
 # which turns every page into a 500. The operator needs to see it in `docker logs`.
 if php artisan migrate --force --no-interaction; then
@@ -79,7 +79,26 @@ else
     echo "    !! MIGRATIONS FAILED. The site will return 500 until this is fixed."
 fi
 
-echo "==> [6/6] Admin frontend assets"
+echo "==> [6/7] Precompiling Blade views"
+# This is not just a warm cache, it closes a race that took the site down.
+#
+# Blade writes each compiled view with file_put_contents() and then immediately
+# includes it. When several PHP-FPM workers get their first request for the same
+# uncompiled view at once, one worker can include the file while another is still
+# writing it. The truncated include is a parse error ("unexpected end of file"),
+# and OPcache then caches that broken compilation. Because the file's mtime never
+# changes afterwards, OPcache never revalidates it, so every later request keeps
+# getting the broken copy — `view:clear` and container rebuilds do not help.
+#
+# Compiling every view here, in one process, before FPM accepts any traffic, means
+# workers only ever include files that are already complete on disk.
+if php artisan view:cache --no-interaction; then
+    echo "    Views precompiled."
+else
+    echo "    !! View precompilation failed — see the error above."
+fi
+
+echo "==> [7/7] Admin frontend assets"
 # The built SPA is committed to the repository under public/admin-assets/, so a normal
 # deploy needs no Node toolchain at all. We only fall back to building when the assets
 # are genuinely missing, and we never hide a failure behind `|| true`.
