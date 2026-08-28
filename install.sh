@@ -188,6 +188,47 @@ if ! grep -q '^# ---- 性能参数' "$ENV_FILE"; then
     printf '\n# ---- 性能参数（由 install.sh 生成，可手动修改后重启生效）----\n' >> "$ENV_FILE"
 fi
 
+# ---------------------------------------------------------------- 反向代理 / CDN
+#
+# 这一步过去不问，.env 里的 TRUSTED_PROXIES 就一直是空的。空值的后果不是"IP 显示
+# 得不准确"这么轻——它会让所有按 IP 生效的保护一起失效，而且是静默失效：
+#   · 每 IP 最多 3 个未支付订单的限制，变成全站合计 3 个，第 4 个买家直接被拒
+#   · 下单、订单查询、后台登录的限流，全站共用一个桶
+#   · IP 黑名单封一个人等于封所有人
+# 所以现在必须问。
+if [ "$MODE" = "interactive" ]; then
+    CURRENT_TP=$(grep '^TRUSTED_PROXIES=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+
+    echo
+    echo "=============================================================="
+    echo "  网站前面有没有 CDN / 反向代理？"
+    echo "=============================================================="
+    echo "  1) 有，且源站 80/443 已只放行给 CDN   → 信任所有代理（*）"
+    echo "  2) 有，源站端口对公网开放            → 需要填 CDN 回源 IP 段"
+    echo "  3) 没有，访客直连这台服务器          → 留空"
+    echo
+    echo "  提醒：选 1 而端口又没做限制的话，任何人直连源站 IP 就能伪造自己的"
+    echo "  地址，绕过全部限流和黑名单。这种情况请选 2。"
+    echo
+    [ -n "$CURRENT_TP" ] && echo "  当前值：$CURRENT_TP" && echo
+
+    printf "请选择 [1-3，直接回车保持当前设置]: "
+    read -r tp_answer || tp_answer=""
+    case "$tp_answer" in
+        1) set_env TRUSTED_PROXIES '*' ;;
+        2)
+            printf "请输入 CDN 回源 IP 段（逗号分隔，如 1.2.3.0/24,5.6.7.0/24）: "
+            read -r tp_list || tp_list=""
+            case "$tp_list" in
+                '') echo "未填写，保持当前设置。按 IP 的限流在修好之前都不会生效。" ;;
+                *) set_env TRUSTED_PROXIES "$tp_list" ;;
+            esac
+            ;;
+        3) set_env TRUSTED_PROXIES '' ;;
+        *) ;;   # 回车或乱输：不动，避免把已经配好的值清掉
+    esac
+fi
+
 set_env PHP_FPM_MAX_CHILDREN   "$CHOICE"
 set_env PHP_FPM_START_SERVERS  "$START_SERVERS"
 set_env PHP_FPM_MIN_SPARE      "$MIN_SPARE"
@@ -206,6 +247,12 @@ printf "  启动/空闲进程      : start=%s min=%s max=%s\n" "$START_SERVERS" 
 printf "  PostgreSQL 共享缓冲: %s\n" "$PG_SHARED"
 printf "  PostgreSQL 缓存估计: %s\n" "$PG_CACHE"
 printf "  PostgreSQL 最大连接: %s\n" "$PG_MAX_CONN"
+FINAL_TP=$(grep '^TRUSTED_PROXIES=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+if [ -n "$FINAL_TP" ]; then
+    printf "  信任的代理        : %s\n" "$FINAL_TP"
+else
+    printf "  信任的代理        : (空) —— 若前面有 CDN，按 IP 的限流和黑名单不生效\n"
+fi
 echo
 echo "  生效："
 echo "    docker compose up -d"
