@@ -8,11 +8,31 @@ use App\Models\Product;
 use App\Models\ProductWholesalePrice;
 use App\Models\OperationLog;
 use Illuminate\Http\Request;
+use App\Support\SlugGenerator;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
+    /**
+     * Rejects max_quantity < min_quantity, which leaves the product with an empty
+     * valid quantity range — the storefront then refuses every order for it with a
+     * validation error the buyer can do nothing about.
+     *
+     * Written as a closure rather than `gte:min_quantity` on purpose: Laravel's gte
+     * rule throws InvalidArgumentException (a 500, not a 422) when the compared field
+     * is absent, and the admin form omits min_quantity whenever it is left blank.
+     */
+    private function maxNotBelowMin(Request $request): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail) use ($request) {
+            $min = $request->input('min_quantity');
+
+            if (is_numeric($min) && is_numeric($value) && (int) $value < (int) $min) {
+                $fail('每单最大数量不能小于最小数量。');
+            }
+        };
+    }
+
     public function index(Request $request)
     {
         $query = Product::with('category')
@@ -52,7 +72,7 @@ class ProductController extends Controller
             'image' => 'nullable|string|max:500',
             'price' => 'required|numeric|min:0.01',
             'min_quantity' => 'nullable|integer|min:1',
-            'max_quantity' => 'nullable|integer|min:1',
+            'max_quantity' => ['nullable', 'integer', 'min:1', $this->maxNotBelowMin($request)],
             'is_active' => 'boolean',
             'sort_order' => 'nullable|integer',
             'seo_title' => 'nullable|string|max:200',
@@ -67,7 +87,7 @@ class ProductController extends Controller
         unset($data['wholesale_prices']);
 
         if (empty($data['slug'])) {
-            $data['slug'] = Str::slug($data['name']) ?: Str::slug(Str::random(8));
+            $data['slug'] = SlugGenerator::unique($data['name'], 'products');
         }
 
         $product = Product::create($data);
@@ -102,7 +122,7 @@ class ProductController extends Controller
             'image' => 'nullable|string|max:500',
             'price' => 'required|numeric|min:0.01',
             'min_quantity' => 'nullable|integer|min:1',
-            'max_quantity' => 'nullable|integer|min:1',
+            'max_quantity' => ['nullable', 'integer', 'min:1', $this->maxNotBelowMin($request)],
             'is_active' => 'boolean',
             'sort_order' => 'nullable|integer',
             'seo_title' => 'nullable|string|max:200',
@@ -121,7 +141,7 @@ class ProductController extends Controller
         unset($data['wholesale_prices']);
 
         if (empty($data['slug'])) {
-            $data['slug'] = Str::slug($data['name']) ?: Str::slug(Str::random(8));
+            $data['slug'] = SlugGenerator::unique($data['name'], 'products', $product->id);
         }
 
         DB::transaction(function () use ($product, $data, $replaceTiers, $wholesalePrices) {

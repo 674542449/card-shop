@@ -1,5 +1,9 @@
 @php
     $stock = $product->stockCount();
+    // Not `$stock > 0`. A product with min_quantity 5 and 3 cards left cannot be
+    // bought at all — the order form rejects every quantity — so showing 购买 sends
+    // the buyer to a page that can only fail. It is out of stock in practice.
+    $buyable = $stock >= max(1, (int) $product->min_quantity);
 @endphp
 
 {{--
@@ -43,7 +47,7 @@
     <td role="cell" class="cell-stock"><span class="cell-label">库存</span><span class="stock-num">{{ $stock }}</span></td>
     <td role="cell" class="prod-price">¥{{ number_format($product->price, 2) }}</td>
     <td role="cell" class="cell-action">
-        @if($stock > 0)
+        @if($buyable)
         <a href="/product/{{ $product->slug }}" class="btn-buy-sm">购买</a>
         @else
         <span class="text-muted cell-oos">缺货</span>

@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\OperationLog;
+use App\Support\SlugGenerator;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class CategoryController extends Controller
 {
@@ -28,7 +28,7 @@ class CategoryController extends Controller
         ]);
 
         if (empty($data['slug'])) {
-            $data['slug'] = Str::slug($data['name']) ?: Str::slug(Str::random(8));
+            $data['slug'] = SlugGenerator::unique($data['name'], 'categories');
         }
 
         $category = Category::create($data);
@@ -49,7 +49,7 @@ class CategoryController extends Controller
         ]);
 
         if (empty($data['slug'])) {
-            $data['slug'] = Str::slug($data['name']) ?: Str::slug(Str::random(8));
+            $data['slug'] = SlugGenerator::unique($data['name'], 'categories', $category->id);
         }
 
         $category->update($data);

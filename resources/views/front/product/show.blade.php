@@ -6,6 +6,14 @@
 @section('canonical', url('/product/' . $product->slug))
 @section('og_type', 'product')
 
+@php
+    // Not `$stockCount > 0`. With min_quantity 5 and 3 cards left, every quantity the
+    // form can submit is rejected by the order validator, so rendering the form only
+    // offers the buyer a guaranteed failure. Treat it as out of stock — here and in
+    // the schema.org availability below, which search results show to shoppers.
+    $buyable = $stockCount >= max(1, (int) $product->min_quantity);
+@endphp
+
 @section('structured_data')
 @php
     // See the note in front/home.blade.php: a literal "@context" in the template is
@@ -14,13 +22,17 @@
         '@context' => 'https://schema.org',
         '@type' => 'Product',
         'name' => $product->name,
-        'description' => $product->seo_description ?: Str::limit(strip_tags($descriptionHtml), 200),
+        // Fully qualified: this slim skeleton registers no class aliases, so a bare
+        // Str:: in a compiled view resolves to the global \Str and fatals. It only
+        // fires when seo_description is blank — which is a new product's default
+        // state — so it hid behind the ?: on any product that had one.
+        'description' => $product->seo_description ?: \Illuminate\Support\Str::limit(strip_tags($descriptionHtml), 200),
         'url' => url('/product/' . $product->slug),
         'offers' => [
             '@type' => 'Offer',
             'priceCurrency' => 'CNY',
             'price' => (string) $product->price,
-            'availability' => $stockCount > 0
+            'availability' => $buyable
                 ? 'https://schema.org/InStock'
                 : 'https://schema.org/OutOfStock',
         ],
@@ -105,7 +117,7 @@
                 </table>
                 @endif
 
-                @if($stockCount > 0)
+                @if($buyable)
                 <form class="pd-form" action="/order/create" method="POST" data-guard>
                     @csrf
                     <input type="hidden" name="product_id" id="product_id" value="{{ $product->id }}">
@@ -117,7 +129,9 @@
                         <input type="number" name="quantity" id="quantity" class="form-input"
                                value="{{ old('quantity', $product->min_quantity) }}"
                                min="{{ $product->min_quantity }}"
-                               max="{{ min($product->max_quantity, $stockCount) }}">
+                               {{-- max_quantity is nullable; min(null, 5) is null in PHP,
+                                    which rendered max="" and left the box uncapped. --}}
+                               max="{{ $product->max_quantity ? min((int) $product->max_quantity, $stockCount) : $stockCount }}">
                     </div>
 
                     <div class="form-group">

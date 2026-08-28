@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Article;
 use App\Models\ArticleCategory;
 use App\Models\OperationLog;
+use App\Support\SlugGenerator;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class ArticleController extends Controller
 {
@@ -55,7 +55,7 @@ class ArticleController extends Controller
         ]);
 
         if (empty($data['slug'])) {
-            $data['slug'] = Str::slug($data['title']) ?: Str::slug(Str::random(8));
+            $data['slug'] = SlugGenerator::unique($data['title'], 'articles');
         }
 
         $article = Article::create($data);
@@ -88,7 +88,7 @@ class ArticleController extends Controller
         ]);
 
         if (empty($data['slug'])) {
-            $data['slug'] = Str::slug($data['title']) ?: Str::slug(Str::random(8));
+            $data['slug'] = SlugGenerator::unique($data['title'], 'articles', $article->id);
         }
 
         $article->update($data);

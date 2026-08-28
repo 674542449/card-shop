@@ -63,9 +63,14 @@ class Product extends Model
         return $query->where('is_active', true);
     }
 
+    /**
+     * sort_order alone is not a total order — every product ships with 0. PostgreSQL
+     * is free to return tied rows in any order per query, so a paginated admin list
+     * could show the same product on two pages and never show another.
+     */
     public function scopeOrdered(Builder $query): Builder
     {
-        return $query->orderBy('sort_order');
+        return $query->orderBy('sort_order')->orderBy('id');
     }
 
     /**

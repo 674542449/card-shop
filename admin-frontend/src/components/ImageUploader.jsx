@@ -3,19 +3,27 @@ import { Upload, Button, Space, Spin, message } from 'antd';
 import { PlusOutlined, LoadingOutlined, DeleteOutlined } from '@ant-design/icons';
 import { uploadImage } from '../services/api';
 
-const ACCEPT = '.jpg,.jpeg,.png,.gif,.webp';
-const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+// .ico is here because the server accepts it and the site favicon field uses this
+// same uploader — without it the browser file picker greyed out the operator's .ico
+// and there was no way to set a favicon at all.
+const ACCEPT = '.jpg,.jpeg,.png,.gif,.webp,.ico';
+const ALLOWED_TYPES = [
+  'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+  // Browsers disagree on the .ico type: Chrome reports image/x-icon, Firefox
+  // image/vnd.microsoft.icon, and some report nothing at all (hence the extOk path).
+  'image/x-icon', 'image/vnd.microsoft.icon',
+];
 const MAX_SIZE = 2 * 1024 * 1024;
 
-// Mirrors the server rule (image, mimes:jpg,jpeg,png,gif,webp, max:2048) so the
+// Mirrors the server rule (image, mimes:jpg,jpeg,png,gif,webp,ico, max:2048) so the
 // operator gets an immediate answer instead of waiting on a request that 422s.
 function validateFile(file) {
   const type = (file.type || '').toLowerCase();
   const name = (file.name || '').toLowerCase();
-  const extOk = /\.(jpe?g|png|gif|webp)$/.test(name);
+  const extOk = /\.(jpe?g|png|gif|webp|ico)$/.test(name);
 
   if (!ALLOWED_TYPES.includes(type) && !extOk) {
-    message.error('只支持 JPG / PNG / GIF / WEBP 格式的图片');
+    message.error('只支持 JPG / PNG / GIF / WEBP / ICO 格式的图片');
     return false;
   }
   if (file.size > MAX_SIZE) {

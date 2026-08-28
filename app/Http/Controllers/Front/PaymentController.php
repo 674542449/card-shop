@@ -164,13 +164,22 @@ class PaymentController extends Controller
             return false;
         }
 
+        // Everything here is attacker-controlled. ?sign[]=1 makes this an array, and
+        // hash_equals() throws a TypeError on a non-string — an uncaught 500 on an
+        // unauthenticated endpoint, reachable by anyone who knows the URL.
         $sign = $params['sign'] ?? '';
+        if (!is_string($sign)) {
+            return false;
+        }
+
         unset($params['sign'], $params['sign_type']);
 
         ksort($params);
         $signStr = '';
         foreach ($params as $k => $v) {
-            if ($v !== '' && $v !== null) {
+            // Same reason: a nested array here would raise "Array to string conversion"
+            // and silently sign the literal "Array".
+            if (is_scalar($v) && $v !== '' && $v !== null) {
                 $signStr .= $k . '=' . $v . '&';
             }
         }
@@ -190,13 +199,19 @@ class PaymentController extends Controller
             return false;
         }
 
+        // See verifyEpaySignature: a non-string signature would throw out of
+        // hash_equals(), and a non-scalar value would be signed as the word "Array".
         $sign = $params['signature'] ?? '';
+        if (!is_string($sign)) {
+            return false;
+        }
+
         unset($params['signature']);
 
         ksort($params);
         $signStr = '';
         foreach ($params as $k => $v) {
-            if ($v !== '' && $v !== null) {
+            if (is_scalar($v) && $v !== '' && $v !== null) {
                 $signStr .= $k . '=' . $v . '&';
             }
         }

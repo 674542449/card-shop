@@ -15,9 +15,13 @@ return Application::configure(basePath: dirname(__DIR__))
         // Runs in the cardshop-scheduler container. Abandoned pending orders hold
         // their cards in the `locked` state; nothing else ever releases them, so
         // without this the sellable stock only ever shrinks.
+        // The 10 is the lock's expiry in minutes. withoutOverlapping() defaults to
+        // 24 hours, so a run killed mid-flight (container restart, OOM) leaves the
+        // lock held and silently stops expiring orders for a full day — stock quietly
+        // draining the whole time with nothing in the logs to say why.
         $schedule->command('orders:expire')
             ->everyMinute()
-            ->withoutOverlapping();
+            ->withoutOverlapping(10);
     })
     ->withMiddleware(function (Middleware $middleware) {
         // Behind a CDN or reverse proxy the origin sees the proxy's address and a plain

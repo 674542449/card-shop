@@ -87,13 +87,33 @@ class OrderController extends Controller
             return response()->json(['message' => '只能关闭待支付订单。'], 422);
         }
 
-        DB::transaction(function () use ($order) {
+        // Claim the order first, cards second — the same order OrderFulfilmentService
+        // takes them in. Taking the card locks first inverted the lock order against
+        // fulfilment, which is a deadlock two concurrent transactions can reach.
+        //
+        // And the claim has to be conditional: the status check above read a
+        // route-bound instance, so a callback can pay the order in the gap and an
+        // unconditional write would stamp 'closed' over it, losing the sale from the
+        // books with no way to repair it from the admin.
+        $closed = DB::transaction(function () use ($order) {
+            $claimed = Order::where('id', $order->id)
+                ->where('status', 'pending')
+                ->update(['status' => 'closed']);
+
+            if ($claimed === 0) {
+                return false;
+            }
+
             Card::where('order_id', $order->id)
                 ->where('status', 'locked')
                 ->update(['status' => 'unsold', 'order_id' => null, 'locked_at' => null]);
 
-            $order->update(['status' => 'closed']);
+            return true;
         });
+
+        if (!$closed) {
+            return response()->json(['message' => '订单状态已变化（可能刚刚支付成功），请刷新后查看。'], 422);
+        }
 
         OperationLog::log('关闭订单', 'order', $order->id, "关闭订单 {$order->order_no}");
 
@@ -162,13 +182,28 @@ class OrderController extends Controller
             'expired' => '已过期', 'closed' => '已关闭',
         ];
 
+        // Every field goes through this, not just the product name. The email is
+        // buyer-supplied: an unquoted one containing a comma broke the column
+        // alignment of the whole row, and one beginning with = + - or @ is executed
+        // as a formula when the operator opens the file — a spreadsheet is a
+        // programming environment, and this export hands it attacker input.
+        $cell = static function ($value): string {
+            $value = (string) $value;
+
+            if ($value !== '' && str_contains("=+-@\t\r", $value[0])) {
+                $value = "'" . $value;
+            }
+
+            return '"' . str_replace('"', '""', $value) . '"';
+        };
+
         $csv = "\xEF\xBB\xBF";
         $csv .= "订单号,商品名称,邮箱,数量,总金额,支付方式,状态,创建时间,支付时间\n";
 
         foreach ($orders as $order) {
-            $csv .= implode(',', [
+            $csv .= implode(',', array_map($cell, [
                 $order->order_no,
-                '"' . str_replace('"', '""', $order->product->name ?? '') . '"',
+                $order->product->name ?? '',
                 $order->email,
                 $order->quantity,
                 $order->total_amount,
@@ -176,7 +211,7 @@ class OrderController extends Controller
                 $statusMap[$order->status] ?? $order->status,
                 $order->created_at,
                 $order->paid_at ?? '',
-            ]) . "\n";
+            ])) . "\n";
         }
 
         return Response::make($csv, 200, [

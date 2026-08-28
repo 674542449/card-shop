@@ -91,9 +91,21 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function showCopied(btn) {
-        var original = btn.textContent;
+        // Guard the re-entrant case. A second click inside the 2s window used to
+        // capture "已复制" as `original`, and the button then said 已复制 forever —
+        // on the card-delivery page, where 复制 is the one control that matters.
+        if (btn.dataset.copyTimer) {
+            clearTimeout(Number(btn.dataset.copyTimer));
+        } else {
+            btn.dataset.copyOriginal = btn.textContent;
+        }
+
         btn.textContent = '已复制';
-        setTimeout(function () { btn.textContent = original; }, 2000);
+        btn.dataset.copyTimer = String(setTimeout(function () {
+            btn.textContent = btn.dataset.copyOriginal || '复制';
+            delete btn.dataset.copyTimer;
+            delete btn.dataset.copyOriginal;
+        }, 2000));
     }
 
     // Payment status polling
@@ -102,13 +114,17 @@ document.addEventListener('DOMContentLoaded', function () {
         var orderNo = paymentPollingEl.dataset.orderNo;
         var checkUrl = '/order/pay/' + orderNo;
         var pollingInterval = setInterval(function () {
-            fetch(checkUrl, { headers: { 'Accept': 'application/json' } })
+            fetch(checkUrl, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
                 .then(function (response) {
-                    if (response.redirected) { window.location.reload(); return; }
-                    return response.text();
+                    if (response.redirected) { window.location.reload(); return null; }
+                    return response.json();
                 })
-                .then(function (html) {
-                    if (html && html.indexOf('"paid"') !== -1) {
+                .then(function (data) {
+                    // The controller answers JSON for this request. It used to answer
+                    // HTML and this checked `indexOf('"paid"')` against the whole page —
+                    // which the embedded order JSON and the status labels could both
+                    // satisfy while the order was still pending, reloading in a loop.
+                    if (data && data.status && data.status !== 'pending') {
                         clearInterval(pollingInterval);
                         window.location.reload();
                     }
@@ -143,9 +159,22 @@ document.addEventListener('DOMContentLoaded', function () {
         form.addEventListener('submit', function () {
             var btn = form.querySelector('button[type="submit"]');
             if (btn) {
+                if (!btn.dataset.guardLabel) btn.dataset.guardLabel = btn.textContent;
                 btn.disabled = true;
                 btn.textContent = '处理中...';
             }
+        });
+    });
+
+    // Restore those buttons when the page comes back from the back/forward cache.
+    // Safari and Firefox restore the live DOM rather than re-running the script, so
+    // a buyer who pressed 立即购买 and then hit Back landed on a dead 处理中... button
+    // and had to reload to buy anything.
+    window.addEventListener('pageshow', function (e) {
+        if (!e.persisted) return;
+        document.querySelectorAll('form[data-guard] button[type="submit"]').forEach(function (btn) {
+            btn.disabled = false;
+            if (btn.dataset.guardLabel) btn.textContent = btn.dataset.guardLabel;
         });
     });
 

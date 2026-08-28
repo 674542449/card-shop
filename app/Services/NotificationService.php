@@ -31,21 +31,27 @@ class NotificationService
 
             // {{total_amount}} is the name used by the seeded template, {{amount}} by the
             // built-in default. Support both so either template renders correctly.
-            $placeholders = [
-                '{{site_name}}' => e($siteName),
-                '{{order_no}}' => e($order->order_no),
-                '{{product_name}}' => e($order->product->name ?? ''),
+            $values = [
+                '{{site_name}}' => $siteName,
+                '{{order_no}}' => $order->order_no,
+                '{{product_name}}' => $order->product->name ?? '',
                 '{{quantity}}' => (string) $order->quantity,
                 '{{amount}}' => $amount,
                 '{{total_amount}}' => $amount,
                 '{{cards}}' => $cards,
             ];
 
-            $body = strtr($template, $placeholders);
+            // {{cards}} was substituted raw. Card content is arbitrary operator-uploaded
+            // text: one containing < or & renders as broken markup inside the <pre>, so
+            // the buyer receives a card secret that is silently truncated or mangled —
+            // and a card containing a tag injects it into the email body.
+            $body = strtr($template, array_map(fn ($v) => e($v), $values));
 
+            // The subject is a mail header, not HTML. Escaping it turned a site name
+            // with an & into "A&amp;B" in the buyer's inbox, so it gets the raw values.
             $subject = strtr(
                 (string) setting('email_template_subject', '{{site_name}} - 订单 {{order_no}} 卡密信息'),
-                $placeholders
+                $values
             );
 
             Mail::html($body, function ($message) use ($order, $subject) {
@@ -115,13 +121,20 @@ class NotificationService
 
         $method = $paymentLabels[$order->payment_method] ?? $order->payment_method;
 
+        // Escaped because sendTelegramNotification() posts with parse_mode=HTML.
+        // A product named "<VIP>" or an email containing < made Telegram reject the
+        // whole message with a 400, so the operator got no notification at all for
+        // exactly those sales — a silent gap, since the send failure only logs.
+        $name = e($order->product->name ?? '');
+        $email = e($order->email);
+
         $message = "<b>新订单通知</b>\n\n"
-            . "订单号: <code>{$order->order_no}</code>\n"
-            . "商品: {$order->product->name}\n"
+            . "订单号: <code>" . e($order->order_no) . "</code>\n"
+            . "商品: {$name}\n"
             . "数量: {$order->quantity}\n"
             . "金额: ¥{$order->total_amount}\n"
-            . "支付方式: {$method}\n"
-            . "邮箱: {$order->email}";
+            . "支付方式: " . e($method) . "\n"
+            . "邮箱: {$email}";
 
         $this->sendTelegramNotification($message);
     }

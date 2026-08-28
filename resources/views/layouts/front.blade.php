@@ -6,17 +6,22 @@
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <title>@yield('title', setting('seo_default_title', 'CardShop'))</title>
-    <meta name="description" content="@yield('meta_description', setting('seo_default_description', ''))">
-    <meta name="keywords" content="@yield('meta_keywords', setting('seo_default_keywords', ''))">
+    {{-- yieldContent() inside {{ }} instead of @yield, because @yield prints the
+         section RAW. These sections carry product names and SEO text typed by the
+         operator; a single " in a name closes the content attribute and everything
+         after it becomes markup in <head>. @yield stays below for the sections that
+         are meant to be HTML (structured_data, head, content, scripts). --}}
+    <title>{{ $__env->yieldContent('title', setting('seo_default_title', 'CardShop')) }}</title>
+    <meta name="description" content="{{ $__env->yieldContent('meta_description', setting('seo_default_description', '')) }}">
+    <meta name="keywords" content="{{ $__env->yieldContent('meta_keywords', setting('seo_default_keywords', '')) }}">
 
     @hasSection('canonical')
-    <link rel="canonical" href="@yield('canonical')">
+    <link rel="canonical" href="{{ $__env->yieldContent('canonical') }}">
     @endif
 
-    <meta property="og:type" content="@yield('og_type', 'website')">
-    <meta property="og:title" content="@yield('title', setting('seo_default_title', 'CardShop'))">
-    <meta property="og:description" content="@yield('meta_description', setting('seo_default_description', ''))">
+    <meta property="og:type" content="{{ $__env->yieldContent('og_type', 'website') }}">
+    <meta property="og:title" content="{{ $__env->yieldContent('title', setting('seo_default_title', 'CardShop')) }}">
+    <meta property="og:description" content="{{ $__env->yieldContent('meta_description', setting('seo_default_description', '')) }}">
     <meta property="og:url" content="{{ url()->current() }}">
     <meta property="og:site_name" content="{{ setting('site_name', 'CardShop') }}">
 

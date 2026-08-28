@@ -189,14 +189,34 @@ class OrderService
 
         $count = 0;
         foreach ($expiredOrders as $order) {
-            DB::transaction(function () use ($order) {
-                $order->update(['status' => 'expired']);
+            // Claim the row with a conditional UPDATE rather than writing the status
+            // by primary key. The select above happened outside any transaction, so a
+            // gateway callback can fulfil the order in the gap — and fulfilment only
+            // checks status, not expires_at, so it legitimately does. An unconditional
+            // write then stamps 'expired' over a paid order: the buyer has their cards
+            // and the gateway has the money, but the sale disappears from the books and
+            // neither resend nor markPaid will touch it again.
+            $expired = DB::transaction(function () use ($order) {
+                $claimed = Order::where('id', $order->id)
+                    ->where('status', 'pending')
+                    ->update(['status' => 'expired']);
 
-                // Release locked cards back to unsold
+                if ($claimed === 0) {
+                    return false;
+                }
+
+                // Only after the claim: releasing first would hand a paying buyer's
+                // cards to the next visitor. Scoped to 'locked', so cards already sold
+                // by a callback that won the race are left alone.
                 $lockedCards = $order->cards()->where('status', 'locked')->get();
                 $this->cardService->releaseCards($lockedCards);
+
+                return true;
             });
-            $count++;
+
+            if ($expired) {
+                $count++;
+            }
         }
 
         return $count;

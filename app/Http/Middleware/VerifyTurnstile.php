@@ -21,13 +21,21 @@ class VerifyTurnstile
     public function handle(Request $request, Closure $next): Response
     {
         $secretKey = (string) setting('turnstile_secret_key', '');
+        $siteKey = (string) setting('turnstile_site_key', '');
 
-        // Skip verification if Turnstile is not configured
-        if (empty($secretKey)) {
+        // Both keys, not just the secret. The layout renders the widget only when the
+        // SITE key is set, so a shop with a secret and no site key would show no
+        // challenge and then reject every submission for not having solved it —
+        // checkout dead with nothing on screen explaining why. Half-configured fails
+        // open; that is the right direction for an optional protection.
+        if ($secretKey === '' || $siteKey === '') {
             return $next($request);
         }
 
         $token = $request->input('cf-turnstile-response', '');
+        if (!is_string($token)) {
+            return $this->fail($request);
+        }
 
         if (empty($token)) {
             return $this->fail($request);

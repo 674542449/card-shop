@@ -28,8 +28,9 @@ class ArticleCategory extends Model
         return $this->hasMany(Article::class);
     }
 
+    /** Tiebreaker so tied sort_order values page deterministically — see Product. */
     public function scopeOrdered(Builder $query): Builder
     {
-        return $query->orderBy('sort_order');
+        return $query->orderBy('sort_order')->orderBy('id');
     }
 }

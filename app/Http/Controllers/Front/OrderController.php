@@ -174,6 +174,20 @@ class OrderController extends Controller
             ->with('product')
             ->firstOrFail();
 
+        // The pay page polls this same URL every 5s waiting for the callback to land.
+        // Answer it with the bare status. It used to get the full HTML page back and
+        // substring-search it for '"paid"' — a test the page could satisfy while the
+        // order was still pending, sending the buyer into a reload loop. Nothing
+        // sensitive is disclosed: the status is already on the page this URL renders.
+        if (request()->expectsJson()) {
+            if ($order->isExpired()) {
+                $this->expireOrder($order);
+                $order->refresh();
+            }
+
+            return response()->json(['status' => $order->status]);
+        }
+
         if ($order->isPaid()) {
             // Order numbers are predictable (timestamp + 5 digits), so knowing one must
             // not be enough to read the card secrets. Require the same session proof the
@@ -192,30 +206,7 @@ class OrderController extends Controller
         }
 
         if ($order->isExpired()) {
-            // A payment callback can be committing right now. Claim the row with a
-            // conditional UPDATE first: whoever wins holds the lock for the whole
-            // window, so this either expires an order that is genuinely still pending,
-            // or affects nothing because the callback already marked it paid. Releasing
-            // the cards before claiming would hand the buyer's paid-for cards to the
-            // next visitor.
-            DB::transaction(function () use ($order) {
-                $claimed = Order::where('id', $order->id)
-                    ->where('status', 'pending')
-                    ->update(['status' => 'expired']);
-
-                if ($claimed === 0) {
-                    return;
-                }
-
-                Card::where('order_id', $order->id)
-                    ->where('status', 'locked')
-                    ->update([
-                        'order_id' => null,
-                        'status' => 'unsold',
-                        'locked_at' => null,
-                    ]);
-            });
-
+            $this->expireOrder($order);
             $order->refresh();
 
             if ($order->isPaid()) {
@@ -238,6 +229,36 @@ class OrderController extends Controller
             'expired' => false,
             'paymentUrl' => $paymentUrl,
         ]);
+    }
+
+    /**
+     * Expire a pending order and release the cards it was holding.
+     *
+     * A payment callback can be committing right now. The row is claimed with a
+     * conditional UPDATE first: whoever wins holds the lock for the whole window, so
+     * this either expires an order that is genuinely still pending, or affects
+     * nothing because the callback already marked it paid. Releasing the cards
+     * before claiming would hand the buyer's paid-for cards to the next visitor.
+     */
+    private function expireOrder(Order $order): void
+    {
+        DB::transaction(function () use ($order) {
+            $claimed = Order::where('id', $order->id)
+                ->where('status', 'pending')
+                ->update(['status' => 'expired']);
+
+            if ($claimed === 0) {
+                return;
+            }
+
+            Card::where('order_id', $order->id)
+                ->where('status', 'locked')
+                ->update([
+                    'order_id' => null,
+                    'status' => 'unsold',
+                    'locked_at' => null,
+                ]);
+        });
     }
 
     /**
@@ -285,7 +306,10 @@ class OrderController extends Controller
      */
     private function matchOrders(string $email, string $password)
     {
-        return Order::where('email', $email)
+        // Case-insensitive: a buyer who typed Buyer@Example.com at checkout and
+        // buyer@example.com at the query form is the same person, and telling them
+        // their order does not exist is indistinguishable from losing it.
+        return Order::whereRaw('lower(email) = ?', [mb_strtolower($email)])
             ->orderByDesc('created_at')
             ->limit(25)
             ->get()

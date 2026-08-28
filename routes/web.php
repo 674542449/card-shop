@@ -30,7 +30,13 @@ Route::middleware('check.blacklist')->group(function () {
     // per request. Creating an order locks cards, so it is the tightest of the three.
     Route::post('/order/create', [Front\OrderController::class, 'create'])
         ->middleware(['turnstile', 'throttle:5,1']);
-    Route::get('/order/pay/{order_no}', [Front\OrderController::class, 'pay']);
+    // The pay page polls this route every 5s (12/min) waiting for the callback, so
+    // the ceiling has to clear that with room for several buyers behind one NAT.
+    // It needs a ceiling at all because order numbers are guessable and each hit on
+    // an expired order opens a write transaction — unthrottled, that is a cheap way
+    // to load the database from outside.
+    Route::get('/order/pay/{order_no}', [Front\OrderController::class, 'pay'])
+        ->middleware('throttle:120,1');
     Route::get('/order/query', [Front\OrderController::class, 'queryForm']);
     Route::post('/order/query', [Front\OrderController::class, 'query'])
         ->middleware(['turnstile', 'throttle:10,1']);

@@ -1677,7 +1677,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 @media (max-width: 768px) {
     .desktop-only { display: none !important; }
 }
-@media (min-width: 769px) {
+/* 768.02px, not 769px. Viewport widths are fractional under browser zoom and on
+   any device with a non-integer pixel ratio, so at 768.5px neither 768 nor 769
+   matched and the order result page showed BOTH copies of the card secrets. */
+@media (min-width: 768.02px) {
     .mobile-only { display: none !important; }
 }
 

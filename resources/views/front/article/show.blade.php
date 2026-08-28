@@ -16,7 +16,9 @@
         'headline' => $article->title,
         'description' => $article->seo_description
             ?: $article->summary
-            ?: Str::limit(strip_tags($contentHtml), 200),
+            // See front/product/show.blade.php: no class aliases are registered, so a
+            // bare Str:: fatals when both fallbacks above are blank.
+            ?: \Illuminate\Support\Str::limit(strip_tags($contentHtml), 200),
         'url' => url('/articles/' . $article->slug),
         'datePublished' => $article->created_at?->toIso8601String(),
         'dateModified' => $article->updated_at?->toIso8601String(),
