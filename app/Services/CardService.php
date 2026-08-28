@@ -83,23 +83,6 @@ class CardService
     }
 
     /**
-     * Mark cards as sold and associate them with an order.
-     */
-    public function markSold(Collection $cards, int $orderId): void
-    {
-        if ($cards->isEmpty()) {
-            return;
-        }
-
-        Card::whereIn('id', $cards->pluck('id'))
-            ->update([
-                'status' => 'sold',
-                'order_id' => $orderId,
-                'sold_at' => now(),
-            ]);
-    }
-
-    /**
      * Import cards from raw text content into a product.
      *
      * @return int Number of cards imported.

@@ -67,28 +67,6 @@ class EpusdtService
     }
 
     /**
-     * Verify the HMAC signature from an EPUSDT payment callback.
-     */
-    public function verifyNotify(array $params): bool
-    {
-        if (empty($params['signature'])) {
-            return false;
-        }
-
-        // Status 2 means the transaction is completed
-        if (!isset($params['status']) || (int) $params['status'] !== 2) {
-            return false;
-        }
-
-        $signature = $params['signature'];
-        unset($params['signature']);
-
-        $expectedSign = $this->generateSign($params, $this->apiToken);
-
-        return hash_equals($expectedSign, $signature);
-    }
-
-    /**
      * Generate HMAC-MD5 signature for EPUSDT API.
      *
      * Steps:

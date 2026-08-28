@@ -147,6 +147,12 @@ export const deleteCard = (id) =>
 export const batchDeleteCards = (ids) =>
   api.delete('/cards/batch-destroy', { data: { ids } });
 
+// Manual sold/unsold flip. Only 'unsold' and 'sold' are accepted; 'locked' is owned by
+// the pending-order flow. The server refuses with 422 { message } when the card is
+// locked or still attached to a real order, so callers must surface that message.
+export const setCardStatus = (id, status) =>
+  api.patch(`/cards/${id}/status`, { status });
+
 // Orders
 export const getOrders = (params) =>
   api.get('/orders', { params });

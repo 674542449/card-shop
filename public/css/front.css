@@ -258,7 +258,13 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 }
 .cat-quote-text { min-width: 0; }
 
-/* ----- Product Table (Desktop) ----- */
+/* ----- Product List -----
+   One markup, two layouts. This block is the md+ layout: a five column table.
+   The phone layout is the SAME table reflowed into a stacked list inside the
+   768px media query near the bottom of this file — there is no separate card
+   partial any more, so the two can no longer disagree about what a product row
+   shows. Anything added here that must survive on a phone needs a matching
+   thought in that block. */
 .product-table-section { margin-bottom: var(--block-gap); }
 
 .product-table {
@@ -336,11 +342,22 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     outline: 2px solid var(--teal);
     outline-offset: 2px;
 }
+/* Price is the accent and the loudest number in the row — it was already that on
+   the phone card and is now that everywhere, since one markup cannot hold two
+   answers to "how prominent is the price". */
 .product-table .prod-price {
     white-space: nowrap;
-    font-weight: 500;
+    color: var(--price-color);
+    font-weight: 700;
+    font-size: 15px;
 }
 .product-table .stock-num { font-family: monospace; }
+.product-table .cell-oos { font-size: 13px; }
+/* In-cell column label. The <thead> labels are hidden once the row stacks, and a
+   bare number under no heading is unreadable to anyone; on md+ the real <th>
+   says it, so repeating it in every cell would just be noise. Turned on in the
+   768px block. */
+.product-table .cell-label { display: none; }
 
 /* Badge */
 .badge-auto {
@@ -397,98 +414,11 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     gap: 8px;
 }
 
-/* ----- Product Card Grid ----- */
-.card-section-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color);
-    margin: var(--section-gap) 0 15px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-color);
-}
-.card-section-title .cat-thumb {
-    width: 22px;
-    height: 22px;
-}
-
-.product-grid {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 15px;
-    margin-bottom: var(--block-gap);
-}
-.product-card {
-    background: var(--card-bg);
-    border-radius: var(--radius);
-    overflow: hidden;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border-color);
-    transition: box-shadow .2s;
-}
-.product-card:hover { box-shadow: var(--shadow); }
-.product-card a { color: inherit; display: block; }
-.product-card a:focus-visible {
-    outline: 2px solid var(--teal);
-    outline-offset: -2px;
-}
-/* Square, cropped, never distorted. aspect-ratio reserves the box before the
-   image arrives, so a grid of cards does not reflow as thumbnails load. */
-.product-card .card-img,
-.product-card .card-img-placeholder {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    background: var(--thumb-bg);
-    border-bottom: 1px solid var(--border-color);
-}
-.product-card .card-img {
-    object-fit: cover;
-    display: block;
-}
-.product-card .card-img-placeholder {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--thumb-icon);
-}
-.product-card .card-img-placeholder svg {
-    width: 34%;
-    max-width: 52px;
-    height: auto;
-}
-.product-card .card-body {
-    padding: 10px 12px;
-}
-.product-card .card-badge {
-    margin-bottom: 6px;
-}
-.product-card .card-title {
-    font-size: 13px;
-    color: var(--text-color);
-    line-height: 1.5;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    margin-bottom: 8px;
-    min-height: 39px;
-}
-.product-card .card-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.product-card .card-stock {
-    font-size: 12px;
-    color: var(--text-light);
-}
-.product-card .card-price {
-    font-size: 15px;
-    color: var(--price-color);
-    font-weight: 700;
-}
+/* The .product-grid / .product-card / .card-img rules that used to sit here
+   styled a second, phone-only copy of the product list built from a full-width
+   square image per product. That copy is gone — the list is one markup now (see
+   "Product List" above and its 768px reflow) — so its styles are gone with it
+   rather than being left behind as dead weight for the next reader to trip on. */
 
 /* ----- Two-Column Layout (articles below products) ----- */
 .two-col-section {
@@ -1462,14 +1392,106 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
        that .pd-main also has, and the pair keeps source order by accident. */
     .pd-main { order: 1; }
     .pd-sidebar { order: 2; }
-    .product-grid { grid-template-columns: repeat(3, 1fr); }
     .two-col-section { grid-template-columns: 1fr; }
     :root { --pd-image-size: 132px; }
 }
 
 @media (max-width: 768px) {
-    .product-table-section { display: none; }
-    .product-grid { grid-template-columns: repeat(2, 1fr); }
+    /* ----- Product list, phone layout -----
+       The same table as on md+, reflowed. Five columns do not fit a 375px
+       screen, so each row becomes a wrapping flex line:
+
+           [40px]  产品名称
+           自动发货  库存 12  ¥9.90        [ 购买 ]
+
+       Source order is unchanged, so a screen reader reads name, mode, stock,
+       price, buy — which is the order the row is spoken in on desktop too. If
+       the meta line ever runs out of room (a very long price on a very narrow
+       phone) flex-wrap drops the button to its own line instead of overflowing.
+
+       Changing `display` on table elements makes browsers drop the implicit
+       table roles; the explicit role attributes in the Blade markup are what
+       put them back, so do not remove them when touching these rules. */
+    .product-table,
+    .product-table thead,
+    .product-table tbody,
+    .product-table thead tr { display: block; }
+
+    /* The column labels have nowhere to live once the row stacks — .cell-label
+       carries them into the cells instead. The first heading stays on, and
+       becomes the list's header bar: on the home page it is the only thing
+       naming the category the rows below belong to. */
+    .product-table .col-mode,
+    .product-table .col-stock,
+    .product-table .col-price,
+    .product-table .col-action { display: none; }
+    .product-table thead th:first-child {
+        display: block;
+        width: auto;
+        padding: 10px 12px;
+    }
+    /* The category page prints the name in its own header block above the table, so
+       promoting the header cell there would show it twice. Same specificity as the
+       rule above, so source order decides — keep it after. */
+    .product-table thead th.col-cat { display: none; }
+
+    .product-table tbody tr {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        column-gap: 10px;
+        row-gap: 6px;
+        padding: 12px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+    .product-table tbody tr:last-child { border-bottom: none; }
+    .product-table tbody td {
+        display: block;
+        padding: 0;
+        border-bottom: none;
+    }
+    /* Name owns the first line; min-width:0 lets the two-line clamp inside it
+       actually shrink instead of forcing the row wider than the screen. */
+    .product-table .cell-name {
+        flex: 1 0 100%;
+        min-width: 0;
+    }
+    .product-table .prod-name-cell { max-width: none; }
+    /* One solid teal fill, one red price and a yellow button on a single 345px
+       line is three shouts. Outlined here so the badge still reads as "自动发货"
+       without competing with the price for the eye. */
+    .product-table .cell-mode .badge-auto {
+        background: transparent;
+        color: var(--teal);
+        border: 1px solid var(--teal);
+        font-size: 11px;
+        padding: 0 5px;
+    }
+    /* Buy sits against the right edge whatever the meta line is carrying. */
+    .product-table .cell-action { margin-left: auto; }
+    .product-table .cell-label { display: inline; margin-right: 4px; }
+    .product-table .cell-stock {
+        font-size: 13px;
+        color: var(--text-light);
+    }
+    /* A text link wedged in a table cell is not a phone target. Same colour and
+       shape as the desktop button, grown to a thumb-sized box. */
+    .product-table .cell-action .btn-buy-sm {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 40px;
+        min-width: 76px;
+        padding: 0 16px;
+    }
+    /* Out of stock takes the same 40px slot the button would, so a row without a
+       button is the same height as the rows around it. */
+    .product-table .cell-oos {
+        display: inline-flex;
+        align-items: center;
+        min-height: 40px;
+    }
+
     .contact-section { flex-direction: column; text-align: center; }
     /* Image and price stay side by side rather than stacking: a full-width
        product shot would push the price and the buy form off the first screen. */
@@ -1490,7 +1512,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
        without spending a third of a phone screen on white space. */
     :root { --section-gap: 20px; --block-gap: 15px; --pd-image-size: 96px; }
 
-    .product-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    /* Row padding tracks the other cards, which already stepped down here. The
+       meta line is the tightest thing on this screen, so it gets the gap back. */
+    .product-table tbody tr { padding: 10px; column-gap: 8px; }
+    .product-table thead th:first-child { padding: 9px 10px; }
     .pd-info { padding: 15px; }
     .pd-price { font-size: 22px; }
     .article-detail { padding: 20px; }
@@ -1527,7 +1552,11 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .article-detail .article-cover { aspect-ratio: 16 / 9; }
 }
 
-/* ----- Desktop table visible only on md+ ----- */
+/* ----- Viewport-only utilities -----
+   The product list no longer uses these — it is one markup that reflows. They
+   stay for front/order/result.blade.php, which really does render two different
+   things (a table of card secrets, and a stacked copy of them) rather than one
+   thing at two widths. */
 @media (max-width: 768px) {
     .desktop-only { display: none !important; }
 }

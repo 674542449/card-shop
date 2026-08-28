@@ -43,44 +43,6 @@ class EpayService
     }
 
     /**
-     * Verify the MD5 signature of a payment notification callback.
-     */
-    public function verifyNotify(array $params): bool
-    {
-        if (empty($params['sign']) || empty($params['trade_status'])) {
-            return false;
-        }
-
-        if ($params['trade_status'] !== 'TRADE_SUCCESS') {
-            return false;
-        }
-
-        $sign = $params['sign'];
-        unset($params['sign'], $params['sign_type']);
-
-        $expectedSign = $this->generateSign($params);
-
-        return hash_equals($expectedSign, $sign);
-    }
-
-    /**
-     * Verify the MD5 signature of a payment return URL.
-     */
-    public function verifyReturn(array $params): bool
-    {
-        if (empty($params['sign'])) {
-            return false;
-        }
-
-        $sign = $params['sign'];
-        unset($params['sign'], $params['sign_type']);
-
-        $expectedSign = $this->generateSign($params);
-
-        return hash_equals($expectedSign, $sign);
-    }
-
-    /**
      * Generate an MD5 signature for the given parameters.
      *
      * Steps:

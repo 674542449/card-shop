@@ -87,6 +87,7 @@ Route::prefix('api/admin')->group(function () {
         Route::get('/products/{product}/cards', [ApiAdmin\CardController::class, 'index']);
         Route::post('/products/{product}/cards/import', [ApiAdmin\CardController::class, 'import']);
         Route::delete('/cards/batch-destroy', [ApiAdmin\CardController::class, 'batchDestroy']);
+        Route::patch('/cards/{card}/status', [ApiAdmin\CardController::class, 'updateStatus']);
         Route::delete('/cards/{card}', [ApiAdmin\CardController::class, 'destroy']);
 
         // Orders

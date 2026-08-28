@@ -8,9 +8,11 @@
     as whatever container it sits in.
 
     Params:
-      $class - wrapper class, e.g. 'card-img-placeholder' | 'prod-thumb-ph'
+      $class - wrapper class, e.g. 'prod-thumb-ph' | 'empty-state-glyph'.
+               Every caller passes one; the fallback only exists so a future
+               caller that forgets still lands on a class the stylesheet defines.
 --}}
-@php $placeholderClass = $class ?? 'card-img-placeholder'; @endphp
+@php $placeholderClass = $class ?? 'prod-thumb-ph'; @endphp
 <div class="{{ $placeholderClass }}" aria-hidden="true">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"
          stroke-linecap="round" stroke-linejoin="round" focusable="false" role="presentation">

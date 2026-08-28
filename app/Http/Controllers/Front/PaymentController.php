@@ -3,17 +3,15 @@
 namespace App\Http\Controllers\Front;
 
 use App\Http\Controllers\Controller;
-use App\Models\Card;
 use App\Models\Order;
-use App\Services\NotificationService;
+use App\Services\OrderFulfilmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PaymentController extends Controller
 {
-    public function __construct(private readonly NotificationService $notifications)
+    public function __construct(private readonly OrderFulfilmentService $fulfilment)
     {
     }
 
@@ -49,9 +47,13 @@ class PaymentController extends Controller
             return 'fail';
         }
 
-        $this->processPayment($orderNo, $tradeNo, (string) ($params['money'] ?? ''), 'epay');
-
-        return 'success';
+        // Answering 'success' is an acknowledgement that we have taken responsibility
+        // for this payment. If fulfilment threw — a deadlock, a lost connection — the
+        // buyer has paid, the order is still pending, and the gateway's retry is the
+        // only thing that would recover it. Do not switch that off with a false ack.
+        return $this->processPayment($orderNo, $tradeNo, (string) ($params['money'] ?? ''), 'epay')
+            ? 'success'
+            : 'fail';
     }
 
     /**
@@ -131,9 +133,11 @@ class PaymentController extends Controller
 
         // `amount` is the fiat figure EPUSDT echoes back; `actual_amount` is the USDT
         // figure and would never match the order total.
-        $this->processPayment($orderNo, $tradeNo, (string) ($params['amount'] ?? ''), 'epusdt');
-
-        return response()->json(['status' => 200]);
+        // Same reasoning as epayNotify: a non-200 asks EPUSDT to send the callback
+        // again rather than leaving a paid order stranded.
+        return $this->processPayment($orderNo, $tradeNo, (string) ($params['amount'] ?? ''), 'epusdt')
+            ? response()->json(['status' => 200])
+            : response()->json(['status' => 500, 'message' => 'fulfilment failed, please retry'], 500);
     }
 
     /**
@@ -189,85 +193,30 @@ class PaymentController extends Controller
     }
 
     /**
-     * Process a successful payment: mark order as paid, assign cards.
+     * Process a successful payment: mark order as paid, assign cards, deliver.
+     *
+     * The work itself lives in OrderFulfilmentService, which the admin's manual
+     * confirmation also calls, so the amount check, the card allocation and the
+     * delivery are the same code on both routes.
+     *
+     * Returns whether this callback was handled. The distinction the callers rely on:
+     * a REFUSAL — wrong channel, underpayment, no stock — is permanent, is logged
+     * inside the service, and counts as handled, so the gateway stops retrying
+     * something we will never accept. A THROWN failure is transient, and reporting it
+     * as handled would strand a paid order with nothing left to recover it.
      */
-    private function processPayment(string $orderNo, string $tradeNo, string $paidAmount, string $channel): void
+    private function processPayment(string $orderNo, string $tradeNo, string $paidAmount, string $channel): bool
     {
         try {
-            /** @var Order|null $paidOrder */
-            $paidOrder = DB::transaction(function () use ($orderNo, $tradeNo, $paidAmount, $channel) {
-                $order = Order::where('order_no', $orderNo)
-                    ->where('status', 'pending')
-                    ->lockForUpdate()
-                    ->first();
+            $this->fulfilment->fulfilFromGateway($orderNo, $tradeNo, $paidAmount, $channel);
 
-                if (!$order) {
-                    return null; // Already processed or doesn't exist
-                }
+            return true;
+        } catch (\Throwable $e) {
+            Log::error('Payment processing failed for order ' . $orderNo . ': ' . $e->getMessage(), [
+                'exception' => $e,
+            ]);
 
-                // The callback must come from the gateway this order was sent to.
-                $expectedChannel = str_starts_with((string) $order->payment_method, 'usdt_') ? 'epusdt' : 'epay';
-                if ($channel !== $expectedChannel) {
-                    Log::warning('Payment channel mismatch, refusing to deliver', [
-                        'order_no' => $orderNo,
-                        'callback_channel' => $channel,
-                        'order_channel' => $expectedChannel,
-                    ]);
-                    return null;
-                }
-
-                // Verify what was actually paid. Without this a buyer who can influence
-                // the amount at the gateway pays a fen and receives the cards. An amount
-                // we cannot read is treated as a failure, not waved through: delivering
-                // an unverifiable payment is the exact failure this guards against.
-                if ($paidAmount === '' || !is_numeric($paidAmount)) {
-                    Log::warning('Payment callback carried no readable amount, refusing to deliver', [
-                        'order_no' => $orderNo,
-                        'channel' => $channel,
-                        'raw_amount' => $paidAmount,
-                    ]);
-                    return null;
-                }
-
-                // Tolerate a 1-fen rounding difference in the gateway's favour; reject
-                // any real underpayment.
-                if ((float) $paidAmount < (float) $order->total_amount - 0.011) {
-                    Log::warning('Underpaid callback rejected', [
-                        'order_no' => $orderNo,
-                        'expected' => (string) $order->total_amount,
-                        'paid' => $paidAmount,
-                    ]);
-                    return null;
-                }
-
-                // Mark order as paid
-                $order->update([
-                    'status' => 'paid',
-                    'payment_no' => $tradeNo,
-                    'paid_at' => now(),
-                ]);
-
-                // Mark locked cards as sold
-                Card::where('order_id', $order->id)
-                    ->where('status', 'locked')
-                    ->update([
-                        'status' => 'sold',
-                        'sold_at' => now(),
-                    ]);
-
-                return $order;
-            });
-
-            // Delivery happens after the transaction commits, and only on the call that
-            // actually performed the transition, so a duplicate gateway callback cannot
-            // send the cards twice. Without this the buyer never receives anything.
-            if ($paidOrder) {
-                $paidOrder->refresh()->load(['product', 'cards']);
-                $this->notifications->sendOrderEmail($paidOrder);
-                $this->notifications->notifyNewOrder($paidOrder);
-            }
-        } catch (\Exception $e) {
-            Log::error('Payment processing failed for order ' . $orderNo . ': ' . $e->getMessage());
+            return false;
         }
     }
 }

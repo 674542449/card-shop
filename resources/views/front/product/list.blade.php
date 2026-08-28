@@ -17,38 +17,36 @@
     </blockquote>
 
     @if($products->count() > 0)
-    {{-- Desktop Table --}}
-    <section class="product-table-section desktop-only">
-        <table class="product-table">
-            <thead>
-                <tr>
+    {{-- The same single list markup the home page uses; front.css reflows it into
+         a stacked list below 768px rather than a second card-shaped copy of it
+         existing here. Keep the <table>/<thead>/<tbody>/role attributes in step
+         with front/home.blade.php — the reflow rules key off them. --}}
+    <section class="product-table-section">
+        <table class="product-table" role="table">
+            <thead role="rowgroup">
+                <tr role="row">
                     {{-- No category mark here: this page's header block above already
                          carries it, and repeating it 20px lower is just noise. On the
                          home page the table head is the only place the category
                          appears, so it does carry the mark there. --}}
-                    <th>{{ $category->name }}</th>
-                    <th style="width:100px">发货模式</th>
-                    <th style="width:80px">库存</th>
-                    <th style="width:100px">单价</th>
-                    <th style="width:100px">操作</th>
+                    {{-- .col-cat: below 768px the stylesheet promotes the first header
+                         cell into a full-width bar, which on THIS page would repeat the
+                         name the block above already shows. That class hides it there
+                         and nowhere else. --}}
+                    <th role="columnheader" class="col-cat">{{ $category->name }}</th>
+                    <th role="columnheader" class="col-mode" style="width:100px">发货模式</th>
+                    <th role="columnheader" class="col-stock" style="width:80px">库存</th>
+                    <th role="columnheader" class="col-price" style="width:100px">单价</th>
+                    <th role="columnheader" class="col-action" style="width:100px">操作</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
                 @foreach($products as $product)
                 @include('front.partials.product-row', ['product' => $product])
                 @endforeach
             </tbody>
         </table>
     </section>
-
-    {{-- Mobile Cards --}}
-    <div class="mobile-only">
-        <div class="product-grid">
-            @foreach($products as $product)
-            @include('front.partials.product-card', ['product' => $product])
-            @endforeach
-        </div>
-    </div>
 
     <div class="pagination-wrap">{{ $products->links() }}</div>
     @else

@@ -36,50 +36,42 @@
     <blockquote class="site-quote">{!! \App\Support\ContentRenderer::toHtml($siteAnnouncement) !!}</blockquote>
     @endif
 
-    {{-- Desktop: Product Tables grouped by category --}}
+    {{-- Product lists grouped by category.
+
+         One markup for every viewport: front.css reflows this same table into a
+         stacked list below 768px (see the product list block in the stylesheet),
+         so there is no second phone-shaped copy of the list to drift from this
+         one. The explicit role attributes keep the table semantics that the
+         browser would otherwise drop when the reflow changes `display`.
+
+         The category mark and name live in the first <th>. On a phone the four
+         column labels are hidden and that cell becomes the list's header bar, so
+         the grouping the home page is built on survives the reflow. --}}
     @foreach($categories as $category)
         @php $catProducts = $groupedProducts->get($category->id, collect()); @endphp
         @if($catProducts->isNotEmpty())
-        <section class="product-table-section desktop-only" aria-label="{{ $category->name }}">
-            <table class="product-table">
-                <thead>
-                    <tr>
-                        <th>
+        <section class="product-table-section" aria-label="{{ $category->name }}">
+            <table class="product-table" role="table">
+                <thead role="rowgroup">
+                    <tr role="row">
+                        <th role="columnheader">
                             <span class="cat-head">
                                 @include('front.partials.category-thumb', ['category' => $category, 'size' => 20, 'reserve' => $anyCategoryImage])
                                 {{ $category->name }}
                             </span>
                         </th>
-                        <th style="width:100px">发货模式</th>
-                        <th style="width:80px">库存</th>
-                        <th style="width:100px">单价</th>
-                        <th style="width:100px">操作</th>
+                        <th role="columnheader" class="col-mode" style="width:100px">发货模式</th>
+                        <th role="columnheader" class="col-stock" style="width:80px">库存</th>
+                        <th role="columnheader" class="col-price" style="width:100px">单价</th>
+                        <th role="columnheader" class="col-action" style="width:100px">操作</th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody role="rowgroup">
                     @foreach($catProducts as $product)
                     @include('front.partials.product-row', ['product' => $product])
                     @endforeach
                 </tbody>
             </table>
-        </section>
-        @endif
-    @endforeach
-
-    {{-- Mobile: Product Card Grid --}}
-    @foreach($categories as $category)
-        @php $catProducts = $groupedProducts->get($category->id, collect()); @endphp
-        @if($catProducts->isNotEmpty())
-        <section class="mobile-only" aria-label="{{ $category->name }}">
-            <h2 class="card-section-title">
-                @include('front.partials.category-thumb', ['category' => $category, 'size' => 22, 'reserve' => $anyCategoryImage])
-                {{ $category->name }}
-            </h2>
-            <div class="product-grid">
-                @foreach($catProducts as $product)
-                @include('front.partials.product-card', ['product' => $product])
-                @endforeach
-            </div>
         </section>
         @endif
     @endforeach

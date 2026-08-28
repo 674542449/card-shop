@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Models\Order;
-use App\Models\Product;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -127,18 +126,6 @@ class NotificationService
         $this->sendTelegramNotification($message);
     }
 
-    /**
-     * Send Telegram alert when product stock is low.
-     */
-    public function notifyLowStock(Product $product, int $remaining): void
-    {
-        $message = "<b>库存预警</b>\n\n"
-            . "商品: {$product->name}\n"
-            . "剩余库存: <b>{$remaining}</b> 张\n"
-            . "请及时补充库存！";
-
-        $this->sendTelegramNotification($message);
-    }
 
     /**
      * Default email template when none is configured.

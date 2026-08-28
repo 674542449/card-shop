@@ -7,14 +7,17 @@ use App\Models\Card;
 use App\Models\OperationLog;
 use App\Models\Order;
 use App\Services\NotificationService;
+use App\Services\OrderFulfilmentService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
 
 class OrderController extends Controller
 {
-    public function __construct(private readonly NotificationService $notifications)
-    {
+    public function __construct(
+        private readonly NotificationService $notifications,
+        private readonly OrderFulfilmentService $fulfilment,
+    ) {
     }
 
     public function index(Request $request)
@@ -103,50 +106,19 @@ class OrderController extends Controller
             return response()->json(['message' => '只能确认待支付订单。'], 422);
         }
 
-        try {
-            DB::transaction(function () use ($order) {
-                $cards = Card::where('order_id', $order->id)
-                    ->where('status', 'locked')
-                    ->get();
+        // Confirming payment runs the same fulfilment the gateway callback runs —
+        // card allocation, the status flip and the delivery email — so the two
+        // paths cannot drift. The service re-checks the pending status under a
+        // row lock, which is what makes a click racing a real callback safe.
+        $result = $this->fulfilment->fulfilManually($order);
 
-                if ($cards->isEmpty()) {
-                    $cards = Card::where('product_id', $order->product_id)
-                        ->where('status', 'unsold')
-                        ->take($order->quantity)
-                        ->lockForUpdate()
-                        ->get();
-                }
-
-                if ($cards->count() < $order->quantity) {
-                    throw new \RuntimeException('库存不足');
-                }
-
-                foreach ($cards as $card) {
-                    $card->update([
-                        'status' => 'sold',
-                        'order_id' => $order->id,
-                        'sold_at' => now(),
-                    ]);
-                }
-
-                $order->update([
-                    'status' => 'paid',
-                    'paid_at' => now(),
-                    'payment_method' => $order->payment_method ?: 'manual',
-                ]);
-            });
-        } catch (\RuntimeException $e) {
-            // Without this the exception escapes as an unhandled 500 instead of the
-            // 422 the operator is meant to see.
-            return response()->json(['message' => $e->getMessage()], 422);
+        if (!$result->wasFulfilled()) {
+            // Either no stock to allocate, or the order stopped being pending
+            // between the check above and the lock — a callback landing first.
+            return response()->json(['message' => $result->reason], 422);
         }
 
         OperationLog::log('手动确认支付', 'order', $order->id, "手动确认订单 {$order->order_no}");
-
-        // Confirming payment has to actually deliver the cards, not just flip the status.
-        $order->refresh()->load(['product', 'cards']);
-        $this->notifications->sendOrderEmail($order);
-        $this->notifications->notifyNewOrder($order);
 
         return response()->json(['message' => '订单已确认支付，卡密已发送。']);
     }

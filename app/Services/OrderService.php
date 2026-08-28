@@ -8,7 +8,6 @@ use App\Models\Order;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class OrderService
@@ -175,122 +174,6 @@ class OrderService
             'usdt_polygon' => $this->epusdtService->createPayment($order, 'polygon'),
             default => throw new RuntimeException('不支持的支付方式'),
         };
-    }
-
-    /**
-     * Handle a payment callback from a payment channel.
-     *
-     * Verifies signature, finds order, marks as paid, marks cards as sold,
-     * sends notifications.
-     *
-     * @param string $channel 'epay' or 'epusdt'.
-     * @param array  $params  Callback parameters.
-     */
-    public function handlePaymentCallback(string $channel, array $params): bool
-    {
-        // 1. Verify signature
-        $verified = match ($channel) {
-            'epay' => $this->epayService->verifyNotify($params),
-            'epusdt' => $this->epusdtService->verifyNotify($params),
-            default => false,
-        };
-
-        if (!$verified) {
-            Log::warning('Payment callback signature verification failed', [
-                'channel' => $channel,
-                'params' => $params,
-            ]);
-            return false;
-        }
-
-        // 2. Find the order
-        $orderNo = match ($channel) {
-            'epay' => $params['out_trade_no'] ?? null,
-            'epusdt' => $params['order_id'] ?? null,
-            default => null,
-        };
-
-        if (!$orderNo) {
-            Log::warning('Payment callback missing order number', [
-                'channel' => $channel,
-            ]);
-            return false;
-        }
-
-        $order = Order::where('order_no', $orderNo)->first();
-
-        if (!$order) {
-            Log::warning('Payment callback order not found', [
-                'order_no' => $orderNo,
-                'channel' => $channel,
-            ]);
-            return false;
-        }
-
-        // Prevent double processing
-        if ($order->isPaid()) {
-            return true;
-        }
-
-        // Ignore callbacks for non-pending orders
-        if ($order->status !== 'pending') {
-            Log::info('Payment callback for non-pending order', [
-                'order_no' => $orderNo,
-                'status' => $order->status,
-            ]);
-            return false;
-        }
-
-        // 3. Mark as paid within a transaction
-        DB::transaction(function () use ($order, $channel, $params) {
-            $paymentNo = match ($channel) {
-                'epay' => $params['trade_no'] ?? null,
-                'epusdt' => $params['trade_id'] ?? null,
-                default => null,
-            };
-
-            $order->update([
-                'status' => 'paid',
-                'paid_at' => now(),
-                'payment_no' => $paymentNo,
-            ]);
-
-            // Mark locked cards as sold
-            $this->cardService->markSold($order->cards, $order->id);
-
-            // Increment coupon used count
-            if ($order->coupon_id) {
-                Coupon::where('id', $order->coupon_id)->increment('used_count');
-            }
-        });
-
-        // 4. Send notifications (outside transaction, failures are non-fatal)
-        try {
-            $this->notificationService->sendOrderEmail($order);
-        } catch (\Throwable $e) {
-            Log::error('Email notification failed after payment', [
-                'order_no' => $order->order_no,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        try {
-            $this->notificationService->notifyNewOrder($order);
-
-            // Check for low stock and alert
-            $remaining = $this->cardService->getStockCount($order->product_id);
-            if ($remaining < 5) {
-                $order->loadMissing('product');
-                $this->notificationService->notifyLowStock($order->product, $remaining);
-            }
-        } catch (\Throwable $e) {
-            Log::error('Telegram notification failed after payment', [
-                'order_no' => $order->order_no,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        return true;
     }
 
     /**
