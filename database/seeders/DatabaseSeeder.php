@@ -78,6 +78,8 @@ class DatabaseSeeder extends Seeder
                 'site_favicon' => '',
                 'site_description' => '',
                 'site_announcement' => '',
+                'popup_announcement' => '',
+                'popup_interval_hours' => '24',
                 'contact_text' => '',
                 'contact_url' => '',
                 'contact_qr_image' => '',

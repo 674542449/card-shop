@@ -258,6 +258,98 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 }
 .cat-quote-text { min-width: 0; }
 
+/* ----- Announcement dialog ----- */
+.ann-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+.ann-modal[hidden] { display: none; }
+.ann-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, .5);
+}
+.ann-modal-box {
+    position: relative;
+    width: 100%;
+    max-width: 460px;
+    /* The dialog never scrolls the page: it is capped to the viewport and the
+       announcement body scrolls inside it, so a long notice on a short screen
+       still leaves the close button reachable. */
+    max-height: calc(100vh - 40px);
+    display: flex;
+    flex-direction: column;
+    background: var(--card-bg);
+    border-radius: 6px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, .25);
+    overflow: hidden;
+}
+.ann-modal-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--table-header-bg);
+}
+.ann-modal-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color);
+}
+.ann-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text-muted);
+}
+.ann-modal-body > *:first-child { margin-top: 0; }
+.ann-modal-body > *:last-child { margin-bottom: 0; }
+.ann-modal-body p { margin: 0 0 10px; }
+.ann-modal-body strong { color: var(--price-color); }
+.ann-modal-body a { color: var(--teal); }
+.ann-modal-body ul, .ann-modal-body ol { margin: 0 0 10px; padding-left: 22px; }
+.ann-modal-body img {
+    max-width: 100%;
+    height: auto !important;
+    max-height: 260px;
+    object-fit: contain;
+    border-radius: var(--radius);
+}
+.ann-modal-body table { display: block; max-width: 100%; overflow-x: auto; }
+.ann-modal-footer {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+}
+.ann-modal-close {
+    min-width: 140px;
+    min-height: 40px;
+    padding: 0 20px;
+    border: none;
+    border-radius: var(--radius);
+    background: var(--warm-btn);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background .2s;
+}
+.ann-modal-close:hover:not(:disabled) { background: var(--warm-btn-hover); }
+/* Visibly inert during the countdown rather than looking clickable and ignoring
+   the tap, which reads as a broken button. */
+.ann-modal-close:disabled {
+    background: var(--border-color);
+    color: var(--text-light);
+    cursor: not-allowed;
+}
+.ann-modal-countdown { margin-left: 4px; font-variant-numeric: tabular-nums; }
+
 /* ----- Product List -----
    One markup, two layouts. This block is the md+ layout: a five column table.
    The phone layout is the SAME table reflowed into a stacked list inside the
@@ -1437,10 +1529,13 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 
     .product-table tbody tr {
         display: flex;
-        flex-wrap: wrap;
+        /* One product, one line — the same shape the desktop table has. Wrapping
+           split each product across two lines, which read as a broken row rather
+           than a compact one. Everything that cannot fit is dropped by the rules
+           below instead, and the name takes the ellipsis. */
+        flex-wrap: nowrap;
         align-items: center;
         column-gap: 10px;
-        row-gap: 6px;
         padding: 12px;
         border-bottom: 1px solid #f0f0f0;
     }
@@ -1450,30 +1545,42 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
         padding: 0;
         border-bottom: none;
     }
-    /* Name owns the first line; min-width:0 lets the two-line clamp inside it
-       actually shrink instead of forcing the row wider than the screen. */
+    /* The name takes whatever the fixed-width neighbours leave. The min-width:0
+       chain matters: a flex item's automatic minimum is its content, so without
+       zeroing it at every level the long name would push the price and the button
+       off the screen instead of truncating. */
     .product-table .cell-name {
-        flex: 1 0 100%;
+        flex: 1 1 auto;
         min-width: 0;
     }
-    .product-table .prod-name-cell { max-width: none; }
-    /* One solid teal fill, one red price and a yellow button on a single 345px
-       line is three shouts. Outlined here so the badge still reads as "自动发货"
-       without competing with the price for the eye. */
-    .product-table .cell-mode .badge-auto {
-        background: transparent;
-        color: var(--teal);
-        border: 1px solid var(--teal);
-        font-size: 11px;
-        padding: 0 5px;
+    .product-table .prod-name-cell {
+        max-width: none;
+        min-width: 0;
     }
+    .product-table .prod-name {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    /* 发货模式 is the first thing to go: every product on this site is 自动发货,
+       so the badge carries no information that distinguishes one row from another,
+       and it is the widest thing competing for a 320px line. */
+    .product-table .cell-mode { display: none; }
     /* Buy sits against the right edge whatever the meta line is carrying. */
     .product-table .cell-action { margin-left: auto; }
     .product-table .cell-label { display: inline; margin-right: 4px; }
     .product-table .cell-stock {
+        flex: 0 0 auto;
+        white-space: nowrap;
         font-size: 13px;
         color: var(--text-light);
     }
+    .product-table .prod-price {
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+    .product-table .cell-action { flex: 0 0 auto; }
     /* A text link wedged in a table cell is not a phone target. Same colour and
        shape as the desktop button, grown to a thumb-sized box. */
     .product-table .cell-action .btn-buy-sm {
@@ -1516,6 +1623,16 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
        meta line is the tightest thing on this screen, so it gets the gap back. */
     .product-table tbody tr { padding: 10px; column-gap: 8px; }
     .product-table thead th:first-child { padding: 9px 10px; }
+    /* Below 480px the line has room for the name, the price and the button and
+       nothing else. Stock goes rather than letting the name shrink to a few
+       characters — the product page shows it, and a truncated name is the one
+       thing that makes a list unusable. */
+    .product-table .cell-stock { display: none; }
+    .product-table .cell-action .btn-buy-sm { min-width: 64px; padding: 0 12px; }
+
+    .ann-modal { padding: 15px; }
+    .ann-modal-body { padding: 15px; }
+    .ann-modal-close { width: 100%; }
     .pd-info { padding: 15px; }
     .pd-price { font-size: 22px; }
     .article-detail { padding: 20px; }

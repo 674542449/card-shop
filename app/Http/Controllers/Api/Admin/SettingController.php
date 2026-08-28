@@ -24,7 +24,8 @@ class SettingController extends Controller
         $settingGroups = [
             'site' => [
                 'site_name', 'site_description', 'site_logo', 'site_favicon',
-                'site_announcement', 'contact_text', 'contact_url', 'contact_qr_image',
+                'site_announcement', 'popup_announcement', 'popup_interval_hours',
+                'contact_text', 'contact_url', 'contact_qr_image',
             ],
             'payment' => [
                 'epay_api_url', 'epay_merchant_id', 'epay_merchant_key',

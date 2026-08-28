@@ -149,4 +149,121 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     });
 
+    // ----- Announcement dialog -----
+    //
+    // Shown on the home and product pages. Two things it must not do: pop up again
+    // when the visitor moves from the home page to a product page, and pop up every
+    // day for someone who has already read it. Both are the same rule — remember
+    // that THIS browser has seen THIS announcement, and stay quiet for a while.
+    //
+    // The record is keyed on a signature of the rendered announcement, so editing
+    // the notice reaches people who dismissed the old one instead of being hidden
+    // behind their existing dismissal.
+    var annModal = document.getElementById('announcement-modal');
+
+    if (annModal) {
+        var annStore = 'cardshop_announcement_seen';
+        var annSignature = annModal.getAttribute('data-signature') || '';
+        var annHours = parseInt(annModal.getAttribute('data-hours'), 10);
+        var annSeconds = parseInt(annModal.getAttribute('data-countdown'), 10);
+
+        if (isNaN(annHours)) { annHours = 24; }
+        if (isNaN(annSeconds) || annSeconds < 0) { annSeconds = 5; }
+
+        // Private browsing and "block site data" both make localStorage throw on
+        // access, not just return null. Every use is guarded: the dialog still works
+        // there, it simply cannot remember, which is the right way to fail.
+        var annRead = function () {
+            try {
+                return JSON.parse(window.localStorage.getItem(annStore) || 'null');
+            } catch (e) {
+                return null;
+            }
+        };
+        var annWrite = function () {
+            try {
+                window.localStorage.setItem(annStore, JSON.stringify({
+                    signature: annSignature,
+                    seenAt: Date.now()
+                }));
+            } catch (e) {
+                /* Nothing to do — an unavailable store just means we ask again. */
+            }
+        };
+
+        var annSuppressed = function () {
+            if (annHours === 0) {
+                return false;
+            }
+
+            var seen = annRead();
+
+            return !!seen
+                && seen.signature === annSignature
+                && (Date.now() - seen.seenAt) < annHours * 3600 * 1000;
+        };
+
+        if (!annSuppressed()) {
+            var annCloseBtn = document.getElementById('ann-modal-close');
+            var annCounter = document.getElementById('ann-modal-countdown');
+            var annRemaining = annSeconds;
+            var annTimer = null;
+            var annPreviousOverflow = document.body.style.overflow;
+
+            var annFinish = function () {
+                if (annTimer) {
+                    clearInterval(annTimer);
+                    annTimer = null;
+                }
+                annCloseBtn.disabled = false;
+                annCloseBtn.setAttribute('aria-disabled', 'false');
+                annCounter.textContent = '';
+                annCloseBtn.focus();
+            };
+
+            var annClose = function () {
+                // Only after the countdown: the backdrop and Escape are wired to the
+                // same handler, so this one check covers every way out.
+                if (annCloseBtn.disabled) {
+                    return;
+                }
+                annModal.hidden = true;
+                document.body.style.overflow = annPreviousOverflow;
+                annWrite();
+            };
+
+            // Recorded on open, not on close. Someone who opens the home page and
+            // immediately taps through to a product must not be shown it twice, and
+            // that navigation happens before any dismissal.
+            annWrite();
+
+            annModal.hidden = false;
+            document.body.style.overflow = 'hidden';
+
+            if (annRemaining > 0) {
+                annCounter.textContent = '(' + annRemaining + ')';
+                annTimer = setInterval(function () {
+                    annRemaining -= 1;
+                    if (annRemaining <= 0) {
+                        annFinish();
+                    } else {
+                        annCounter.textContent = '(' + annRemaining + ')';
+                    }
+                }, 1000);
+            } else {
+                annFinish();
+            }
+
+            annModal.querySelectorAll('[data-ann-dismiss]').forEach(function (el) {
+                el.addEventListener('click', annClose);
+            });
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && !annModal.hidden) {
+                    annClose();
+                }
+            });
+        }
+    }
+
 });

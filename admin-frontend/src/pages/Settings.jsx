@@ -53,6 +53,20 @@ export default function Settings() {
           <ProForm.Item name="site_announcement" label="站点公告" extra="显示在首页和商品详情页顶部。">
             <RichTextEditor placeholder="支持加粗、颜色、链接、图片等" height={220} />
           </ProForm.Item>
+          <ProForm.Item
+            name="popup_announcement"
+            label="弹窗公告"
+            extra="留空则不弹窗。访客打开首页或商品详情页时弹出，5 秒后才能关闭。修改内容后，已看过旧公告的访客会重新看到一次。"
+          >
+            <RichTextEditor placeholder="重要通知才用弹窗，频繁弹窗会赶走访客" height={200} />
+          </ProForm.Item>
+          <ProFormDigit
+            name="popup_interval_hours"
+            label="弹窗间隔（小时）"
+            min={0}
+            fieldProps={{ precision: 0 }}
+            extra="同一位访客在这段时间内不会再次看到同一条弹窗公告。填 0 表示每次访问都弹。"
+          />
           <ProFormText name="contact_text" label="联系方式文字" />
           <ProFormText name="contact_url" label="联系方式链接" />
           <ProForm.Item name="site_logo" label="站点 Logo" extra="显示在页面左上角，高度自动缩放到 30px。">

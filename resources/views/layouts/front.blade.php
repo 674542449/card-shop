@@ -110,6 +110,13 @@
         <button class="fab-btn fab-top" id="back-to-top" title="回到顶部">&#8593;</button>
     </div>
 
+    {{-- Announcement dialog, on the two pages a visitor actually arrives on. Not
+         site-wide: interrupting someone on the payment or order-query page with a
+         notice is the kind of thing that loses a sale. --}}
+    @if(request()->is('/') || request()->is('product/*'))
+    @include('front.partials.announcement-modal')
+    @endif
+
     <script src="{{ asset_versioned('js/front.js') }}"></script>
     @yield('scripts')
 </body>
