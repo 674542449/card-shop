@@ -9,7 +9,7 @@
       $method - one of alipay | wechat | usdt_* (anything else falls through to a
                 neutral card mark, so an unrecognised gateway still renders something)
 --}}
-@php $payIconKey = str_starts_with((string) ($method ?? ''), 'usdt_') ? 'usdt' : ($method ?? ''); @endphp
+@php $payIconKey = (string) ($method ?? ''); @endphp
 
 @if($payIconKey === 'alipay')
     {{-- Alipay's identity is a blue plate carrying 支. Drawing that stroke as a path by
@@ -37,7 +37,39 @@
             <circle cx="24.2" cy="19" r="1.1"/>
         </g>
     </svg>
-@elseif($payIconKey === 'usdt')
+@elseif($payIconKey === 'usdt_trc20')
+    {{-- TRON. Its mark is an angular triangle; drawn as an outline so it reads as a
+         shape rather than a solid blob at 22px. --}}
+    <svg class="pay-svg" viewBox="0 0 32 32" role="img" aria-hidden="true" focusable="false">
+        <circle cx="16" cy="16" r="15" fill="#ef0027"/>
+        <path d="M8 9.5 23.5 12.3 16.3 25.5Z" fill="none" stroke="#fff"
+              stroke-width="1.9" stroke-linejoin="round"/>
+        <path d="M8 9.5 13.6 14.4 23.5 12.3M13.6 14.4 16.3 25.5" fill="none" stroke="#fff"
+              stroke-width="1.4" stroke-linejoin="round"/>
+    </svg>
+@elseif($payIconKey === 'usdt_bep20')
+    {{-- BNB Chain: four diamonds around a fifth. Explicit polygon points rather than
+         rotated squares, so the geometry is exact at any size. --}}
+    <svg class="pay-svg" viewBox="0 0 32 32" role="img" aria-hidden="true" focusable="false">
+        <circle cx="16" cy="16" r="15" fill="#f0b90b"/>
+        <g fill="#fff">
+            <polygon points="16,6.4 19.1,9.5 16,12.6 12.9,9.5"/>
+            <polygon points="16,19.4 19.1,22.5 16,25.6 12.9,22.5"/>
+            <polygon points="9.5,12.9 12.6,16 9.5,19.1 6.4,16"/>
+            <polygon points="22.5,12.9 25.6,16 22.5,19.1 19.4,16"/>
+            <polygon points="16,12.9 19.1,16 16,19.1 12.9,16"/>
+        </g>
+    </svg>
+@elseif($payIconKey === 'usdt_polygon')
+    {{-- Polygon: a hexagon outline, the shape the network is named for. --}}
+    <svg class="pay-svg" viewBox="0 0 32 32" role="img" aria-hidden="true" focusable="false">
+        <circle cx="16" cy="16" r="15" fill="#8247e5"/>
+        <polygon points="16,6.8 23.9,11.4 23.9,20.6 16,25.2 8.1,20.6 8.1,11.4"
+                 fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/>
+        <circle cx="16" cy="16" r="2.6" fill="#fff"/>
+    </svg>
+@elseif(str_starts_with($payIconKey, 'usdt_'))
+    {{-- A USDT network we have not drawn: the Tether disc still identifies the token. --}}
     <svg class="pay-svg" viewBox="0 0 32 32" role="img" aria-hidden="true" focusable="false">
         <circle cx="16" cy="16" r="15" fill="#26a17b"/>
         <g fill="#fff">
