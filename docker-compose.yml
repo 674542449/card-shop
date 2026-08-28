@@ -26,6 +26,29 @@ services:
       retries: 30
       start_period: 180s
 
+  # Runs Laravel's scheduler. Its only job today is releasing the cards held by
+  # abandoned pending orders; without it that stock is lost permanently.
+  # entrypoint is overridden so this container does not re-run migrations/seeds —
+  # it waits for `app` to be healthy, by which point those have already happened.
+  scheduler:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: cardshop-scheduler
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    entrypoint: ["php", "artisan", "schedule:work"]
+    networks:
+      - cardshop
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+
   nginx:
     image: nginx:stable
     container_name: cardshop-nginx
