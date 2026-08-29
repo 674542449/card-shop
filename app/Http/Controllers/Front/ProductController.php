@@ -17,6 +17,7 @@ class ProductController extends Controller
         $products = Product::active()
             ->ordered()
             ->where('category_id', $category->id)
+            ->withStock()
             ->with(['category', 'wholesalePrices'])
             ->paginate(12);
 

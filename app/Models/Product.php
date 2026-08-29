@@ -78,7 +78,26 @@ class Product extends Model
      */
     public function stockCount(): int
     {
+        // Prefer a count the query already loaded as `stock_count`. The product row
+        // partial calls this for every row, so on a list page without it this was one
+        // COUNT per product — the homepage issued 12 queries for 5 products and 32 for
+        // 25, growing one-for-one with the catalogue.
+        if (array_key_exists('stock_count', $this->attributes)) {
+            return (int) $this->attributes['stock_count'];
+        }
+
         return $this->cards()->where('status', 'unsold')->count();
+    }
+
+    /**
+     * Load the unsold-card count alongside the products, as `stock_count`.
+     *
+     * Named so every list that renders product rows asks for it the same way; the
+     * admin product list already did this inline and the storefront did not.
+     */
+    public function scopeWithStock(Builder $query): Builder
+    {
+        return $query->withCount(['cards as stock_count' => fn ($q) => $q->where('status', 'unsold')]);
     }
 
     /**

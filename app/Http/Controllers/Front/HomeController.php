@@ -21,6 +21,7 @@ class HomeController extends Controller
 
         $products = Product::active()
             ->ordered()
+            ->withStock()
             ->with(['category', 'wholesalePrices'])
             ->get();
 
