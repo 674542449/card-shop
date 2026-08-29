@@ -14,6 +14,13 @@ services:
       - .:/var/www/html
     expose:
       - "9000"
+    # json-file 默认不轮转，会一直长到把磁盘吃光。届时 PostgreSQL 写不下 WAL，
+    # 站点整体挂掉，而 docker ps 全是 Up、应用日志干干净净，极难定位。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - cardshop
     environment:
@@ -33,7 +40,11 @@ services:
       interval: 5s
       timeout: 5s
       retries: 30
-      start_period: 180s
+      # 首次启动要在容器里装 PHP 依赖。README 把 1GB / 1 核列为最低配置，那种机器上
+      # composer 解析容易接近甚至超过原来 180s 的预算，于是 `docker compose up -d`
+      # 报 "app is unhealthy" 退出 —— 而容器其实还在正常跑，再执行一次就好了。
+      # 新手看到这个报错会以为部署失败，从而去做各种不必要的重来。
+      start_period: 300s
 
   # Runs Laravel's scheduler. Its only job today is releasing the cards held by
   # abandoned pending orders; without it that stock is lost permanently.
@@ -52,6 +63,19 @@ services:
       - .:/var/www/html
     working_dir: /var/www/html
     entrypoint: ["php", "artisan", "schedule:work"]
+    # 跟 PHP-FPM 的工作进程同一个身份（www-data，uid/gid 33）。
+    # 不指定的话它以 root 跑，而它和 app 共享同一个 bind mount：跨天的第一条日志
+    # 如果是它写的，storage/logs 里当天那个文件就属于 root，之后 www-data 再想往里
+    # 追加就是 EACCES —— 表现为「半夜之后开始随机 500，重启一下就好」，症状和原因
+    # 之间几乎没有可见联系。它启动时 app 已经 healthy，storage 的属主早就设好了。
+    user: "33:33"
+    # json-file 默认不轮转，会一直长到把磁盘吃光。届时 PostgreSQL 写不下 WAL，
+    # 站点整体挂掉，而 docker ps 全是 Up、应用日志干干净净，极难定位。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - cardshop
     environment:
@@ -83,6 +107,13 @@ services:
       # Where the certificate itself lives on the host. Adjust the left-hand side if
       # you keep it somewhere other than /opt/cf.
       - ${TLS_CERT_DIR:-/opt/cf}:/etc/nginx/cf:ro
+    # json-file 默认不轮转，会一直长到把磁盘吃光。届时 PostgreSQL 写不下 WAL，
+    # 站点整体挂掉，而 docker ps 全是 Up、应用日志干干净净，极难定位。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - cardshop
 
@@ -121,6 +152,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+      # 没有 start_period 时，这 5 次重试从容器启动那一刻就开始计数，总共只给了 25 秒。
+      # 首次部署要跑 initdb（建数据目录、写 WAL、生成系统表），在慢盘或小内存机器上
+      # 超过 25 秒很常见，于是 `docker compose up` 直接以
+      # "dependency failed to start: container cardshop-postgres is unhealthy" 退出 ——
+      # 而 postgres 其实再过几秒就好了。start_period 内的失败不计入重试。
+      start_period: 120s
+    # json-file 默认不轮转，会一直长到把磁盘吃光。届时 PostgreSQL 写不下 WAL，
+    # 站点整体挂掉，而 docker ps 全是 Up、应用日志干干净净，极难定位。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - cardshop
 
@@ -128,10 +172,11 @@ services:
     image: redis:7-alpine
     container_name: cardshop-redis
     restart: unless-stopped
-    # Loopback only. An internet-reachable Redis with no password is a remote code
-    # execution vector, not just a data leak.
-    ports:
-      - "127.0.0.1:6379:6379"
+    # 不发布端口。应用通过内部的 cardshop 网络访问它，宿主机上没有任何东西需要连
+    # Redis。之前绑在 127.0.0.1 已经挡住了公网，但仍然把「宿主机上任意一个普通用户，
+    # 或任意一次 SSRF / 命令执行」直接升级成「读写全部会话、进后台」——这个 Redis
+    # 没有密码。不发布端口，这条路就不存在。
+    # 需要调试时临时用：docker compose exec redis redis-cli
     volumes:
       - redisdata:/data
     healthcheck:
@@ -139,6 +184,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    # json-file 默认不轮转，会一直长到把磁盘吃光。届时 PostgreSQL 写不下 WAL，
+    # 站点整体挂掉，而 docker ps 全是 Up、应用日志干干净净，极难定位。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     networks:
       - cardshop
 
