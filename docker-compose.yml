@@ -70,9 +70,19 @@ services:
         condition: service_healthy
     ports:
       - "80:80"
+      # Published unconditionally. Nothing listens on it until a config file exists in
+      # docker/nginx/tls/, and an unused published port costs nothing — whereas
+      # discovering the mapping is missing only after installing a certificate means
+      # editing this file on the server and fighting the next git pull.
+      - "443:443"
     volumes:
       - .:/var/www/html:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Optional TLS config; empty on a fresh install. See tls/ssl.conf.example.
+      - ./docker/nginx/tls:/etc/nginx/tls:ro
+      # Where the certificate itself lives on the host. Adjust the left-hand side if
+      # you keep it somewhere other than /opt/cf.
+      - ${TLS_CERT_DIR:-/opt/cf}:/etc/nginx/cf:ro
     networks:
       - cardshop
 

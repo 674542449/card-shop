@@ -1,0 +1,25 @@
+# Copy to ssl.conf in this directory to serve HTTPS, then restart nginx:
+#
+#     cp docker/nginx/tls/ssl.conf.example docker/nginx/tls/ssl.conf
+#     docker compose restart nginx
+#
+# The paths below are inside the container. docker-compose.yml mounts the host
+# directory holding your certificate at /etc/nginx/cf — edit that mount if your
+# certificate lives somewhere else.
+#
+# With Cloudflare: SSL/TLS -> Origin Server -> Create Certificate gives you both
+# files. Once this is in place, set the Cloudflare SSL mode to Full (strict);
+# leaving it on Flexible means the CF-to-origin leg stays plaintext, and that leg
+# carries session cookies and card secrets.
+
+listen 443 ssl;
+http2 on;
+
+ssl_certificate     /etc/nginx/cf/cert.pem;
+ssl_certificate_key /etc/nginx/cf/key.pem;
+
+ssl_protocols       TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers off;
+ssl_session_cache   shared:SSL:10m;
+ssl_session_timeout 1d;
+ssl_session_tickets off;

@@ -1,0 +1,5 @@
+# Your real TLS config lives here and stays out of the repository: it names
+# certificate paths specific to your server, and keeping it untracked is what stops
+# `git pull` conflicting with it on every deploy.
+*.conf
+!ssl.conf.example
