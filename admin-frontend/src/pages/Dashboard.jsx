@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, Col, Row, Skeleton, Table, Tag, Typography, Empty } from 'antd';
+import { Alert, Button, Card, Col, Row, Skeleton, Table, Tag, Typography, Empty } from 'antd';
 import { getDashboard } from '../services/api';
 
 const STATUS = {
@@ -168,16 +168,36 @@ function RevenueBars({ labels = [], data = [] }) {
 export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({});
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
+    setFailed(false);
     getDashboard()
       .then((res) => setData(res.data?.data || res.data))
-      .catch(() => {})
+      // The failure has to be visible. Swallowing it left every figure at its ?? 0
+      // fallback, so a request that never arrived rendered a confident 今日收入
+      // ¥0.00 — indistinguishable from a day with no sales, and far more alarming.
+      .catch(() => setFailed(true))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(load, []);
 
   if (loading) {
     return <Skeleton active paragraph={{ rows: 8 }} />;
+  }
+
+  if (failed) {
+    return (
+      <Alert
+        type="error"
+        showIcon
+        message="数据加载失败"
+        description="没能取到今天的经营数据。这不表示没有成交——请检查网络或服务器后重试。"
+        action={<Button size="small" onClick={load}>重试</Button>}
+      />
+    );
   }
 
   const pending = Number(data.pending_orders || 0);

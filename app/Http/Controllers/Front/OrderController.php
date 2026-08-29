@@ -207,6 +207,8 @@ class OrderController extends Controller
             ]);
         }
 
+        // A pending order past its deadline: expire it here and now, then fall through
+        // to the dead-order panel below.
         if ($order->isExpired()) {
             $this->expireOrder($order);
             $order->refresh();
@@ -215,10 +217,22 @@ class OrderController extends Controller
                 return redirect('/order/query')
                     ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
             }
+        }
 
+        // Decide from the STATUS, not from isExpired(). isExpired() is
+        // `status === 'pending' && expires_at->isPast()`, so the moment the scheduler
+        // has already flipped the row to 'expired' — or an operator closed it — it
+        // returns false and this used to fall through to the live payment page. The
+        // buyer then got a countdown initialised from a timestamp in the past, which
+        // front.js reads as finished and reloads two seconds later, forever.
+        if (!$order->isPending()) {
             return view('front.order.pay', [
                 'order' => $order,
                 'expired' => true,
+                'deadReason' => $order->status === 'closed'
+                    ? '此订单已关闭，请重新下单。'
+                    : '此订单已超过支付时限，请重新下单。',
+                'deadTitle' => $order->status === 'closed' ? '订单已关闭' : '订单已过期',
                 'paymentUrl' => null,
             ]);
         }
@@ -314,18 +328,16 @@ class OrderController extends Controller
      */
     private function matchOrders(string $email, string $password)
     {
-        // Case-insensitive: a buyer who typed Buyer@Example.com at checkout and
-        // buyer@example.com at the query form is the same person, and telling them
-        // their order does not exist is indistinguishable from losing it.
-        $candidates = Order::whereRaw('lower(email) = ?', [mb_strtolower($email)])
-            // The 25-row window is applied by the DATABASE, before any password is
-            // checked, so a row outside it can never match however correct the
-            // password. Nobody verifies the email at checkout and nothing ever
-            // deletes an expired order, so 25 junk orders placed against a stranger's
-            // address used to push their real one out of the window permanently and
-            // lock them out of cards they had paid for. Restricting the window to
-            // orders that are paid or still live means evicting someone now costs the
-            // attacker 25 completed purchases.
+        $lower = mb_strtolower($email);
+
+        // PHASE 1 — authenticate.
+        //
+        // Bounded to 25 because every candidate costs a bcrypt at cost 12 and anyone
+        // can call this endpoint. The window is also restricted to orders that are paid
+        // or still live: nobody verifies the email at checkout and nothing deletes an
+        // expired order, so without that restriction 25 junk orders placed against a
+        // stranger's address would push their real one out of the window for good.
+        $probe = Order::whereRaw('lower(email) = ?', [$lower])
             ->where(function ($q) {
                 $q->where('status', 'paid')
                   ->orWhere(function ($q2) {
@@ -336,18 +348,38 @@ class OrderController extends Controller
             ->limit(25)
             ->get();
 
-        if ($candidates->isEmpty()) {
+        if ($probe->isEmpty()) {
             // Equalise the cost of "this address has never bought here" with a real
             // check. Without it the reply time says exactly what the deliberately
             // identical error message refuses to: an unknown address returns in
             // single-digit ms, a known one after a bcrypt at cost 12.
             Hash::check($password, $this->timingPaddingHash());
 
-            return $candidates;
+            return $probe;
         }
 
-        return $candidates
-            ->filter(fn (Order $order) => Hash::check($password, $order->query_password))
+        $matched = $probe->filter(fn (Order $o) => Hash::check($password, $o->query_password));
+
+        if ($matched->isEmpty()) {
+            return $matched->values();
+        }
+
+        // PHASE 2 — now that ownership is proved, show everything.
+        //
+        // The phase-1 restrictions exist to bound what an ANONYMOUS caller can cost us
+        // and to stop eviction; neither applies once a password has matched. Keeping
+        // them for the result set had two consequences the buyer felt: a regular
+        // customer with more than 25 purchases could not reach the cards in their older
+        // orders, and an expired or closed order was invisible — the page told them
+        // their password was wrong, when their order had simply lapsed.
+        //
+        // Still capped: a bcrypt per order is real work, and no genuine buyer is near
+        // this number.
+        return Order::whereRaw('lower(email) = ?', [$lower])
+            ->orderByDesc('created_at')
+            ->limit(200)
+            ->get()
+            ->filter(fn (Order $o) => Hash::check($password, $o->query_password))
             ->values();
     }
 

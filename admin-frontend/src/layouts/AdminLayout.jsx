@@ -43,10 +43,17 @@ export default function AdminLayout({ admin }) {
   const handleLogout = async () => {
     try {
       await logout();
-      message.success('已退出登录');
-    } finally {
-      navigate('/admin/login', { replace: true });
+    } catch (err) {
+      // `finally` used to navigate to the login page whether or not the server
+      // actually ended the session, so a failed request showed the operator a login
+      // screen while their session cookie stayed valid — on a shared machine that
+      // reads as "logged out" and is not. Stay put and say so instead.
+      message.error(err.response?.data?.message || '退出登录失败，请重试。您仍处于登录状态。');
+      return;
     }
+
+    message.success('已退出登录');
+    navigate('/admin/login', { replace: true });
   };
 
   return (

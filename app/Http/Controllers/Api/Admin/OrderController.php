@@ -9,6 +9,7 @@ use App\Models\OperationLog;
 use App\Models\Order;
 use App\Services\NotificationService;
 use App\Services\OrderFulfilmentService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response;
@@ -21,10 +22,15 @@ class OrderController extends Controller
     ) {
     }
 
-    public function index(Request $request)
+    /**
+     * The filters behind both the order list and the CSV export.
+     *
+     * Shared because they had drifted: the list honoured seven filters and the export
+     * honoured two, so 导出订单 on a filtered screen silently downloaded every order in
+     * the shop — a file that looks right until you open it.
+     */
+    private function applyFilters(Request $request, Builder $query): Builder
     {
-        $query = Order::with('product');
-
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
@@ -56,6 +62,13 @@ class OrderController extends Controller
             $query->where('created_at', '<=', $dateTo . ' 23:59:59');
         }
 
+        return $query;
+    }
+
+    public function index(Request $request)
+    {
+        $query = $this->applyFilters($request, Order::with('product'));
+
         $sortBy = $request->get('sort', 'created_at');
         $sortDir = strtolower((string) $request->get('dir', 'desc'));
         if (!in_array($sortBy, ['created_at', 'total_amount'], true)) {
@@ -66,7 +79,12 @@ class OrderController extends Controller
             $sortDir = 'desc';
         }
 
+        // ->orderBy('id') is the tiebreaker. created_at is written at whole-second
+        // precision, so a burst of orders shares a timestamp and PostgreSQL is free to
+        // return the tied rows in a different order per page — the same order appears
+        // twice and another is never shown.
         $orders = $query->orderBy($sortBy, $sortDir)
+            ->orderBy('id', $sortDir)
             ->paginate($request->get('pageSize', 20));
 
         return response()->json([
@@ -182,16 +200,10 @@ class OrderController extends Controller
 
     public function export(Request $request)
     {
-        $query = Order::with('product');
-
-        if ($request->filled('status')) {
-            $query->where('status', $request->status);
-        }
-        if ($request->filled('payment_method')) {
-            $query->where('payment_method', $request->payment_method);
-        }
-
-        $orders = $query->orderByDesc('created_at')->get();
+        $orders = $this->applyFilters($request, Order::with('product'))
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->get();
 
         $statusMap = [
             'pending' => '待支付', 'paid' => '已支付',

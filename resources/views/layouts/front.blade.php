@@ -11,17 +11,24 @@
          operator; a single " in a name closes the content attribute and everything
          after it becomes markup in <head>. @yield stays below for the sections that
          are meant to be HTML (structured_data, head, content, scripts). --}}
-    <title>{{ $__env->yieldContent('title', setting('seo_default_title', 'CardShop')) }}</title>
-    <meta name="description" content="{{ $__env->yieldContent('meta_description', setting('seo_default_description', '')) }}">
-    <meta name="keywords" content="{{ $__env->yieldContent('meta_keywords', setting('seo_default_keywords', '')) }}">
+    {{-- The fallback is applied with ?: rather than passed to yieldContent().
+         yieldContent() escapes its $default itself (ManagesLayouts::yieldContent, the
+         `e($default)` on the first line), so handing it the raw setting and wrapping
+         the call in {{ }} escaped it twice — a shop whose SEO description contains
+         "A & B" served "A &amp;amp; B" to search engines on every page with no
+         section of its own. Defined sections come back unescaped and are escaped
+         exactly once, here, which is the point of the {{ }}. --}}
+    <title>{{ $__env->yieldContent('title') ?: setting('seo_default_title', 'CardShop') }}</title>
+    <meta name="description" content="{{ $__env->yieldContent('meta_description') ?: setting('seo_default_description', '') }}">
+    <meta name="keywords" content="{{ $__env->yieldContent('meta_keywords') ?: setting('seo_default_keywords', '') }}">
 
     @hasSection('canonical')
     <link rel="canonical" href="{{ $__env->yieldContent('canonical') }}">
     @endif
 
     <meta property="og:type" content="{{ $__env->yieldContent('og_type', 'website') }}">
-    <meta property="og:title" content="{{ $__env->yieldContent('title', setting('seo_default_title', 'CardShop')) }}">
-    <meta property="og:description" content="{{ $__env->yieldContent('meta_description', setting('seo_default_description', '')) }}">
+    <meta property="og:title" content="{{ $__env->yieldContent('title') ?: setting('seo_default_title', 'CardShop') }}">
+    <meta property="og:description" content="{{ $__env->yieldContent('meta_description') ?: setting('seo_default_description', '') }}">
     <meta property="og:url" content="{{ url()->current() }}">
     <meta property="og:site_name" content="{{ setting('site_name', 'CardShop') }}">
 

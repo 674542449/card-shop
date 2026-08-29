@@ -50,17 +50,36 @@ class CardController extends Controller
             $content = $request->input('content');
         }
 
-        $lines = array_filter(array_map('trim', explode("\n", $content)));
-        $count = 0;
+        // \r stripped too: a file saved on Windows arrives with CRLF, and trim() alone
+        // left a trailing \r on every secret — invisible in the admin, and delivered
+        // to the buyer inside the card content.
+        $lines = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $content))));
+        $count = count($lines);
 
-        foreach ($lines as $line) {
-            Card::create([
-                'product_id' => $product->id,
-                'content' => $line,
-                'status' => 'unsold',
-            ]);
-            $count++;
+        if ($count === 0) {
+            return response()->json(['message' => '没有可导入的卡密。'], 422);
         }
+
+        $now = now();
+        $rows = array_map(fn (string $line) => [
+            'product_id' => $product->id,
+            'content' => $line,
+            'status' => 'unsold',
+            'created_at' => $now,
+            'updated_at' => $now,
+        ], $lines);
+
+        // One transaction, chunked inserts. It used to issue one INSERT per line with
+        // no transaction, so a 5,000-card import was 5,000 round trips: slow enough to
+        // hit the request timeout, and every row before the cut was already committed.
+        // The operator saw a failure, imported the same file again, and the shop ended
+        // up with duplicates of every secret that had made it in — two buyers sold the
+        // same card.
+        DB::transaction(function () use ($rows) {
+            foreach (array_chunk($rows, 500) as $chunk) {
+                Card::insert($chunk);
+            }
+        });
 
         OperationLog::log('导入卡密', 'product', $product->id, "导入 {$count} 张卡密到 {$product->name}");
 

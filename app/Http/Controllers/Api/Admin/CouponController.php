@@ -43,7 +43,17 @@ class CouponController extends Controller
         $data = $request->validate([
             'code' => 'nullable|string|max:50|unique:coupons,code',
             'type' => 'required|in:fixed,percent',
-            'value' => 'required|numeric|min:0.01',
+            // A percent coupon is a percentage; above 100 it is a discount larger than
+            // the order, and the total lands on the 0.01 floor in both checkout paths.
+            // The max:100 rule existed only in a FormRequest no controller uses.
+            'value' => [
+                'required', 'numeric', 'min:0.01',
+                function (string $attr, $value, \Closure $fail) use ($request) {
+                    if ($request->input('type') === 'percent' && (float) $value > 100) {
+                        $fail('百分比折扣不能超过 100。');
+                    }
+                },
+            ],
             'product_id' => 'nullable|exists:products,id',
             // 0 is the unlimited sentinel and the column default, so min:1 made every
             // coupon created with the default impossible to save again.
@@ -67,7 +77,17 @@ class CouponController extends Controller
         $data = $request->validate([
             'code' => 'nullable|string|max:50|unique:coupons,code,' . $coupon->id,
             'type' => 'required|in:fixed,percent',
-            'value' => 'required|numeric|min:0.01',
+            // A percent coupon is a percentage; above 100 it is a discount larger than
+            // the order, and the total lands on the 0.01 floor in both checkout paths.
+            // The max:100 rule existed only in a FormRequest no controller uses.
+            'value' => [
+                'required', 'numeric', 'min:0.01',
+                function (string $attr, $value, \Closure $fail) use ($request) {
+                    if ($request->input('type') === 'percent' && (float) $value > 100) {
+                        $fail('百分比折扣不能超过 100。');
+                    }
+                },
+            ],
             'product_id' => 'nullable|exists:products,id',
             // 0 is the unlimited sentinel and the column default, so min:1 made every
             // coupon created with the default impossible to save again.

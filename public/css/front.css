@@ -1639,12 +1639,21 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     transition: all .2s;
 }
 .pagination-wrap a:hover { border-color: var(--teal); color: var(--teal); }
-.pagination-wrap .active span {
+/* These two used to be `.active span` / `.disabled span`, the shape of Laravel's old
+   Bootstrap paginator — markup this project never rendered, so the rules matched
+   nothing. They now name the classes front/partials/pagination.blade.php emits. */
+.pagination-wrap .pg-current {
     background: var(--teal);
     border-color: var(--teal);
     color: #fff;
+    font-weight: 600;
 }
-.pagination-wrap .disabled span { opacity: .4; cursor: default; }
+.pagination-wrap .pg-disabled { opacity: .4; cursor: default; }
+.pagination-wrap a:focus-visible,
+.pagination-wrap .pg-current:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+}
 
 /* ============================================================
    Empty State

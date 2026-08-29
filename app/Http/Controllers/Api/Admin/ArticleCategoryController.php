@@ -10,10 +10,19 @@ use Illuminate\Http\Request;
 
 class ArticleCategoryController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $categories = ArticleCategory::withCount('articles')->ordered()->get();
-        return response()->json(['data' => $categories]);
+        $query = ArticleCategory::withCount('articles');
+
+        // The table ships a 名称 search box and this method took no Request at all, so
+        // every keyword was discarded and the operator got the full list back looking
+        // like a successful search that matched everything.
+        $keyword = $request->input('keyword', $request->input('name'));
+        if (filled($keyword)) {
+            $query->where('name', 'ilike', '%' . $keyword . '%');
+        }
+
+        return response()->json(['data' => $query->ordered()->get()]);
     }
 
     public function store(Request $request)

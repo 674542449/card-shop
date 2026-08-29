@@ -33,11 +33,13 @@ const paymentMethodMap = {
 
 export default function Orders() {
   const actionRef = useRef();
+  // The filter set behind the rows currently displayed.
+  const filtersRef = useRef({});
   const navigate = useNavigate();
 
   const handleExport = async () => {
     try {
-      const res = await exportOrders({});
+      const res = await exportOrders(filtersRef.current);
       // The endpoint returns CSV, not a spreadsheet; the .xlsx name made Excel warn
       // about a corrupt file on every export.
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv;charset=utf-8' }));
@@ -129,6 +131,10 @@ export default function Orders() {
       search={{ labelWidth: 'auto' }}
       request={async (params) => {
         const { current, pageSize, ...rest } = params;
+        // Keep the active filters so 导出订单 can export what is on screen. Without
+        // this it posted {} and always downloaded every order in the shop, which
+        // looks identical to a working export until you open the file.
+        filtersRef.current = rest;
         const res = await getOrders({ page: current, per_page: pageSize, ...rest });
         const body = res.data ?? {};
         const list = Array.isArray(body) ? body : (body.data ?? []);

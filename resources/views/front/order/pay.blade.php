@@ -35,8 +35,11 @@
     <div class="page-card">
         <div class="page-card-body text-center" style="padding:40px 20px;">
             <div style="font-size:48px;margin-bottom:10px;" aria-hidden="true">&#9200;</div>
-            <h3 style="font-size:18px;margin-bottom:8px;">订单已过期</h3>
-            <p style="color:var(--text-light);margin-bottom:15px;">此订单已超过支付时限，请重新下单。</p>
+            {{-- An order can be dead because it lapsed OR because an operator closed
+                 it; telling a buyer "已过期" when it was closed sends them to support
+                 with the wrong question. --}}
+            <h3 style="font-size:18px;margin-bottom:8px;">{{ $deadTitle ?? '订单已过期' }}</h3>
+            <p style="color:var(--text-light);margin-bottom:15px;">{{ $deadReason ?? '此订单已超过支付时限，请重新下单。' }}</p>
             <a href="/" class="btn-submit" style="display:inline-block;width:auto;padding:8px 30px;">返回首页</a>
         </div>
     </div>

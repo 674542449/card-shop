@@ -40,8 +40,14 @@ class Blacklist extends Model
         });
 
         if ($email !== null) {
-            $query->orWhere(function ($q) use ($email) {
-                $q->where('type', 'email')->where('value', $email);
+            // lower() on both sides. The CheckBlacklist middleware was made
+            // case-insensitive earlier; this method was not, and it is the one
+            // OrderService::createOrder uses — so a blocked address could order
+            // again through /api/v1/orders by capitalising a single letter.
+            $lower = mb_strtolower($email);
+
+            $query->orWhere(function ($q) use ($lower) {
+                $q->where('type', 'email')->whereRaw('lower(value) = ?', [$lower]);
             });
         }
 
