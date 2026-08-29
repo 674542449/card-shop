@@ -18,7 +18,7 @@
          "A & B" served "A &amp;amp; B" to search engines on every page with no
          section of its own. Defined sections come back unescaped and are escaped
          exactly once, here, which is the point of the {{ }}. --}}
-    <title>{{ $__env->yieldContent('title') ?: setting('seo_default_title', 'CardShop') }}</title>
+    <title>{{ $__env->yieldContent('title') ?: setting('seo_default_title') ?: setting('site_name', 'CardShop') }}</title>
     <meta name="description" content="{{ $__env->yieldContent('meta_description') ?: setting('seo_default_description', '') }}">
     <meta name="keywords" content="{{ $__env->yieldContent('meta_keywords') ?: setting('seo_default_keywords', '') }}">
 
@@ -27,7 +27,7 @@
     @endif
 
     <meta property="og:type" content="{{ $__env->yieldContent('og_type', 'website') }}">
-    <meta property="og:title" content="{{ $__env->yieldContent('title') ?: setting('seo_default_title', 'CardShop') }}">
+    <meta property="og:title" content="{{ $__env->yieldContent('title') ?: setting('seo_default_title') ?: setting('site_name', 'CardShop') }}">
     <meta property="og:description" content="{{ $__env->yieldContent('meta_description') ?: setting('seo_default_description', '') }}">
     <meta property="og:url" content="{{ url()->current() }}">
     <meta property="og:site_name" content="{{ setting('site_name', 'CardShop') }}">

@@ -131,7 +131,14 @@ TEMPLATE,
 
             // SEO settings
             'seo' => [
-                'seo_default_title' => 'CardShop',
+                // Empty on purpose. Both the home page and the layout fall back to
+                // site_name when this is blank, so a shop that never opens the SEO tab
+                // still gets its own name in the title. Seeded as the literal
+                // 'CardShop' it silently overrode site_name on the one page search
+                // engines care about most, and only there — every other page builds
+                // its title from site_name directly, so the mismatch was invisible
+                // until you compared two tabs.
+                'seo_default_title' => '',
                 'seo_default_description' => '',
                 'seo_default_keywords' => '',
                 'baidu_push_token' => '',
