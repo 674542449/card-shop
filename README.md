@@ -66,7 +66,10 @@
 | 磁盘 | 20 GB | 40 GB | 镜像约 2 GB |
 
 - 操作系统：Debian 13 / Ubuntu 22.04+ / CentOS 8+（推荐 Debian 13）
-- 开放端口：80（HTTP）、443（HTTPS，如需）
+- 开放端口：80、443 —— **建议只对 Cloudflare 回源网段开放**，不要对公网全开。
+  注意 `ufw` 挡不住 Docker 发布的端口（Docker 直接往 nat 表写规则），必须走 iptables
+  的 `DOCKER-USER` 链或云控制台的安全列表。仓库里的 `scripts/cf-only-firewall.sh`
+  就是干这件事的，见下面的「HTTPS 与源站防护」。
 
 **配置越好不等于跑得越快** —— 镜像里 PHP-FPM 的默认值只有 5 个工作进程，也就是同时
 只能处理 5 个请求，跟机器多大无关。部署时跑一次 `./install.sh`，它会读取本机的 CPU
@@ -191,14 +194,12 @@ DB_PASSWORD=修改为强密码
 REDIS_PASSWORD=null
 ```
 
-同时修改 `docker-compose.yml` 中 PostgreSQL 的密码，确保与 `.env` 一致：
+数据库密码只需要改 `.env` 这一处，`docker-compose.yml` 会自动读取
+（`POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}`）。**不要去改 docker-compose.yml** ——
+那是被 git 跟踪的文件，改了以后每次 `git pull` 升级都会冲突。
 
-```yaml
-environment:
-  POSTGRES_DB: cardshop
-  POSTGRES_USER: cardshop
-  POSTGRES_PASSWORD: 修改为强密码
-```
+更省事的做法是直接跑 `./install.sh`：首次部署时它会检测到密码还是默认的 `secret`，
+自动生成一个随机强密码写进 `.env`。
 
 ### 3. 启动容器
 
@@ -210,21 +211,21 @@ docker compose up -d --build
 
 ### 4. 初始化应用
 
+**不需要手工做任何事。** 容器首次启动时会自动生成 `APP_KEY`、建好存储软链接、
+执行数据库迁移和种子数据。看进度：
+
 ```bash
-# 生成应用密钥
-docker compose exec app php artisan key:generate
-
-# 运行数据库迁移和种子
-docker compose exec app php artisan migrate --seed
-
-# 创建存储目录软链接
-docker compose exec app php artisan storage:link
+docker compose logs -f app
 ```
 
 ### 5. 访问
 
-- 前台：`http://你的IP`
-- 后台：`http://你的IP/admin`
+- 前台：`https://你的域名`
+- 后台：`https://你的域名/admin`
+
+如果按下面「HTTPS 与源站防护」配了防火墙，用 IP 直连源站是**故意封掉的**，
+访问不通不是故障。另外 `APP_URL` 必须是 `https://` 开头，否则会话 cookie 拿不到
+`Secure` 标志（见 `config/session.php`），后台可能登不进去。
 
 **管理员密码不再有固定默认值。** 首次启动时会自动生成一个随机密码并打印在容器日志里，只显示一次：
 
@@ -241,6 +242,92 @@ docker compose exec app php artisan admin:password
 ```
 
 登录后在「系统设置 → 修改密码」里可以随时更改。
+
+## HTTPS 与源站防护
+
+挂 Cloudflare 的标准做法，四步。前两步保证回源加密，后两步保证别人绕不过 CDN。
+
+### 1. 真实访客 IP（已内置，无需配置）
+
+`docker/nginx/default.conf` 里配好了 Cloudflare 的全部回源网段（`set_real_ip_from`）
+和 `real_ip_header CF-Connecting-IP`，nginx 会在 PHP 看到请求之前把 `$remote_addr`
+换成真实访客地址，而且**只在对端确实属于那些网段时**才换。
+
+所以 `.env` 里的 `TRUSTED_PROXIES` 要**保持为空**。填 `*` 反而危险：那等于"谁连过来
+都信它自称的 IP"，任何人直连源站伪造 `X-Forwarded-For` 就能绕过限流、绕过每 IP 最多
+3 笔未支付订单的限制、绕过 IP 黑名单。
+
+前提是 Cloudflare 面板里那条 A 记录必须开着橙云代理。不开的话这套方案静默失效 ——
+不报错，只是所有访客 IP 又变成一个。
+
+### 2. 源站证书（回源加密）
+
+不做这一步，Cloudflare 的 SSL 模式只能停在 Flexible，CF 到你服务器这一段是**明文**，
+而这一段跑的是管理员会话 cookie 和发给买家的卡密。
+
+```bash
+# ① Cloudflare 面板 → SSL/TLS → Origin Server → Create Certificate
+# ② 把证书存到服务器（路径可用 .env 的 TLS_CERT_DIR 改，默认 /opt/cf）
+mkdir -p /opt/cf
+# 粘贴证书内容到 /opt/cf/cert.pem 和 /opt/cf/key.pem
+chmod 600 /opt/cf/key.pem
+
+# ③ 启用 443 监听（install.sh 检测到证书后会自动做这一步）
+cp docker/nginx/tls/ssl.conf.example docker/nginx/tls/ssl.conf
+docker compose restart nginx
+```
+
+`docker/nginx/tls/*.conf` 被 gitignore 忽略，所以你的证书路径不会跟 `git pull` 冲突。
+少了 `ssl.conf` 这一步的现象是「443 端口通了但连不上 HTTPS」，很容易误判成证书问题 ——
+因为 `default.conf` 里那条 `include /etc/nginx/tls/*.conf` 匹配不到文件就完全不监听 443。
+
+然后在 Cloudflare 面板把 SSL/TLS 模式设为 **Full (strict)**，并开启 **Always Use
+HTTPS**（中文界面叫「始终使用 HTTPS」）和 **HSTS**。
+
+### 3. 只让 Cloudflare 连得上源站
+
+`docker-compose.yml` 把 80/443 发布在 `0.0.0.0`，而 Docker 是直接往 nat 表写规则的 ——
+**`ufw` 完全拦不住**。不做这一步，任何人拿到源站 IP 就能绕开 Cloudflare 的 WAF、
+限速和 Bot 防护直连，CDN 等于白挂。
+
+```bash
+sudo ./scripts/cf-only-firewall.sh --check --domain=你的域名    # 先体检，不改任何规则
+sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --persist
+```
+
+`--check` 会先确认：域名确实解析到 Cloudflare 网段、经 CF 能正常访问、外网网卡识别正确、
+端口映射一致、有没有 IPv6 旁路。任何一项不满足就拒绝执行 —— 在没挂 CDN 的机器上应用
+这套规则，等于把站点对所有人封死，而且规则藏在 `DOCKER-USER` 链里，`ufw status` 是空的、
+`docker ps` 是正常的，几乎不可能自行定位。
+
+`--apply` 之后会**自动验证两个方向**：容器出站还通不通、经 Cloudflare 入站是否正常。
+出站不通会自动回滚。这一条是有来历的 —— 早期手写的规则没限定入口网卡，把容器的出站
+流量一起 DROP 了，表现是 USDT 支付跳转不过去、Turnstile 验证失败、Telegram 通知中断，
+而入站看起来一切正常。
+
+其他子命令：`--status` 看当前规则，`--remove` 撤销，`--iface=ens3` 手工指定网卡。
+脚本只操作 `DOCKER-USER` 链，从不触碰 `INPUT`，**不会影响 SSH**。
+
+### 4. 云控制台安全列表（Oracle / AWS 用户必看）
+
+云厂商的安全列表/安全组是**独立于本机防火墙的另一层**，不放行 80/443 的话
+Cloudflare 回不了源，站点会 522。建议这一层也只放行 Cloudflare 网段。
+
+Oracle Cloud 注意：VCN 安全列表和 NSG 是**并集**关系（任一放行即放行），
+只改一处可能不生效。
+
+### 维护
+
+Cloudflare 的回源网段一年会变几次。`cf-only-firewall.sh` 每次运行都会重新拉取最新列表，
+建议每月跑一次：
+
+```bash
+sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --yes
+```
+
+`docker/nginx/default.conf` 里那份列表需要手工同步（文件里标注了抓取日期）。
+
+---
 
 ## 部署后配置
 

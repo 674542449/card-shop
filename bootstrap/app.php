@@ -24,20 +24,28 @@ return Application::configure(basePath: dirname(__DIR__))
             ->withoutOverlapping(10);
     })
     ->withMiddleware(function (Middleware $middleware) {
-        // Behind a CDN or reverse proxy the origin sees the proxy's address and a plain
-        // HTTP request. Two things break without trusting the forwarded headers: every
-        // visitor shares one IP, which collapses the per-IP rate limits and the
-        // blacklist into global ones, and Laravel builds http:// asset URLs that an
-        // HTTPS page then refuses to load as mixed content.
+        // This should normally be EMPTY. It is not the fix for "visitors all show the
+        // CDN's IP" — that is already solved one layer down, in nginx.
+        //
+        // docker/nginx/default.conf lists Cloudflare's origin ranges via
+        // set_real_ip_from and reads CF-Connecting-IP, so nginx rewrites $remote_addr
+        // before PHP ever sees the request, and only when the peer really is one of
+        // those addresses. REMOTE_ADDR is therefore already the visitor's address and
+        // Laravel has no proxy to trust.
+        //
+        // Setting '*' here is strictly worse than doing nothing: it means "believe
+        // whatever IP the client claims", so anyone reaching the origin directly can
+        // forge X-Forwarded-For and walk past the rate limits, the per-IP cap of three
+        // unpaid orders, and the IP blacklist. The nginx approach has no such hole —
+        // a forger cannot make their packets arrive from Cloudflare's ranges.
+        //
+        // The parsing below stays for the unusual topology where a SECOND reverse proxy
+        // sits in front of nginx (self-hosted HAProxy, a non-Cloudflare CDN). List that
+        // layer's ranges then. A normal Cloudflare deployment leaves this empty.
         //
         // Read from a real container environment variable rather than .env: this
         // closure runs while the kernel is being resolved, before .env is parsed.
         // docker-compose.yml passes it through.
-        //
-        // SECURITY: '*' trusts X-Forwarded-For from anyone who can reach the origin
-        // directly, letting them present any IP they like and walk past the rate
-        // limits. Only use '*' when port 80 is firewalled to the CDN; otherwise list
-        // the CDN's ranges here instead.
         $trustedProxies = trim((string) env('TRUSTED_PROXIES', ''));
 
         if ($trustedProxies !== '') {

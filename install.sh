@@ -31,6 +31,22 @@ for arg in "$@"; do
     esac
 done
 
+# ---------------------------------------------------------------- 依赖提醒
+# 这个脚本本身只写 .env，不需要 docker。但缺了 docker 的话，用户会一路顺利跑完
+# 这里、然后在 `docker compose up -d` 那一步撞上一条看不懂的报错，并且多半会以为
+# 是这个脚本坏了。所以提前说清楚。
+MISSING=""
+command -v docker >/dev/null 2>&1 || MISSING="docker"
+if [ -z "$MISSING" ] && ! docker compose version >/dev/null 2>&1; then
+    MISSING="docker compose 插件（v2）"
+fi
+if [ -n "$MISSING" ]; then
+    echo
+    echo "  提醒：没检测到 $MISSING。.env 照样会写，但还起不了服务。"
+    echo "  安装：curl -fsSL https://get.docker.com | sh"
+    echo
+fi
+
 # ---------------------------------------------------------------- 检测硬件
 
 CORES="$(nproc 2>/dev/null || echo 1)"
@@ -173,6 +189,19 @@ if [ ! -f "$ENV_FILE" ]; then
         touch "$ENV_FILE"
     fi
 fi
+# .env 里有数据库密码、APP_KEY、易支付商户密钥、SMTP 密码。默认 umask 022 下它是
+# 0644，宿主机上任何普通用户、以及任何被攻破的其他服务都能读到。
+# 不用 `|| true` 一笔带过：chmod 失败而我们假装成功，就是「看起来安全、实际没有」，
+# 而这恰恰是最不该发生在密钥文件上的。失败就明说。
+if ! chmod 600 "$ENV_FILE" 2>/dev/null; then
+    echo "  警告：无法把 .env 权限收紧到 600，里面有数据库密码和各种密钥，请手工处理。"
+else
+    ENV_MODE=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '')
+    case "$ENV_MODE" in
+        600|'') ;;   # 空表示这个平台不支持 stat -c（如 macOS/Git Bash），不误报
+        *) echo "  警告：.env 权限是 $ENV_MODE 而不是 600，里面有数据库密码和各种密钥。" ;;
+    esac
+fi
 
 set_env() { # set_env KEY VALUE —— 存在则替换，不存在则追加，其余行不动
     local key="$1" value="$2"
@@ -190,43 +219,76 @@ fi
 
 # ---------------------------------------------------------------- 反向代理 / CDN
 #
-# 这一步过去不问，.env 里的 TRUSTED_PROXIES 就一直是空的。空值的后果不是"IP 显示
-# 得不准确"这么轻——它会让所有按 IP 生效的保护一起失效，而且是静默失效：
-#   · 每 IP 最多 3 个未支付订单的限制，变成全站合计 3 个，第 4 个买家直接被拒
-#   · 下单、订单查询、后台登录的限流，全站共用一个桶
-#   · IP 黑名单封一个人等于封所有人
-# 所以现在必须问。
-if [ "$MODE" = "interactive" ]; then
-    CURRENT_TP=$(grep '^TRUSTED_PROXIES=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
+# 这里过去会问"要不要把 TRUSTED_PROXIES 设成 *"。现在不问了，而且必须留空。
+#
+# 原因：docker/nginx/default.conf 里已经配了 Cloudflare 的全部回源网段
+# （set_real_ip_from）加上 real_ip_header CF-Connecting-IP。nginx 只在**对端确实是
+# 这些网段之一**时才改写 $remote_addr，所以 PHP 从 REMOTE_ADDR 拿到的已经是真实
+# 访客 IP，Laravel 不需要再信任任何代理。
+#
+# 为什么不能设成 *：TRUSTED_PROXIES=* 的意思是"谁连过来都信它自称的 IP"。只要有人
+# 直连源站 IP 并伪造 X-Forwarded-For，就能任意变换身份，绕过限流、绕过每 IP 未支付
+# 订单上限、绕过 IP 黑名单。nginx 那套方案没有这个弱点：伪造者没办法让自己的数据包
+# 从 Cloudflare 的网段发出来。
+#
+# 所以这里分三种情况处理：空 → 保持空；'*' → 告警并清掉；具体网段 → 保留（见下方 case）。
+# `|| true` 不能省：脚本开头是 set -euo pipefail，.env 里没有 TRUSTED_PROXIES 这一行时
+# grep 退出 1，pipefail 把它传给整条管道，set -e 当场终止脚本——后面的性能参数一个都不会
+# 写，而且一声不吭只留个退出码 1。新装走 .env.example 不会触发（里面有这个键），但任何
+# 手写过 .env 的老部署一升级就中招。
+CURRENT_TP=$(grep '^TRUSTED_PROXIES=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+# 只有 '*' 是必须消灭的。用户可能把站点放在自建 HAProxy / Nginx Proxy Manager /
+# 非 Cloudflare 的 CDN 后面（此时 default.conf 那 22 条 CF 网段完全匹配不上，
+# nginx 不会改写 $remote_addr），他手工填的回源网段是合法且必要的。而这个脚本
+# 被明确鼓励反复重跑调档 —— 无条件清空会在某次调 PHP 进程数时把它悄悄抹掉，
+# 所有访客 IP 塌缩成代理 IP，限流和黑名单集体失效，且没有任何报错。
+TP_NOTE="(空，正确) —— 真实 IP 由 nginx 的 set_real_ip_from 还原"
+case "$CURRENT_TP" in
+    '*')
+        echo
+        echo "  注意：TRUSTED_PROXIES 是 '*'，这是旧版本的配置方式，必须清掉。"
+        echo "  它的意思是「谁连过来都信它自称的 IP」—— 任何人直连源站伪造"
+        echo "  X-Forwarded-For 就能绕过限流、每 IP 未支付订单上限和 IP 黑名单。"
+        echo "  真实 IP 现在由 nginx 还原（docker/nginx/default.conf），留空即可。"
+        echo "  已自动清空。"
+        set_env TRUSTED_PROXIES ''
+        ;;
+    '')
+        set_env TRUSTED_PROXIES ''
+        ;;
+    *)
+        echo
+        echo "  检测到自定义可信代理网段：$CURRENT_TP"
+        echo "  已保留（假定 nginx 之外还套了别的反向代理）。若你用的是 Cloudflare，"
+        echo "  这个值应该留空 —— 真实 IP 已由 nginx 还原。"
+        TP_NOTE="$CURRENT_TP（自定义，已保留）"
+        ;;
+esac
 
-    echo
-    echo "=============================================================="
-    echo "  网站前面有没有 CDN / 反向代理？"
-    echo "=============================================================="
-    echo "  1) 有，且源站 80/443 已只放行给 CDN   → 信任所有代理（*）"
-    echo "  2) 有，源站端口对公网开放            → 需要填 CDN 回源 IP 段"
-    echo "  3) 没有，访客直连这台服务器          → 留空"
-    echo
-    echo "  提醒：选 1 而端口又没做限制的话，任何人直连源站 IP 就能伪造自己的"
-    echo "  地址，绕过全部限流和黑名单。这种情况请选 2。"
-    echo
-    [ -n "$CURRENT_TP" ] && echo "  当前值：$CURRENT_TP" && echo
-
-    printf "请选择 [1-3，直接回车保持当前设置]: "
-    read -r tp_answer || tp_answer=""
-    case "$tp_answer" in
-        1) set_env TRUSTED_PROXIES '*' ;;
-        2)
-            printf "请输入 CDN 回源 IP 段（逗号分隔，如 1.2.3.0/24,5.6.7.0/24）: "
-            read -r tp_list || tp_list=""
-            case "$tp_list" in
-                '') echo "未填写，保持当前设置。按 IP 的限流在修好之前都不会生效。" ;;
-                *) set_env TRUSTED_PROXIES "$tp_list" ;;
-            esac
-            ;;
-        3) set_env TRUSTED_PROXIES '' ;;
-        *) ;;   # 回车或乱输：不动，避免把已经配好的值清掉
-    esac
+# ---------------------------------------------------------------- 数据库密码
+# .env.example 的默认值是 secret，docker-compose.yml 的兜底也是 secret。忘了改就是
+# 用弱口令跑生产库。postgres 绑在 127.0.0.1 限制了外部直连，但宿主机上任何本地进程、
+# 以及任何一次 SSRF 或命令执行，都能用默认口令直接拿到全部订单和卡密。
+CURRENT_DB_PW=$(grep '^DB_PASSWORD=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+DB_PW_NOTE="已设置（未改动）"
+if [ -z "$CURRENT_DB_PW" ] || [ "$CURRENT_DB_PW" = "secret" ]; then
+    if docker volume ls 2>/dev/null | grep -qi pgdata; then
+        # 卷一旦初始化过，POSTGRES_PASSWORD 就不再生效：改 .env 只会让应用连不上库。
+        DB_PW_NOTE="仍是 secret（数据库卷已存在，未自动改）"
+        echo
+        echo "  警告：DB_PASSWORD 还是默认的 secret，但数据库卷已经初始化过了。"
+        echo "  此时改 .env 不会改库里的密码，只会让应用连不上。请手工同步："
+        echo "    docker compose exec postgres psql -U cardshop -c \"ALTER USER cardshop WITH PASSWORD '新密码';\""
+        echo "    再把同一个新密码写进 .env 的 DB_PASSWORD，然后 docker compose up -d"
+    else
+        NEW_DB_PW=$(openssl rand -base64 24 2>/dev/null | tr -d '/+=' | cut -c1-24 || true)
+        if [ -n "$NEW_DB_PW" ]; then
+            set_env DB_PASSWORD "$NEW_DB_PW"
+            DB_PW_NOTE="已生成随机强密码（首次部署，数据库将用它初始化）"
+        else
+            DB_PW_NOTE="仍是 secret（本机没有 openssl，请手工改）"
+        fi
+    fi
 fi
 
 set_env PHP_FPM_MAX_CHILDREN   "$CHOICE"
@@ -247,15 +309,77 @@ printf "  启动/空闲进程      : start=%s min=%s max=%s\n" "$START_SERVERS" 
 printf "  PostgreSQL 共享缓冲: %s\n" "$PG_SHARED"
 printf "  PostgreSQL 缓存估计: %s\n" "$PG_CACHE"
 printf "  PostgreSQL 最大连接: %s\n" "$PG_MAX_CONN"
-FINAL_TP=$(grep '^TRUSTED_PROXIES=' "$ENV_FILE" 2>/dev/null | cut -d= -f2-)
-if [ -n "$FINAL_TP" ]; then
-    printf "  信任的代理        : %s\n" "$FINAL_TP"
-else
-    printf "  信任的代理        : (空) —— 若前面有 CDN，按 IP 的限流和黑名单不生效\n"
-fi
+printf "  信任的代理        : %s
+" "$TP_NOTE"
+printf "  数据库密码        : %s
+" "$DB_PW_NOTE"
 echo
 echo "  生效："
 echo "    docker compose up -d"
 echo
 echo "  想换一档随时重跑这个脚本；也可以直接改 .env 里的数值。"
+echo
+
+# ---------------------------------------------------------------- 生产就绪体检
+# 这几项每一条都能独立毁掉一个站点，而且全是静默的：不会报错，只是不安全。
+get_env() { grep "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
+ISSUES=0
+note() { ISSUES=$((ISSUES+1)); printf "  [%d] %s
+" "$ISSUES" "$1"; }
+
+echo "=============================================================="
+echo "  上线前体检"
+echo "=============================================================="
+
+case "$(get_env APP_URL)" in
+    https://*) ;;
+    *localhost*|'') note "APP_URL 还是 $(get_env APP_URL)。它决定会话 cookie 的 Secure 标志（config/session.php）、
+      Laravel 生成的资源链接协议、以及 canonical/og:url。不改成 https://你的域名，
+      会话 cookie 就没有 Secure，HTTPS 页面还会因混合内容加载不到 CSS。" ;;
+    http://*) note "APP_URL 是 http://。挂了 HTTPS 就要改成 https://，理由同上。" ;;
+esac
+
+[ "$(get_env APP_DEBUG)" = "false" ] || note "APP_DEBUG 不是 false。开着的话，任何触发 500 的访客都会看到一张
+      把整个 .env 打印出来的错误页 —— 数据库密码、商户密钥、EPUSDT Token、SMTP 密码全在里面。"
+
+[ "$(get_env APP_ENV)" = "production" ] || note "APP_ENV 不是 production（当前：$(get_env APP_ENV)）。"
+
+[ -n "$(get_env APP_KEY)" ] || note "APP_KEY 为空。容器首次启动会自动生成，通常不用管；若启动后仍为空则需排查。"
+
+[ "$(get_env DB_PASSWORD)" != "secret" ] || note "DB_PASSWORD 还是默认的 secret，见上面的说明。"
+
+# TLS：证书和 ssl.conf 缺一个，nginx 就不会监听 443。
+TLS_DIR="$(get_env TLS_CERT_DIR)"; TLS_DIR="${TLS_DIR:-/opt/cf}"
+if [ ! -f "docker/nginx/tls/ssl.conf" ]; then
+    if [ -f "$TLS_DIR/cert.pem" ] && [ -f "$TLS_DIR/key.pem" ]; then
+        cp -n docker/nginx/tls/ssl.conf.example docker/nginx/tls/ssl.conf 2>/dev/null || true
+        echo "  已启用 HTTPS 配置：docker/nginx/tls/ssl.conf（证书在 $TLS_DIR）"
+        echo "  执行 docker compose restart nginx 生效。"
+    else
+        note "还没配 HTTPS。nginx 现在只监听 80，Cloudflare 的 SSL 模式只能停在 Flexible，
+      CF 到源站这一段是明文 —— 而这一段跑的是管理员会话 cookie 和发出去的卡密。
+      三步：① Cloudflare 面板 SSL/TLS → Origin Server → Create Certificate
+            ② 证书存到 $TLS_DIR/cert.pem 和 $TLS_DIR/key.pem（key 记得 chmod 600）
+            ③ 重跑本脚本，它会自动启用 docker/nginx/tls/ssl.conf"
+    fi
+fi
+
+if [ "$ISSUES" = "0" ]; then
+    echo "  未发现问题。"
+fi
+
+echo
+echo "=============================================================="
+echo "  脚本做不到、需要你人工完成的"
+echo "=============================================================="
+echo "  1) Cloudflare 面板：A 记录指向本机并开启橙云代理（不开的话，nginx 里那 22 条"
+echo "     set_real_ip_from 永远匹配不上，真实 IP 还原会静默失效，源站 IP 也直接暴露）；"
+echo "     SSL/TLS 设为 Full (strict)；开启 Always Use HTTPS 和 HSTS。"
+echo "  2) 云控制台安全列表（Oracle / AWS）：这是独立于本机防火墙的一层，也要放行 80/443。"
+echo "  3) 源站直连防护（强烈建议）：Docker 发布的端口 ufw 拦不住，需要单独的脚本："
+echo "       sudo ./scripts/cf-only-firewall.sh --check --domain=你的域名   # 先体检"
+echo "       sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --persist"
+echo "     它只放行 Cloudflare 网段访问 80/443。有 --check 先验、应用后自动验出站、"
+echo "     不通会自动回滚。本脚本不会替你执行它 —— 改宿主机防火墙的风险等级和写 .env 差太远。"
+echo "  4) 后台开启 Turnstile 人机验证（默认是关的，不配等于下单和订单查询没有任何验证）。"
 echo

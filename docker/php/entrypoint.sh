@@ -106,6 +106,12 @@ if [ ! -f .env ]; then
     echo "    .env missing, creating from .env.example"
     cp .env.example .env
 fi
+# .env holds the database password, APP_KEY, the payment gateway's merchant secret
+# and the SMTP password. Under the default umask it is created 0644 — readable by
+# every user on the host, since this file is bind-mounted from there. Tightened on
+# every start, not just on creation, because a .env copied in by hand or restored
+# from a backup arrives with whatever mode it had.
+chmod 600 .env 2>/dev/null || echo "    WARNING: could not chmod 600 .env — it holds secrets"
 
 # Match APP_KEY= with nothing (or only whitespace/CR) after it.
 if grep -Eq '^APP_KEY=[[:space:]]*$' .env; then
