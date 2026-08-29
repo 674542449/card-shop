@@ -298,6 +298,10 @@ assert_jump_reachable() {
     jump_at="$(printf %s"\n" "$rules" | grep -n -- "-j $CHAIN" | head -1 | cut -d: -f1)"
     return_at="$(printf %s"\n" "$rules" | grep -n -E "^-A DOCKER-USER -j RETURN$" | head -1 | cut -d: -f1)"
     [ -n "$jump_at" ] || die "DOCKER-USER 里没有找到跳转到 $CHAIN 的规则，规则未生效。"
+    # iptables -S 的第一行是 "-N DOCKER-USER" 链头，不是规则。减掉它，报出来的
+    # 序号才和 iptables -L --line-numbers 对得上，否则排查的人会对着错位的数字找。
+    jump_at=$((jump_at - 1))
+    [ -n "$return_at" ] && return_at=$((return_at - 1))
     if [ -n "$return_at" ] && [ "$jump_at" -gt "$return_at" ]; then
         die "跳转规则排在 DOCKER-USER 第 $jump_at 条，而无条件 RETURN 在第 $return_at 条 —— 跳转永远执行不到，防护为零。
   请先运行 --remove 再重试。"
