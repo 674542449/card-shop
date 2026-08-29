@@ -163,12 +163,19 @@ class CardController extends Controller
 
     public function destroy(Card $card)
     {
-        if ($card->status !== 'unsold') {
+        // The status check is part of the DELETE, not a step before it. Reading the
+        // route-bound model and then deleting is a check-then-act: checkout picks
+        // unsold rows in its own transaction, so a card can become 'locked' in the
+        // gap and the delete would take a card a pending order is holding — the
+        // buyer's order then cannot be fulfilled. batchDestroy() below already
+        // scoped its delete this way; this one had not.
+        $deleted = Card::whereKey($card->getKey())->where('status', 'unsold')->delete();
+
+        if ($deleted === 0) {
             return response()->json(['message' => '只能删除未售出的卡密。'], 422);
         }
 
         OperationLog::log('删除卡密', 'card', $card->id, '删除卡密');
-        $card->delete();
 
         return response()->json(['message' => 'ok']);
     }

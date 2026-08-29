@@ -469,6 +469,16 @@ class OrderController extends Controller
                 ->withErrors(['error' => '请先验证身份后查看订单详情']);
         }
 
+        // Settle a lapsed order here, the same way the pay page does. Without it the
+        // page contradicted itself: the header reads isExpired() — which is true for a
+        // pending order past its deadline — and showed 订单已过期, while the status row
+        // below prints the raw column and showed 待支付. Expiring in place makes the
+        // two agree, and returns the cards to stock a little sooner than the job would.
+        if ($order->isExpired()) {
+            $this->expireOrder($order);
+            $order->refresh();
+        }
+
         $cards = $order->isPaid() ? $order->cards : collect();
 
         return view('front.order.detail', compact('order', 'cards', 'verified'));
