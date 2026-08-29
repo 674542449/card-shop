@@ -19,7 +19,7 @@ if (!function_exists('settings_all')) {
      */
     function settings_all(): array
     {
-        static $memo = null;
+        $memo = settings_memo();
 
         if ($memo !== null) {
             return $memo;
@@ -37,6 +37,37 @@ if (!function_exists('settings_all')) {
                 // Database unavailable or not migrated yet.
                 $memo = [];
             }
+        }
+
+        settings_memo($memo);
+
+        return $memo;
+    }
+}
+
+if (!function_exists('settings_memo')) {
+    /**
+     * The per-request copy of the settings map.
+     *
+     * It lives in its own function purely so settings_forget() can reach it. As a
+     * `static` inside settings_all() it was unreachable, which made settings_forget()
+     * a half-truth: it dropped the shared cache but left this copy in place, so any
+     * setting read after a write in the SAME request still returned the old value.
+     * Harmless under PHP-FPM, where statics die with the request — but the function
+     * is documented as "call after any write", and it should mean it.
+     *
+     * @param array<string, string|null>|null $set   Store this map.
+     * @param bool                            $clear Forget the stored map.
+     * @return array<string, string|null>|null       Null when nothing is stored.
+     */
+    function settings_memo(?array $set = null, bool $clear = false): ?array
+    {
+        static $memo = null;
+
+        if ($clear) {
+            $memo = null;
+        } elseif ($set !== null) {
+            $memo = $set;
         }
 
         return $memo;
@@ -90,6 +121,9 @@ if (!function_exists('settings_forget')) {
      */
     function settings_forget(): void
     {
+        // Both copies, or the name is a lie: the shared cache AND this request's own.
+        settings_memo(clear: true);
+
         try {
             Cache::forget('settings:map');
         } catch (\Throwable $e) {
