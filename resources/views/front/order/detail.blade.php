@@ -3,7 +3,9 @@
 @section('title', '订单详情 - ' . setting('site_name', 'CardShop'))
 
 @section('content')
-    <div style="margin-bottom:15px;">
+    {{-- .page-card-col：跟随下方 600px 居中卡片的同一条列。
+         原来是普通块级 div，会贴在 1170px 容器最左边，与卡片左边缘差 270px。 --}}
+    <div class="page-card-col">
         <a href="/order/query" style="color:var(--text-light);font-size:13px">&larr; 返回订单列表</a>
     </div>
 

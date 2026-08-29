@@ -381,6 +381,24 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     color: var(--text-color);
     font-size: 15px;
 }
+/* 四个定宽列：表头与单元格一起居中。
+   一起改是重点——只居中表头会让标题脱离它那一列的内容，只居中单元格则表头对不上。
+   第一列（分类名/商品名）保持左对齐：它下面是带缩略图的商品名，居中会让标题
+   飘在宽列中央、与名字列脱节，反而更乱。想改成居中，把 col-mode 前面加上
+   `.product-table thead th:first-child,` 即可。 */
+.product-table thead th.col-mode,
+.product-table thead th.col-stock,
+.product-table thead th.col-action,
+.product-table tbody td.cell-mode,
+.product-table tbody td.cell-stock,
+.product-table tbody td.cell-action { text-align: center; }
+/* 金额列右对齐，不跟着居中。
+   居中的代价是这一列里没有任何一条竖直基准线是对的：实测 ¥9.90 与 ¥1299.00
+   的 ¥ 号、小数点、右边缘三者各散开 12.5px，只有一根看不见的中心轴是齐的。
+   右对齐让它们共用同一条右基准线；因为价格恒定输出两位小数
+   （number_format($price, 2)），右对齐即等于小数点对齐。 */
+.product-table thead th.col-price,
+.product-table tbody td.prod-price { text-align: right; }
 .product-table tbody td {
     padding: 12px 15px;
     border-bottom: 1px solid #f0f0f0;
@@ -443,8 +461,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     font-weight: 700;
     font-size: 15px;
 }
-.product-table .stock-num { font-family: monospace; }
-.product-table .cell-oos { font-size: 13px; }
+/* tabular-nums 让每个数字占同样宽度，128 和 7 才会在同一列里居中到同一个轴上；
+   比例数字下 1 比 8 窄，同一列的数字会左右各差几个像素。 */
+.product-table .stock-num { font-family: monospace; font-variant-numeric: tabular-nums; }
+.product-table .prod-price { font-variant-numeric: tabular-nums; }
 /* In-cell column label. The <thead> labels are hidden once the row stacks, and a
    bare number under no heading is unreadable to anyone; on md+ the real <th>
    says it, so repeating it in every cell would just be noise. Turned on in the
@@ -477,6 +497,24 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 }
 .btn-buy-sm:hover { background: var(--warm-btn-hover); color: #fff; }
 
+/* 「缺货」必须和「购买」占同一个盒子。
+   按钮有 padding:5px 20px，缺货原来是裸文本 —— 实测同一列两种内容的文字左边缘
+   差 20px，一列看下来忽左忽右。移动端更严重：按钮有 min-width 而缺货没有，
+   于是缺货行的价格会比有按钮的行右移 38px，整列金额左右跳动。这两个症状
+   （"购买跟缺货不对齐"和"金额不对齐"）是同一个原因。
+   给两者同样的字号与内边距后，"购买"和"缺货"都是两个汉字，宽度自动都是 68px。
+   只作用在商品表格里：.btn-buy-sm 也用在订单表格和卡密面板，那两处盒子不同。 */
+.product-table .cell-action .btn-buy-sm,
+.product-table .cell-action .cell-oos {
+    display: inline-block;
+    box-sizing: border-box;
+    min-width: 68px;
+    padding: 5px 20px;
+    font-size: 14px;
+    text-align: center;
+    white-space: nowrap;
+}
+
 /* ----- Category Thumbnail -----
    One square mark reused at three sizes: table head (20px), mobile section
    heading (22px), tag cloud (16px). Sized by the host context rather than by a
@@ -500,8 +538,13 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     background: var(--thumb-bg);
     opacity: .5;
 }
+/* flex 而非 inline-flex。行内 flex 盒的基线取自它第一个 flex item，这里是
+   20px 的分类缩略图（一个没有文字基线的替换盒），于是「甲骨文」被整体顶高
+   2.3px，比同一行的「发货模式/库存/单价/操作」都高。改成块级盒后它不再参与
+   th 的行内基线计算，实测残差降到 0.2px（纯字号差的本底），th 高度也从
+   46px 回到 45px。 */
 .cat-head {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 8px;
 }
@@ -855,6 +898,13 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     border: 1px solid var(--border-color);
     text-align: center;
 }
+/* 第二列是「单价」，金额右对齐，理由同商品表格：居中让小数点最多错开 12.6px。
+   第一列「1 件起 / 10 件起」是文本不是金额，保持居中。 */
+.wholesale-table th:nth-child(2),
+.wholesale-table td:nth-child(2) {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
 .wholesale-table th {
     background: var(--table-header-bg);
     color: var(--text-muted);
@@ -1011,7 +1061,14 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
    .pay-option-inner, which is styled from the adjacent-sibling :checked state so no
    :has() support is required. */
 .pd-form .form-group-block { align-items: flex-start; }
-.pd-form .form-group-block .form-label { padding-top: 9px; }
+/* 在首个 46px 支付卡片的高度内自居中。原来用 padding-top: 9px 这个魔数，
+   它随断点上的字号变化而失准（14px 需 11.8px，13px 需 12.6px），实测标签
+   比右侧卡片文字高 2.8px（手机端 3.6px）。 */
+.pd-form .form-group-block .form-label {
+    min-height: 46px;
+    display: flex;
+    align-items: center;
+}
 
 .pay-options {
     flex: 1;
@@ -1102,6 +1159,11 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     margin: 0 auto var(--block-gap);
     overflow: hidden;
 }
+/* 与 .page-card 同一条 600px 居中列。页面里位于卡片上方的东西（订单详情页的
+   「← 返回订单列表」）必须用它，否则那行链接会贴在 1170px 容器的最左边，
+   与它下面 600px 居中的卡片左边缘差 270px。同为 max-width，窄屏下一起塌缩。 */
+.page-card-col { max-width: 600px; margin: 0 auto var(--block-gap); }
+
 .page-card-header {
     padding: 12px 20px;
     border-bottom: 1px solid var(--border-color);
@@ -1185,16 +1247,21 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     width: 100%;
     font-size: 14px;
 }
+/* baseline 而非 top。支付页那行「支付金额」的 td 是 18px 加粗，th 是常规
+   字号；th 用 top、td 继承 tbody 的 middle，两边基线差 4px——整张表里唯一
+   不共线的一行。两格都写 baseline 后基线精确重合，同时保留 top 原本要的
+   效果：订单编号这类长 token 折行时，th 仍与 td 首行对齐。 */
 .order-info-table th {
     padding: 8px 12px;
     text-align: left;
     color: var(--text-muted);
     font-weight: 500;
     width: 100px;
-    vertical-align: top;
+    vertical-align: baseline;
 }
 .order-info-table td {
     padding: 8px 12px;
+    vertical-align: baseline;
     color: var(--text-color);
     /* Order numbers and gateway trade ids are long unbroken tokens. */
     overflow-wrap: break-word;
@@ -1288,7 +1355,17 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .order-table .oc-no { width: 176px; font-family: monospace; font-size: 13px; }
 .order-table .oc-name { width: auto; color: var(--text-color); }
 .order-table .oc-qty { width: 56px; text-align: center; }
-.order-table .oc-amount { width: 94px; color: var(--price-color); font-weight: 700; }
+/* 金额列右对齐 + 等宽数字：同列不同位数的金额，右端与小数点才在一条线上。
+   与 .product-table 的单价列同一套做法。此选择器 (0,2,0) 高于
+   .order-table thead th (0,1,2)，所以表头「金额」会跟着一起右对齐。
+   宽度按最长现实值 ¥12,800.00 留足——右对齐后溢出会从左侧裁切，更难察觉。 */
+.order-table .oc-amount {
+    width: 98px;
+    color: var(--price-color);
+    font-weight: 700;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
 .order-table .oc-status { width: 88px; }
 .order-table .oc-time { width: 132px; font-size: 13px; }
 .order-table .oc-action { width: 74px; text-align: right; }
@@ -1322,7 +1399,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .order-table .oc-no-full { display: none; }
     .order-table .oc-no-tail { display: inline; }
 
-    .order-table .oc-amount { width: 78px; font-size: 13px; }
+    .order-table .oc-amount { width: 84px; font-size: 13px; }
     .order-table .oc-status { width: 70px; }
     .order-table .oc-status .order-status { padding: 2px 6px; font-size: 12px; }
     .order-table .oc-action { width: 58px; }
@@ -1342,7 +1419,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .order-table thead th,
     .order-table tbody td { padding: 9px 4px; font-size: 12px; }
     .order-table .oc-no { width: 58px; }
-    .order-table .oc-amount { width: 64px; font-size: 12px; }
+    .order-table .oc-amount { width: 72px; font-size: 12px; }
     .order-table .oc-status { width: 56px; }
     .order-table .oc-status .order-status { padding: 2px 5px; }
     .order-table .oc-action { width: 46px; }
@@ -1788,33 +1865,36 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     /* Buy sits against the right edge whatever the meta line is carrying. */
     .product-table .cell-action { margin-left: auto; }
     .product-table .cell-label { display: inline; margin-right: 4px; }
+    /* 定宽是这两格在手机上不左右漂的关键。行是 flex，只有名称是伸缩项，
+       其余都靠右挤；库存和价格的宽度会随位数变化（"库存 128" 比 "库存 0" 宽，
+       ¥1299.00 比 ¥9.90 宽），于是整块内容逐行左右跳。给一个宽度下限后，
+       每一行的库存轴和价格轴就固定在同一条线上，名称吸收剩余空间。
+       用 min-width 而不是 width：价格真的超长时仍然能撑开而不被截断。 */
     .product-table .cell-stock {
         flex: 0 0 auto;
         white-space: nowrap;
         font-size: 13px;
         color: var(--text-light);
+        min-width: 58px;
     }
     .product-table .prod-price {
         flex: 0 0 auto;
         white-space: nowrap;
+        min-width: 74px;
     }
     .product-table .cell-action { flex: 0 0 auto; }
     /* A text link wedged in a table cell is not a phone target. Same colour and
        shape as the desktop button, grown to a thumb-sized box. */
-    .product-table .cell-action .btn-buy-sm {
+    /* 按钮与缺货共用同一个盒子：同样的 40px 触摸高度，也同样的 min-width。
+       原来只有按钮有 min-width，缺货没有，缺货行的价格就会右移 38px。 */
+    .product-table .cell-action .btn-buy-sm,
+    .product-table .cell-action .cell-oos {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         min-height: 40px;
         min-width: 76px;
         padding: 0 16px;
-    }
-    /* Out of stock takes the same 40px slot the button would, so a row without a
-       button is the same height as the rows around it. */
-    .product-table .cell-oos {
-        display: inline-flex;
-        align-items: center;
-        min-height: 40px;
     }
 
     .contact-section { flex-direction: column; text-align: center; }
@@ -1846,7 +1926,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
        characters — the product page shows it, and a truncated name is the one
        thing that makes a list unusable. */
     .product-table .cell-stock { display: none; }
-    .product-table .cell-action .btn-buy-sm { min-width: 64px; padding: 0 12px; }
+    .product-table .cell-action .btn-buy-sm,
+    .product-table .cell-action .cell-oos { min-width: 64px; padding: 0 12px; }
 
     .ann-modal { padding: 15px; }
     .ann-modal-body { padding: 15px; }
@@ -1867,15 +1948,23 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .page-card-body { padding: 15px; }
     .page-card-header { padding: 10px 15px; }
     .contact-section { padding: 20px; }
-    /* A narrower label column gives every control ~12px more room while the
-       five of them stay on the same two edges. */
-    .pd-form .form-label { width: 68px; font-size: 13px; }
-    /* Track the narrower label so the message stays in the control column. */
-    .pd-form .form-error { margin-left: 68px; }
-    /* The widget is 300px and cannot shrink; indenting it by another 68px overflows a
-       375px screen. Give it the full row instead — measured 399px document width
-       against a 375px viewport before this, 375 after. */
+    /* 手机上改成标签上置、单列。
+       两列布局在这里对不齐：标签列占 68px，输入框和错误提示都缩进 68px，
+       但 Turnstile 是固定 300px 的 iframe、缩不了，再缩进 68px 就会超出
+       375px 屏幕，所以它被单独设成 margin-left:0 —— 于是这一个控件比上下
+       所有输入框往左突出 68px，成了表单里唯一对不齐的东西。
+       取消两列后，标签/输入框/错误提示/验证控件/提交按钮左边缘全在同一条线
+       上，300px 的控件也放得下。实测 375px 视口下 document.scrollWidth=375。 */
+    .pd-form .form-group {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+    }
+    .pd-form .form-label { width: auto; font-size: 13px; }
+    .pd-form .form-error { margin-left: 0; }
     .pd-form .form-turnstile { margin-left: 0; }
+    /* 支付方式那行的标签不再需要撑到卡片高度：它现在自己占一行。 */
+    .pd-form .form-group-block .form-label { min-height: 0; }
     /* Title and date stop competing for one line: the date wrapped under a long
        headline anyway, but as a baseline-aligned flex sibling it landed ragged. */
     .article-page-item {
