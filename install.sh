@@ -152,8 +152,11 @@ readiness_check() {
     local dry="${1:-0}"
     get_env() { grep "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
     ISSUES=0
-    note() { ISSUES=$((ISSUES+1)); printf "  [%d] %s
-    " "$ISSUES" "$1"; }
+    # 用 echo 而不是 printf：printf 的格式串需要换行转义，而这一段被包成函数、
+    # 整体缩进过一次 —— 收尾那一行的缩进被吃进了格式串，于是每条提示后面多出
+    # 一个换行加四个空格，下一条看起来就成了上一条的续行。echo 自带换行，没有
+    # 格式串，也就没有这个失败面。
+    note() { ISSUES=$((ISSUES+1)); echo "  [$ISSUES] $1"; }
 
     echo "=============================================================="
     echo "  上线前体检"
@@ -162,13 +165,13 @@ readiness_check() {
     case "$(get_env APP_URL)" in
         https://*) ;;
         *localhost*|'') note "APP_URL 还是 $(get_env APP_URL)。它决定会话 cookie 的 Secure 标志（config/session.php）、
-          Laravel 生成的资源链接协议、以及 canonical/og:url。不改成 https://你的域名，
-          会话 cookie 就没有 Secure，HTTPS 页面还会因混合内容加载不到 CSS。" ;;
+      Laravel 生成的资源链接协议、以及 canonical/og:url。不改成 https://你的域名，
+      会话 cookie 就没有 Secure，HTTPS 页面还会因混合内容加载不到 CSS。" ;;
         http://*) note "APP_URL 是 http://。挂了 HTTPS 就要改成 https://，理由同上。" ;;
     esac
 
     [ "$(get_env APP_DEBUG)" = "false" ] || note "APP_DEBUG 不是 false。开着的话，任何触发 500 的访客都会看到一张
-          把整个 .env 打印出来的错误页 —— 数据库密码、商户密钥、EPUSDT Token、SMTP 密码全在里面。"
+      把整个 .env 打印出来的错误页 —— 数据库密码、商户密钥、EPUSDT Token、SMTP 密码全在里面。"
 
     [ "$(get_env APP_ENV)" = "production" ] || note "APP_ENV 不是 production（当前：$(get_env APP_ENV)）。"
 
@@ -190,10 +193,10 @@ readiness_check() {
             fi
         else
             note "还没配 HTTPS。nginx 现在只监听 80，Cloudflare 的 SSL 模式只能停在 Flexible，
-          CF 到源站这一段是明文 —— 而这一段跑的是管理员会话 cookie 和发出去的卡密。
-          三步：① Cloudflare 面板 SSL/TLS → Origin Server → Create Certificate
-                ② 证书存到 $TLS_DIR/cert.pem 和 $TLS_DIR/key.pem（key 记得 chmod 600）
-                ③ 重跑本脚本，它会自动启用 docker/nginx/tls/ssl.conf"
+      CF 到源站这一段是明文 —— 而这一段跑的是管理员会话 cookie 和发出去的卡密。
+      三步：① Cloudflare 面板 SSL/TLS → Origin Server → Create Certificate
+            ② 证书存到 $TLS_DIR/cert.pem 和 $TLS_DIR/key.pem（key 记得 chmod 600）
+            ③ 重跑本脚本，它会自动启用 docker/nginx/tls/ssl.conf"
         fi
     fi
 
@@ -275,15 +278,23 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 # .env 里有数据库密码、APP_KEY、易支付商户密钥、SMTP 密码。默认 umask 022 下它是
 # 0644，宿主机上任何普通用户、以及任何被攻破的其他服务都能读到。
+#
+# 收成 640 而不是 600，属组给 www-data。原因：.env 会被 bind mount 进 app 容器，
+# 而 PHP-FPM 的工作进程以 www-data（uid 33）运行。600 且属主是 root（典型部署就是
+# 用 root clone 的）意味着那些进程根本读不到，于是 APP_KEY 和 DB_PASSWORD 全为空、
+# 每个页面 500 —— 偏偏 artisan 是 root 跑的，迁移和种子照样成功，启动日志一片绿，
+# 排查会被彻底带偏。640 + 属组 www-data 同时满足三边：容器里的 worker 能读、
+# 宿主机上的属主能读写（docker compose 需要读它做变量替换）、其他用户仍然读不到。
+chgrp www-data "$ENV_FILE" 2>/dev/null || chgrp 33 "$ENV_FILE" 2>/dev/null || true
 # 不用 `|| true` 一笔带过：chmod 失败而我们假装成功，就是「看起来安全、实际没有」，
 # 而这恰恰是最不该发生在密钥文件上的。失败就明说。
-if ! chmod 600 "$ENV_FILE" 2>/dev/null; then
-    echo "  警告：无法把 .env 权限收紧到 600，里面有数据库密码和各种密钥，请手工处理。"
+if ! chmod 640 "$ENV_FILE" 2>/dev/null; then
+    echo "  警告：无法把 .env 权限收紧到 640，里面有数据库密码和各种密钥，请手工处理。"
 else
     ENV_MODE=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '')
     case "$ENV_MODE" in
-        600|'') ;;   # 空表示这个平台不支持 stat -c（如 macOS/Git Bash），不误报
-        *) echo "  警告：.env 权限是 $ENV_MODE 而不是 600，里面有数据库密码和各种密钥。" ;;
+        640|'') ;;   # 空表示这个平台不支持 stat -c（如 macOS/Git Bash），不误报
+        *) echo "  警告：.env 权限是 $ENV_MODE 而不是 640，里面有数据库密码和各种密钥。" ;;
     esac
 fi
 
@@ -346,6 +357,45 @@ case "$CURRENT_TP" in
         echo "  已保留（假定 nginx 之外还套了别的反向代理）。若你用的是 Cloudflare，"
         echo "  这个值应该留空 —— 真实 IP 已由 nginx 还原。"
         TP_NOTE="$CURRENT_TP（自定义，已保留）"
+        ;;
+esac
+
+# ---------------------------------------------------------------- 站点域名
+# APP_URL 是全新部署里最该先设对、也最常被忘掉的一个值。它决定：
+#   · 会话 cookie 的 Secure 标志（config/session.php 按它是不是 https:// 推导）
+#   · Laravel 生成的样式表/脚本链接用什么协议 —— 填错会让 HTTPS 页面因混合内容
+#     加载不到 CSS，页面变成一堆没有样式的文字
+#   · canonical、og:url、以及邮件里发给买家的订单链接
+# 检测出来还让人自己去改文件是没道理的，所以这里直接问。
+CURRENT_URL=$(grep '^APP_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+case "$CURRENT_URL" in
+    https://*) ;;                       # 已经设好了，不打扰
+    *)
+        if [ "$MODE" = "interactive" ]; then
+            echo
+            echo "=============================================================="
+            echo "  站点域名"
+            echo "=============================================================="
+            echo "  当前 APP_URL：${CURRENT_URL:-（空）}"
+            echo "  挂 Cloudflare 时这里要填**对外的域名**，而不是服务器 IP。"
+            echo
+            printf "请输入域名（如 shop.example.com，直接回车跳过）: "
+            read -r site_domain || site_domain=""
+            # 容错：把用户可能连带贴进来的协议和结尾斜杠去掉
+            site_domain="${site_domain#http://}"
+            site_domain="${site_domain#https://}"
+            site_domain="${site_domain%/}"
+            case "$site_domain" in
+                '') echo "  已跳过。记得之后手工把 .env 的 APP_URL 改成 https://你的域名。" ;;
+                *[!a-zA-Z0-9.-]*|.*|*.|*..*|-*|*-)
+                    echo "  '$site_domain' 不像一个域名，未改动。请之后手工设置 APP_URL。" ;;
+                *.*)
+                    set_env APP_URL "https://$site_domain"
+                    echo "  已设置 APP_URL=https://$site_domain"
+                    ;;
+                *)  echo "  '$site_domain' 没有点号，不像一个域名，未改动。" ;;
+            esac
+        fi
         ;;
 esac
 
