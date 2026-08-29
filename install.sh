@@ -142,8 +142,92 @@ echo
 echo "  当前镜像默认值是 5 个 —— 这是所有配置都能跑起来的保底值，不是适合你的值。"
 echo
 
+# ---------------------------------------------------------------- 生产就绪体检
+# 这几项每一条都能独立毁掉一个站点，而且全是静默的：不会报错，只是不安全。
+#
+# 做成函数是为了 --show 也能调用。一个叫「只显示、不改任何文件」的模式，本来就
+# 应该把只读的检查跑完 —— 否则用户看到的只有 CPU 和内存，看不到 .env 里真正该改的东西。
+# 传 dry=1 时唯一的区别：不复制 ssl.conf，只说明该复制。
+readiness_check() {
+    local dry="${1:-0}"
+    get_env() { grep "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
+    ISSUES=0
+    note() { ISSUES=$((ISSUES+1)); printf "  [%d] %s
+    " "$ISSUES" "$1"; }
+
+    echo "=============================================================="
+    echo "  上线前体检"
+    echo "=============================================================="
+
+    case "$(get_env APP_URL)" in
+        https://*) ;;
+        *localhost*|'') note "APP_URL 还是 $(get_env APP_URL)。它决定会话 cookie 的 Secure 标志（config/session.php）、
+          Laravel 生成的资源链接协议、以及 canonical/og:url。不改成 https://你的域名，
+          会话 cookie 就没有 Secure，HTTPS 页面还会因混合内容加载不到 CSS。" ;;
+        http://*) note "APP_URL 是 http://。挂了 HTTPS 就要改成 https://，理由同上。" ;;
+    esac
+
+    [ "$(get_env APP_DEBUG)" = "false" ] || note "APP_DEBUG 不是 false。开着的话，任何触发 500 的访客都会看到一张
+          把整个 .env 打印出来的错误页 —— 数据库密码、商户密钥、EPUSDT Token、SMTP 密码全在里面。"
+
+    [ "$(get_env APP_ENV)" = "production" ] || note "APP_ENV 不是 production（当前：$(get_env APP_ENV)）。"
+
+    [ -n "$(get_env APP_KEY)" ] || note "APP_KEY 为空。容器首次启动会自动生成，通常不用管；若启动后仍为空则需排查。"
+
+    [ "$(get_env DB_PASSWORD)" != "secret" ] || note "DB_PASSWORD 还是默认的 secret，见上面的说明。"
+
+    # TLS：证书和 ssl.conf 缺一个，nginx 就不会监听 443。
+    TLS_DIR="$(get_env TLS_CERT_DIR)"; TLS_DIR="${TLS_DIR:-/opt/cf}"
+    if [ ! -f "docker/nginx/tls/ssl.conf" ]; then
+        if [ -f "$TLS_DIR/cert.pem" ] && [ -f "$TLS_DIR/key.pem" ]; then
+            if [ "$dry" = "1" ]; then
+                echo "  证书已就位（$TLS_DIR），但 docker/nginx/tls/ssl.conf 还没建 ——"
+                echo "  nginx 因此不会监听 443。跑 ./install.sh --recommended 会自动建好。"
+            else
+                cp -n docker/nginx/tls/ssl.conf.example docker/nginx/tls/ssl.conf 2>/dev/null || true
+                echo "  已启用 HTTPS 配置：docker/nginx/tls/ssl.conf（证书在 $TLS_DIR）"
+                echo "  执行 docker compose restart nginx 生效。"
+            fi
+        else
+            note "还没配 HTTPS。nginx 现在只监听 80，Cloudflare 的 SSL 模式只能停在 Flexible，
+          CF 到源站这一段是明文 —— 而这一段跑的是管理员会话 cookie 和发出去的卡密。
+          三步：① Cloudflare 面板 SSL/TLS → Origin Server → Create Certificate
+                ② 证书存到 $TLS_DIR/cert.pem 和 $TLS_DIR/key.pem（key 记得 chmod 600）
+                ③ 重跑本脚本，它会自动启用 docker/nginx/tls/ssl.conf"
+        fi
+    fi
+
+    if [ "$ISSUES" = "0" ]; then
+        echo "  未发现问题。"
+    fi
+
+    echo
+    echo "=============================================================="
+    echo "  脚本做不到、需要你人工完成的"
+    echo "=============================================================="
+    echo "  1) Cloudflare 面板：A 记录指向本机并开启橙云代理（不开的话，nginx 里那 22 条"
+    echo "     set_real_ip_from 永远匹配不上，真实 IP 还原会静默失效，源站 IP 也直接暴露）；"
+    echo "     SSL/TLS 设为 Full (strict)；开启 Always Use HTTPS 和 HSTS。"
+    echo "  2) 云控制台安全列表（Oracle / AWS）：这是独立于本机防火墙的一层，也要放行 80/443。"
+    echo "  3) 源站直连防护（强烈建议）：Docker 发布的端口 ufw 拦不住，需要单独的脚本："
+    echo "       sudo ./scripts/cf-only-firewall.sh --check --domain=你的域名   # 先体检"
+    echo "       sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --persist"
+    echo "     它只放行 Cloudflare 网段访问 80/443。有 --check 先验、应用后自动验出站、"
+    echo "     不通会自动回滚。本脚本不会替你执行它 —— 改宿主机防火墙的风险等级和写 .env 差太远。"
+    echo "  4) 后台开启 Turnstile 人机验证（默认是关的，不配等于下单和订单查询没有任何验证）。"
+    echo
+}
+
+
 if [ "$MODE" = "show" ]; then
     echo "  PostgreSQL 将使用：shared_buffers=$PG_SHARED  effective_cache_size=$PG_CACHE  work_mem=$PG_WORK_MEM"
+    echo
+    # 体检是只读的，--show 也要跑：这个模式的意义就是「让我先看看现在什么情况」。
+    if [ -f "$ENV_FILE" ]; then
+        readiness_check 1
+    else
+        echo "  （还没有 .env，跳过上线前体检）"
+    fi
     echo
     echo "（--show 模式，未写入任何文件）"
     exit 0
@@ -320,66 +404,4 @@ echo
 echo "  想换一档随时重跑这个脚本；也可以直接改 .env 里的数值。"
 echo
 
-# ---------------------------------------------------------------- 生产就绪体检
-# 这几项每一条都能独立毁掉一个站点，而且全是静默的：不会报错，只是不安全。
-get_env() { grep "^$1=" "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true; }
-ISSUES=0
-note() { ISSUES=$((ISSUES+1)); printf "  [%d] %s
-" "$ISSUES" "$1"; }
-
-echo "=============================================================="
-echo "  上线前体检"
-echo "=============================================================="
-
-case "$(get_env APP_URL)" in
-    https://*) ;;
-    *localhost*|'') note "APP_URL 还是 $(get_env APP_URL)。它决定会话 cookie 的 Secure 标志（config/session.php）、
-      Laravel 生成的资源链接协议、以及 canonical/og:url。不改成 https://你的域名，
-      会话 cookie 就没有 Secure，HTTPS 页面还会因混合内容加载不到 CSS。" ;;
-    http://*) note "APP_URL 是 http://。挂了 HTTPS 就要改成 https://，理由同上。" ;;
-esac
-
-[ "$(get_env APP_DEBUG)" = "false" ] || note "APP_DEBUG 不是 false。开着的话，任何触发 500 的访客都会看到一张
-      把整个 .env 打印出来的错误页 —— 数据库密码、商户密钥、EPUSDT Token、SMTP 密码全在里面。"
-
-[ "$(get_env APP_ENV)" = "production" ] || note "APP_ENV 不是 production（当前：$(get_env APP_ENV)）。"
-
-[ -n "$(get_env APP_KEY)" ] || note "APP_KEY 为空。容器首次启动会自动生成，通常不用管；若启动后仍为空则需排查。"
-
-[ "$(get_env DB_PASSWORD)" != "secret" ] || note "DB_PASSWORD 还是默认的 secret，见上面的说明。"
-
-# TLS：证书和 ssl.conf 缺一个，nginx 就不会监听 443。
-TLS_DIR="$(get_env TLS_CERT_DIR)"; TLS_DIR="${TLS_DIR:-/opt/cf}"
-if [ ! -f "docker/nginx/tls/ssl.conf" ]; then
-    if [ -f "$TLS_DIR/cert.pem" ] && [ -f "$TLS_DIR/key.pem" ]; then
-        cp -n docker/nginx/tls/ssl.conf.example docker/nginx/tls/ssl.conf 2>/dev/null || true
-        echo "  已启用 HTTPS 配置：docker/nginx/tls/ssl.conf（证书在 $TLS_DIR）"
-        echo "  执行 docker compose restart nginx 生效。"
-    else
-        note "还没配 HTTPS。nginx 现在只监听 80，Cloudflare 的 SSL 模式只能停在 Flexible，
-      CF 到源站这一段是明文 —— 而这一段跑的是管理员会话 cookie 和发出去的卡密。
-      三步：① Cloudflare 面板 SSL/TLS → Origin Server → Create Certificate
-            ② 证书存到 $TLS_DIR/cert.pem 和 $TLS_DIR/key.pem（key 记得 chmod 600）
-            ③ 重跑本脚本，它会自动启用 docker/nginx/tls/ssl.conf"
-    fi
-fi
-
-if [ "$ISSUES" = "0" ]; then
-    echo "  未发现问题。"
-fi
-
-echo
-echo "=============================================================="
-echo "  脚本做不到、需要你人工完成的"
-echo "=============================================================="
-echo "  1) Cloudflare 面板：A 记录指向本机并开启橙云代理（不开的话，nginx 里那 22 条"
-echo "     set_real_ip_from 永远匹配不上，真实 IP 还原会静默失效，源站 IP 也直接暴露）；"
-echo "     SSL/TLS 设为 Full (strict)；开启 Always Use HTTPS 和 HSTS。"
-echo "  2) 云控制台安全列表（Oracle / AWS）：这是独立于本机防火墙的一层，也要放行 80/443。"
-echo "  3) 源站直连防护（强烈建议）：Docker 发布的端口 ufw 拦不住，需要单独的脚本："
-echo "       sudo ./scripts/cf-only-firewall.sh --check --domain=你的域名   # 先体检"
-echo "       sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --persist"
-echo "     它只放行 Cloudflare 网段访问 80/443。有 --check 先验、应用后自动验出站、"
-echo "     不通会自动回滚。本脚本不会替你执行它 —— 改宿主机防火墙的风险等级和写 .env 差太远。"
-echo "  4) 后台开启 Turnstile 人机验证（默认是关的，不配等于下单和订单查询没有任何验证）。"
-echo
+readiness_check 0
