@@ -52,7 +52,6 @@ export default function Blacklists() {
   return (
     <>
       <ProTable
-        headerTitle="黑名单管理"
         actionRef={actionRef}
         rowKey="id"
         columns={columns}

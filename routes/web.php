@@ -148,6 +148,10 @@ Route::prefix('api/admin')->group(function () {
         // Settings
         Route::get('/settings', [ApiAdmin\SettingController::class, 'index']);
         Route::post('/settings', [ApiAdmin\SettingController::class, 'update']);
+        // Throttled: it opens an outbound SMTP connection per call, so it is the one
+        // admin action that can be turned into an outbound flood.
+        Route::post('/settings/test-email', [ApiAdmin\SettingController::class, 'testEmail'])
+            ->middleware('throttle:10,1');
     });
 });
 

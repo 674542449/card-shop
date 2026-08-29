@@ -50,7 +50,6 @@ export default function ArticleCategories() {
   return (
     <>
       <ProTable
-        headerTitle="文章分类管理"
         actionRef={actionRef}
         rowKey="id"
         columns={columns}

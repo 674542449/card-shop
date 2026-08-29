@@ -10,6 +10,86 @@ use Illuminate\Support\Facades\Mail;
 class NotificationService
 {
     /**
+     * Point the mailer at the SMTP server configured in the admin.
+     *
+     * Mail settings used to live only in .env, which meant the one thing an operator
+     * most needs to change after install — where the card secrets are sent from —
+     * required SSH, a file edit and a container restart. They are ordinary settings
+     * rows now, and this applies them over the config just before a send.
+     *
+     * Falls through to whatever .env provides when no host is configured, so an
+     * install that already had working .env mail keeps working untouched.
+     */
+    private function configureMailer(): void
+    {
+        $host = trim((string) setting('mail_host', ''));
+
+        if ($host === '') {
+            return;
+        }
+
+        // `scheme` rather than `encryption`. Laravel derives the scheme from
+        // encryption only for the exact string 'tls', so 'ssl' silently produced a
+        // plaintext connection on port 465 — the port that requires implicit TLS.
+        // Setting the scheme directly makes the operator's choice mean what it says.
+        $encryption = (string) setting('mail_encryption', 'ssl');
+        $scheme = $encryption === 'ssl' ? 'smtps' : 'smtp';
+
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp.transport' => 'smtp',
+            'mail.mailers.smtp.scheme' => $scheme,
+            'mail.mailers.smtp.host' => $host,
+            'mail.mailers.smtp.port' => (int) setting('mail_port', 465),
+            'mail.mailers.smtp.username' => (string) setting('mail_username', ''),
+            'mail.mailers.smtp.password' => (string) setting('mail_password', ''),
+            'mail.mailers.smtp.timeout' => 15,
+            'mail.from.address' => (string) setting('mail_from_address', ''),
+            'mail.from.name' => (string) setting('mail_from_name', setting('site_name', 'CardShop')),
+        ]);
+
+        // The manager caches a resolved mailer per name, built from the config as it
+        // was at first use. Without this, changing the settings would not take effect
+        // until the PHP worker was recycled — which looks exactly like "saving the
+        // form does nothing".
+        Mail::purge('smtp');
+    }
+
+    /**
+     * Send a test message to prove the SMTP settings work.
+     *
+     * The whole delivery path is failure-tolerant by design — a send that throws is
+     * logged and swallowed so a dead mail server cannot break a sale. That is right,
+     * but it leaves the operator no way to find out their settings are wrong except
+     * by a buyer complaining. This is that way: it reports the transport's own error
+     * message verbatim, because "Connection refused" and "535 authentication failed"
+     * need completely different fixes.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function sendTestEmail(string $to): array
+    {
+        try {
+            $this->configureMailer();
+
+            $siteName = (string) setting('site_name', '卡密商城');
+            $sentAt = now()->format('Y-m-d H:i:s');
+
+            Mail::html(
+                '<p>这是一封测试邮件。</p><p>如果你收到了它，说明 SMTP 设置正确，'
+                . '订单卡密可以正常发送。</p><p>站点：' . e($siteName) . '<br>时间：' . e($sentAt) . '</p>',
+                fn ($message) => $message->to($to)->subject($siteName . ' - SMTP 测试邮件')
+            );
+
+            return ['ok' => true, 'message' => "测试邮件已发送至 {$to}，请查收（也看一下垃圾邮件箱）。"];
+        } catch (\Throwable $e) {
+            Log::warning('SMTP test failed', ['to' => $to, 'error' => $e->getMessage()]);
+
+            return ['ok' => false, 'message' => '发送失败：' . $e->getMessage()];
+        }
+    }
+
+    /**
      * Send order completion email with card details to the buyer.
      */
     /**
@@ -25,6 +105,8 @@ class NotificationService
     public function sendOrderEmail(Order $order): bool
     {
         try {
+            $this->configureMailer();
+
             $order->loadMissing(['product', 'cards']);
 
             // The seeder and the admin Settings screen both use `email_template_body`;

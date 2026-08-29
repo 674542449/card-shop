@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { ProForm, ProFormText, ProFormTextArea, ProFormDigit, ProFormSelect } from '@ant-design/pro-components';
-import { Card, Tabs, Spin, message, Alert } from 'antd';
-import { getSettings, updateSettings, changePassword } from '../services/api';
+import { ProForm, ProFormText, ProFormTextArea, ProFormDigit, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
+import { Card, Tabs, Spin, message, Alert, Button, Input, Space, Typography } from 'antd';
+import { SendOutlined } from '@ant-design/icons';
+import { getSettings, updateSettings, changePassword, sendTestEmail } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
 
@@ -9,14 +10,19 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [initialValues, setInitialValues] = useState({});
+  const [testTo, setTestTo] = useState('');
+  const [testing, setTesting] = useState(false);
   const [form] = ProForm.useForm();
 
   useEffect(() => {
     getSettings()
       .then((res) => {
         const data = res.data?.data || res.data;
-        setInitialValues(data);
-        form.setFieldsValue(data);
+        // Switch fields are stored as the strings '0'/'1'; antd's Switch needs a real
+        // boolean or it renders "0" as checked, since a non-empty string is truthy.
+        const normalised = { ...data, telegram_enabled: data.telegram_enabled === '1' || data.telegram_enabled === true };
+        setInitialValues(normalised);
+        form.setFieldsValue(normalised);
       })
       .catch(() => message.error('加载设置失败'))
       .finally(() => setLoading(false));
@@ -31,6 +37,28 @@ export default function Settings() {
       message.error(err.response?.data?.message || '保存失败');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // The test sends through the SAVED settings, not the values sitting in the form,
+  // because the server reads them from the database. Saving first is therefore part
+  // of the operation rather than a separate thing to remember, so the button does it.
+  const handleTestEmail = async () => {
+    if (!testTo) {
+      message.warning('请填写接收测试邮件的地址');
+      return;
+    }
+    setTesting(true);
+    try {
+      await updateSettings(form.getFieldsValue());
+      const res = await sendTestEmail(testTo);
+      message.success(res.data?.message || '测试邮件已发送');
+    } catch (err) {
+      // The transport's own message is the useful part: "Connection refused" and
+      // "535 authentication failed" need completely different fixes.
+      message.error(err.response?.data?.message || '发送失败', 8);
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -133,6 +161,139 @@ export default function Settings() {
       ),
     },
     {
+      key: 'mail',
+      label: '邮件发送',
+      children: (
+        <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="卡密是通过这里配置的邮箱发给买家的。"
+            description="没配好的话，买家付款后收不到卡密邮件——他们仍可以在订单查询页自己取，但大部分人不会想到。配置后请务必用下面的测试按钮验证一次。"
+          />
+          <ProFormText
+            name="mail_host"
+            label="SMTP 服务器"
+            placeholder="如 smtp.qq.com / smtp.gmail.com"
+            extra="留空则使用服务器 .env 里的配置。"
+          />
+          <ProFormSelect
+            name="mail_encryption"
+            label="加密方式"
+            options={[
+              { label: 'SSL（端口 465，最常用）', value: 'ssl' },
+              { label: 'TLS / STARTTLS（端口 587）', value: 'tls' },
+              { label: '不加密（端口 25，不建议）', value: 'none' },
+            ]}
+            extra="选错会连不上。国内邮箱服务商基本都用 SSL + 465。"
+          />
+          <ProFormDigit
+            name="mail_port"
+            label="端口"
+            min={1}
+            max={65535}
+            fieldProps={{ precision: 0 }}
+            extra="SSL 填 465，TLS 填 587。"
+          />
+          <ProFormText
+            name="mail_username"
+            label="SMTP 用户名"
+            placeholder="通常就是完整邮箱地址"
+          />
+          <ProFormText.Password
+            name="mail_password"
+            label="SMTP 密码"
+            extra="QQ 邮箱、163 等要填「授权码」，不是登录密码。已保存的密码显示为 ******** ，不改就别动它。"
+          />
+          <ProFormText
+            name="mail_from_address"
+            label="发件人地址"
+            placeholder="买家看到的发件邮箱"
+            extra="多数服务商要求这里和 SMTP 用户名一致，否则会拒发。"
+          />
+          <ProFormText
+            name="mail_from_name"
+            label="发件人名称"
+            placeholder="留空则用站点名称"
+          />
+
+          <Card size="small" title="发送测试邮件" style={{ marginTop: 8 }}>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              点击后会先保存当前设置，再用它发一封测试邮件。这是唯一能确认邮件配置是否可用的方式——
+              正式发货时如果发送失败，系统只会记录日志，不会打断订单。
+            </Typography.Paragraph>
+            <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
+              <Input
+                type="email"
+                value={testTo}
+                onChange={(e) => setTestTo(e.target.value)}
+                onPressEnter={handleTestEmail}
+                placeholder="接收测试邮件的地址"
+                allowClear
+              />
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                loading={testing}
+                onClick={handleTestEmail}
+              >
+                发送测试
+              </Button>
+            </Space.Compact>
+          </Card>
+        </>
+      ),
+    },
+    {
+      key: 'mail-template',
+      label: '邮件模板',
+      children: (
+        <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="可用变量：{{site_name}}、{{order_no}}、{{product_name}}、{{quantity}}、{{total_amount}}、{{cards}}"
+            description="{{cards}} 会替换成买家买到的全部卡密，一行一条。变量名写错不会报错，只会原样出现在邮件里。"
+          />
+          <ProFormText
+            name="email_template_subject"
+            label="邮件标题"
+            placeholder="{{site_name}} - 订单 {{order_no}} 卡密信息"
+          />
+          <ProFormTextArea
+            name="email_template_body"
+            label="邮件正文"
+            fieldProps={{ rows: 14 }}
+            extra="纯文本和 HTML 都支持。写纯文本时换行会自动保留，不用写 <br>。"
+          />
+        </>
+      ),
+    },
+    {
+      key: 'telegram',
+      label: 'Telegram 通知',
+      children: (
+        <>
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="有新订单成交时给你发 Telegram 消息。"
+            description="向 @BotFather 申请机器人拿到 Token，再向 @userinfobot 发一条消息拿到你的 Chat ID。不填不影响任何功能。"
+          />
+          <ProFormSwitch name="telegram_enabled" label="启用通知" />
+          <ProFormText.Password
+            name="telegram_bot_token"
+            label="Bot Token"
+            extra="已保存的 Token 显示为 ******** ，不改就别动它。"
+          />
+          <ProFormText name="telegram_chat_id" label="Chat ID" />
+        </>
+      ),
+    },
+    {
       key: 'order',
       label: '订单设置',
       children: (
@@ -156,7 +317,26 @@ export default function Settings() {
 
   return (
     <>
-    <Card title="修改密码" style={{ marginBottom: 16 }}>
+    <Card title="系统设置">
+      <ProForm
+        form={form}
+        // Without this, clearing the logo or the QR code submits no key at all and the
+        // old image is kept. Fields on tabs the operator never opened stay unregistered
+        // and so remain absent from the payload either way, and SettingController only
+        // writes keys the request actually carries — so nothing else gets wiped.
+        omitNil={false}
+        initialValues={initialValues}
+        onFinish={handleSave}
+        submitter={{
+          searchConfig: { submitText: '保存设置' },
+          submitButtonProps: { loading: saving },
+          resetButtonProps: false,
+        }}
+      >
+        <Tabs items={tabItems} />
+      </ProForm>
+    </Card>
+    <Card title="修改密码" style={{ marginTop: 16 }}>
       <Alert
         type="warning"
         showIcon
@@ -201,25 +381,6 @@ export default function Settings() {
       </ProForm>
     </Card>
 
-    <Card title="系统设置">
-      <ProForm
-        form={form}
-        // Without this, clearing the logo or the QR code submits no key at all and the
-        // old image is kept. Fields on tabs the operator never opened stay unregistered
-        // and so remain absent from the payload either way, and SettingController only
-        // writes keys the request actually carries — so nothing else gets wiped.
-        omitNil={false}
-        initialValues={initialValues}
-        onFinish={handleSave}
-        submitter={{
-          searchConfig: { submitText: '保存设置' },
-          submitButtonProps: { loading: saving },
-          resetButtonProps: false,
-        }}
-      >
-        <Tabs items={tabItems} />
-      </ProForm>
-    </Card>
     </>
   );
 }

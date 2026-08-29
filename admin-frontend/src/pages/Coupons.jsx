@@ -122,7 +122,6 @@ export default function Coupons() {
   return (
     <>
       <ProTable
-        headerTitle="优惠券管理"
         actionRef={actionRef}
         rowKey="id"
         columns={columns}

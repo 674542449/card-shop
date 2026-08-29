@@ -111,7 +111,6 @@ export default function Products() {
   return (
     <>
       <ProTable
-        headerTitle="商品管理"
         actionRef={actionRef}
         rowKey="id"
         columns={columns}

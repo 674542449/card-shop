@@ -123,7 +123,6 @@ export default function Orders() {
 
   return (
     <ProTable
-      headerTitle="订单管理"
       actionRef={actionRef}
       rowKey="id"
       columns={columns}

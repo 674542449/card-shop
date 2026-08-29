@@ -1,0 +1,41 @@
+/*
+ * The few global rules the console needs. antd v5 is CSS-in-JS, so this file exists
+ * only for things a component-level style cannot express: hover/focus affordances
+ * and the reduced-motion opt-out.
+ */
+
+/* Hover feedback on the revenue bars. The native title attribute supplies the value
+   on hover, but a tooltip that takes a second to appear is not feedback — the mark
+   has to acknowledge the pointer immediately. */
+.dash-bar {
+  transition: filter 150ms ease;
+}
+.dash-bar:hover {
+  filter: brightness(1.1) saturate(1.05);
+}
+
+/* Keyboard focus must be visible everywhere, including on the card-shaped links in
+   the dashboard, where antd draws no ring of its own. */
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid #00796b;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* The stat tiles are links; their text should not turn link-blue. */
+.ant-pro-layout a.dash-tile-link,
+.ant-pro-layout a.dash-tile-link:hover {
+  color: inherit;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

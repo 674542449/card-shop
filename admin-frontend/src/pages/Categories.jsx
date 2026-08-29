@@ -79,7 +79,6 @@ export default function Categories() {
   return (
     <>
       <ProTable
-        headerTitle="分类管理"
         actionRef={actionRef}
         rowKey="id"
         columns={columns}

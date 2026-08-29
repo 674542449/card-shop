@@ -37,7 +37,6 @@ export default function Logs() {
 
   return (
     <ProTable
-      headerTitle="操作日志"
       actionRef={actionRef}
       rowKey="id"
       columns={columns}

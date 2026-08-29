@@ -232,4 +232,7 @@ export const getSettings = () =>
 export const updateSettings = (data) =>
   api.post('/settings', data);
 
+export const sendTestEmail = (email) =>
+  api.post('/settings/test-email', { email });
+
 export default api;

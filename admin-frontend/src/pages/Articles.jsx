@@ -99,7 +99,6 @@ export default function Articles() {
   return (
     <>
       <ProTable
-        headerTitle="文章管理"
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
