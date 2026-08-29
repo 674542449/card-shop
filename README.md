@@ -265,17 +265,35 @@ docker compose exec app php artisan admin:password
 不做这一步，Cloudflare 的 SSL 模式只能停在 Flexible，CF 到你服务器这一段是**明文**，
 而这一段跑的是管理员会话 cookie 和发给买家的卡密。
 
-```bash
-# ① Cloudflare 面板 → SSL/TLS → Origin Server → Create Certificate
-# ② 把证书存到服务器（路径可用 .env 的 TLS_CERT_DIR 改，默认 /opt/cf）
-mkdir -p /opt/cf
-# 粘贴证书内容到 /opt/cf/cert.pem 和 /opt/cf/key.pem
-chmod 600 /opt/cf/key.pem
+**这三步要按顺序做，不要整块复制粘贴。** 证书还没放进去就先建 `ssl.conf`，nginx 会
+因为找不到证书文件而**完全起不来**——连原本正常的 80 端口一起没了，站点从「能访问」
+变成「彻底下线」，而报错指向证书，很容易误判。
 
-# ③ 启用 443 监听（install.sh 检测到证书后会自动做这一步）
-cp docker/nginx/tls/ssl.conf.example docker/nginx/tls/ssl.conf
-docker compose restart nginx
+**① 签证书**：Cloudflare 面板 → SSL/TLS → Origin Server → Create Certificate。
+
+**② 把证书放到服务器**：
+
+```bash
+mkdir -p /opt/cf
 ```
+
+然后把签出来的两段内容分别粘贴进 `/opt/cf/cert.pem` 和 `/opt/cf/key.pem`（用
+`nano /opt/cf/cert.pem` 之类），再收紧私钥权限：
+
+```bash
+chmod 600 /opt/cf/key.pem
+```
+
+**③ 启用 443 监听**——不要手工 `cp`，重跑安装脚本即可：
+
+```bash
+./install.sh --recommended && docker compose up -d
+```
+
+它只在**确认两个证书文件都在**时才创建 `docker/nginx/tls/ssl.conf`，所以不存在
+「配置建好了但证书还没到位」这个能把站点搞挂的中间状态。用 `up -d` 而不是
+`restart`：如果你改过 `TLS_CERT_DIR`，挂载点变了，`restart` 是拿旧挂载重启容器，
+新路径不会生效，nginx 照样找不到证书。
 
 `docker/nginx/tls/*.conf` 被 gitignore 忽略，所以你的证书路径不会跟 `git pull` 冲突。
 少了 `ssl.conf` 这一步的现象是「443 端口通了但连不上 HTTPS」，很容易误判成证书问题 ——
@@ -329,13 +347,104 @@ sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --yes
 
 ---
 
+## 换服务器 / 换域名
+
+搬站按这个顺序走。每一步都标了「不做会怎样」，因为这里大部分坑的共同点是**不报错**。
+
+### 1. 先把 DNS 指过去（这一步在最前面）
+
+在 Cloudflare 里把域名的 A 记录指向**新服务器 IP**，并开启橙云代理（橙色云朵）。
+
+不先做这步的话，后面所有验证都没法进行：容器全起来了、日志全绿、管理员密码也拿到了，
+然后 `https://新域名` 打不开——因为 DNS 还解析到旧机器，或者根本没解析。这时候人会去
+查 nginx、查防火墙、查 APP_URL，而真正缺的只是一条 DNS 记录。
+
+橙云也必须开：不开的话 `docker/nginx/default.conf` 里那 22 条 `set_real_ip_from` 永远
+匹配不上，真实 IP 还原**静默失效**，所有按 IP 的限流和黑名单退化成全站一个桶。
+
+### 2. 部署代码，设好新域名
+
+```bash
+git clone https://github.com/674542449/card-shop.git && cd card-shop
+./install.sh
+```
+
+脚本会问你域名，直接填新域名即可（不用带 `https://`），它会写进 `APP_URL`。这个值决定
+会话 cookie 的 `Secure` 标志、资源链接的协议、canonical 和发给买家的订单链接——填错的
+典型症状是后台登不进去，或者 HTTPS 页面加载不到 CSS。
+
+然后 `docker compose up -d --build`。首次启动要装 PHP 依赖，慢的机器上可能几分钟。
+
+### 3. 别用 IP 直接下测试单
+
+这是搬站最容易踩的一个坑，而且症状完全指不到原因。
+
+支付回调地址是 `url('/payment/epay/notify')` 拼的，Laravel 的 `url()` 取的是**当前请求
+的 Host**，不是 `APP_URL`。你用 `http://新服务器IP/` 下一笔测试单，回调地址就被写成
+`https://新服务器IP/payment/epay/notify` 发给了支付网关——网关回调打不进来（源站没有
+对应证书，防火墙也只放行 Cloudflare），订单永远停在未支付，而下单流程本身一切正常。
+
+**所有测试都走 `https://新域名/`。** DNS 还没生效就先等，或者在本机 hosts 里临时指过去。
+
+### 4. 迁数据（如果要保留旧站的订单和卡密）
+
+在**旧**服务器上导出：
+
+```bash
+cd ~/card-shop && docker compose exec -T postgres pg_dump -U cardshop cardshop | gzip > backup.sql.gz
+```
+
+传到新服务器后导入（新站容器要先起来，让它建好库结构，再覆盖）：
+
+```bash
+gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d cardshop
+```
+
+上传的图片在 `storage/app/public/uploads/`，一并 rsync 过去。
+
+### 5. 换域名后必须在后台重新设置的东西
+
+数据库里存着一批**跟域名绑定**的设置，直接搬库过来它们全是旧值：
+
+| 设置项 | 不改的后果 |
+|---|---|
+| **Turnstile Site Key / Secret Key** | 最坑的一个。这对 key 在 Cloudflare 侧绑定了 hostname，新域名不在列表里，`siteverify` 一律返回失败，于是**下单和订单查询全部被拒**，提示「人机验证失败，请重试」。而前台那个验证组件是正常渲染、能划过的，看起来完全不像配置问题。请在 Cloudflare 的 Turnstile 面板给新域名新建一个 widget，把新 key 填进后台。 |
+| 支付网关回调 / 白名单 | 易支付和 USDT 网关那边如果配了回调域名白名单，要加上新域名。 |
+| 站点名称、SEO 标题/描述 | 里面可能写了旧域名。 |
+| 邮件模板 / SMTP 发件人 | 发件域名与新站不一致会影响送达率。 |
+
+### 6. 证书、防火墙
+
+证书是按域名签的，**新域名要重新签一张**，旧的不能用。按上面「HTTPS 与源站防护」第 2 步做。
+
+防火墙要在新服务器上重新装一次（规则在内核里，不随代码走）：
+
+```bash
+sudo ./scripts/cf-only-firewall.sh --check --domain=新域名
+sudo ./scripts/cf-only-firewall.sh --apply --domain=新域名 --persist
+```
+
+### 7. 收尾核对
+
+```bash
+./install.sh --show          # 上线前体检，只读
+```
+
+然后从**外网**确认两件事：经 `https://新域名/` 能正常访问，直连 `新服务器IP:443` 不通。
+两个方向都要验——只验一边会漏掉「防火墙把容器出站也切了」这类故障，那种故障的表现是
+支付跳转不过去，几乎没人会联想到防火墙。
+
+旧站先别急着关。等新站跑通一整天、确认订单和支付都正常，再下线。
+
+---
+
 ## 部署后配置
 
 登录后台「系统设置」完成以下配置：
 
 ### 支付设置
 - **易支付**：填写 API 地址、商户 ID、商户密钥
-- **EPUSDT**：填写 API 地址和 Token（需要单独部署 [EPUSDT](https://github.com/GMWalletApp/epusdt) 服务）
+- **EPUSDT**：填写 API 地址和 Token（需要单独部署 [epusdt](https://github.com/assimon/epusdt) 或 [BEpusdt](https://github.com/v03413/BEpusdt)，两者的 trade_type 不同，部署了哪个就在后台选哪个网关类型）
 
 ### 邮件设置
 SMTP 参数在 `.env` 文件中配置，邮件模板在后台设置。
