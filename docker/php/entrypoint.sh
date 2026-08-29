@@ -111,7 +111,38 @@ fi
 # every user on the host, since this file is bind-mounted from there. Tightened on
 # every start, not just on creation, because a .env copied in by hand or restored
 # from a backup arrives with whatever mode it had.
-chmod 600 .env 2>/dev/null || echo "    WARNING: could not chmod 600 .env — it holds secrets"
+#
+# 600 is the WRONG tightening here, and getting it wrong takes the whole site down
+# without saying so. .env arrives over the bind mount owned by whoever cloned the
+# repo on the host (root, on a typical deploy). PHP-FPM's workers run as www-data —
+# this image sets no user of its own, which is the same assumption behind the
+# storage chown above. Mode 600 on a root-owned file means those workers cannot read
+# it, and nothing reports that: phpdotenv reads with @file_get_contents and Laravel
+# bootstraps with safeLoad(), which swallows the resulting exception. APP_KEY and
+# DB_PASSWORD come back empty and every request 500s — while artisan, which runs as
+# root right here in this script, keeps working and the startup log stays green.
+#
+# So: group-own it by www-data and use 640. The workers can read it, the host user
+# who owns it keeps read/write (docker compose needs that to substitute DB_PASSWORD
+# and friends), and other users on the host still get nothing.
+chgrp www-data .env 2>/dev/null || chgrp 33 .env 2>/dev/null || true
+chmod 640 .env 2>/dev/null || true
+
+# Verify instead of assuming. Some bind-mount backings ignore chown and chmod
+# entirely, and a .env the workers cannot read is indistinguishable, from the logs,
+# from a missing APP_KEY.
+if su -s /bin/sh -c 'test -r /var/www/html/.env' www-data 2>/dev/null; then
+    echo "    .env restricted to 640, group www-data."
+else
+    # Put it back rather than leave the site broken. World-readable is bad; a shop
+    # that returns 500 on every page while claiming a clean boot is worse, and the
+    # operator can fix the permissions once they know.
+    chmod 644 .env 2>/dev/null || true
+    echo "    WARNING: www-data cannot read .env at 640 — restored 644 so the site runs."
+    echo "    WARNING: .env is now readable by every user on the host, and it holds the"
+    echo "    WARNING: database password, APP_KEY and the payment gateway secrets."
+    echo "    WARNING: Fix it on the host with:  sudo chgrp 33 .env && sudo chmod 640 .env"
+fi
 
 # Match APP_KEY= with nothing (or only whitespace/CR) after it.
 if grep -Eq '^APP_KEY=[[:space:]]*$' .env; then

@@ -74,6 +74,8 @@ for arg in "$@"; do
     case "$arg" in
         --check)    MODE="check" ;;
         --apply)    MODE="apply" ;;
+        # 供 systemd 开机调用：装规则，但不做任何「需要站点已在服务」的验证。
+        --boot)     MODE="boot" ;;
         --remove)   MODE="remove" ;;
         --status)   MODE="status" ;;
         --persist)  PERSIST=1 ;;
@@ -206,8 +208,11 @@ ip_in_cidr() {
 # 这是最重要的一道闸：在没挂 CF 的机器上应用 CF-only，等于把 80/443 对全世界
 # （包括你自己）DROP。而排查时 ufw status 是空的、docker ps 是正常的，规则藏在
 # DOCKER-USER 链里，几乎不可能自行定位。所以拿不到证据就拒绝执行。
+# 第二个参数是**实时拉取**的 CF 网段。早先这里直接用脚本内置的 CF4_FALLBACK，而真正的
+# 拉取在它之后才发生 —— Cloudflare 新增网段后，域名明明开着橙云，脚本却判定「不在 CF
+# 网段内」并拒绝执行，还反过来让用户去面板打开本来就开着的橙云。
 verify_behind_cf() {
-    local d="$1" ips ip cidr inside=0 code
+    local d="$1" cf_list="${2:-$CF4_FALLBACK}" ips ip cidr inside=0 code
     [ -n "$d" ] || die "--apply 必须同时给出 --domain=你的域名，用来验证站点确实挂在 Cloudflare 后面。"
 
     head2 "验证 $d 确实在 Cloudflare 后面"
@@ -216,7 +221,7 @@ verify_behind_cf() {
 
     for ip in $ips; do
         case "$ip" in *:*) continue ;; esac
-        for cidr in $CF4_FALLBACK; do
+        for cidr in $cf_list; do
             if ip_in_cidr "$ip" "$cidr"; then inside=1; break 2; fi
         done
     done
@@ -271,14 +276,32 @@ build_chain() {
     $ipt -A "$CHAIN" -j DROP
 }
 
+# DOCKER-USER 出厂就带着一条 -j RETURN。用 -A 追加的规则排在它后面，**永远执行不到** ——
+# 脚本会一路打印成功、iptables -L 里规则也齐全，而防护是零，源站照样能被直连。这正是本文件
+# 开头说的「看起来成功、实际没保护」，只不过发生在跳转这一层。所以两条都必须 -I 到最前面。
 install_jump() {
     local ipt="$1"
-    # 第二道保险：任何不是从外网网卡进来的包一律 RETURN。即使后面某条规则漏写了
-    # -i，容器出站也不会被波及。
+    # 位置 1：任何不是从外网网卡进来的包一律 RETURN。这是容器出站的护身符 ——
+    # 即使后面某条规则漏写了 -i，容器出站也不会被波及。
     $ipt -C DOCKER-USER ! -i "$WAN" -j RETURN 2>/dev/null \
         || $ipt -I DOCKER-USER 1 ! -i "$WAN" -j RETURN
+    # 位置 2：紧随其后，仍然排在 Docker 自带的 RETURN 之前。
     $ipt -C DOCKER-USER -i "$WAN" -p tcp -m multiport --dports "$PORTS" -j "$CHAIN" 2>/dev/null \
-        || $ipt -A DOCKER-USER -i "$WAN" -p tcp -m multiport --dports "$PORTS" -j "$CHAIN"
+        || $ipt -I DOCKER-USER 2 -i "$WAN" -p tcp -m multiport --dports "$PORTS" -j "$CHAIN"
+}
+
+# 断言跳转真的可达：它必须排在 DOCKER-USER 里任何一条「无条件 RETURN」之前。
+# 只检查规则存在是不够的 —— 存在但排在 RETURN 之后，等于不存在。
+assert_jump_reachable() {
+    local ipt="$1" rules jump_at return_at
+    rules="$($ipt -S DOCKER-USER)"
+    jump_at="$(printf %s"\n" "$rules" | grep -n -- "-j $CHAIN" | head -1 | cut -d: -f1)"
+    return_at="$(printf %s"\n" "$rules" | grep -n -E "^-A DOCKER-USER -j RETURN$" | head -1 | cut -d: -f1)"
+    [ -n "$jump_at" ] || die "DOCKER-USER 里没有找到跳转到 $CHAIN 的规则，规则未生效。"
+    if [ -n "$return_at" ] && [ "$jump_at" -gt "$return_at" ]; then
+        die "跳转规则排在 DOCKER-USER 第 $jump_at 条，而无条件 RETURN 在第 $return_at 条 —— 跳转永远执行不到，防护为零。
+  请先运行 --remove 再重试。"
+    fi
 }
 
 # 断言 ESTABLISHED 确实是链里的第 1 条规则。不满足说明链被别的东西改过，拒绝完成。
@@ -334,7 +357,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=${script_path} --apply --domain=${DOMAIN} --ports=${PORTS}${extra} --yes
+ExecStart=${script_path} --boot --domain=${DOMAIN} --ports=${PORTS}${extra} --yes
 
 [Install]
 WantedBy=multi-user.target
@@ -372,8 +395,11 @@ case "$MODE" in
     detect_iface
     check_ports "$REPO_DIR"
     detect_v6
+    head2 "拉取 Cloudflare 网段"
+    CF4="$(fetch_cf https://www.cloudflare.com/ips-v4 "$CF4_FALLBACK" 10)"
+    ok "IPv4 网段 $(printf %s"\n" $CF4 | grep -c .) 条"
     if [ -n "$DOMAIN" ]; then
-        verify_behind_cf "$DOMAIN"
+        verify_behind_cf "$DOMAIN" "$CF4"
     else
         warn "未给 --domain，跳过 Cloudflare 验证（--apply 时必须提供）"
     fi
@@ -381,20 +407,28 @@ case "$MODE" in
     ok "环境满足条件，可以运行：sudo $0 --apply --domain=${DOMAIN:-你的域名}"
     ;;
 
-  apply)
+  apply|boot)
     preflight
     detect_iface
     check_ports "$REPO_DIR"
     detect_v6
-    verify_behind_cf "$DOMAIN"
 
     head2 "拉取 Cloudflare 网段"
     CF4="$(fetch_cf https://www.cloudflare.com/ips-v4 "$CF4_FALLBACK" 10)"
-    ok "IPv4 网段 $(printf '%s\n' $CF4 | grep -c .) 条"
+    ok "IPv4 网段 $(printf %s"\n" $CF4 | grep -c .) 条"
     CF6=""
     if [ "$V6_MODE" = "apply" ]; then
         CF6="$(fetch_cf https://www.cloudflare.com/ips-v6 "$CF6_FALLBACK" 5)"
-        ok "IPv6 网段 $(printf '%s\n' $CF6 | grep -c .) 条"
+        ok "IPv6 网段 $(printf %s"\n" $CF6 | grep -c .) 条"
+    fi
+
+    # 网段拉完之后才验域名，而且用刚拉到的这一份。
+    # --boot 跳过这一步：开机时容器还在起，站点必然还不通，拿它当前置条件会让规则
+    # 装不上 —— 那意味着每次重启后源站都对全网裸奔，而且毫无迹象。
+    if [ "$MODE" = "boot" ]; then
+        info "开机模式：跳过站点可达性验证（此刻容器多半还没起来）。"
+    else
+        verify_behind_cf "$DOMAIN" "$CF4"
     fi
 
     if [ "$ASSUME_YES" != "1" ]; then
@@ -407,12 +441,20 @@ case "$MODE" in
     build_chain iptables "$CF4"
     install_jump iptables
     assert_chain_sane iptables
+    assert_jump_reachable iptables
     ok "IPv4 规则已应用"
     if [ "$V6_MODE" = "apply" ]; then
         build_chain ip6tables "$CF6"
         install_jump ip6tables
         assert_chain_sane ip6tables
+        assert_jump_reachable ip6tables
         ok "IPv6 规则已应用"
+    fi
+
+    if [ "$MODE" = "boot" ]; then
+        head2 "开机模式：规则已装，跳过联网验证"
+        info "容器起来后可随时复验：sudo $0 --status"
+        exit 0
     fi
 
     head2 "应用后验证（两个方向都要验）"
