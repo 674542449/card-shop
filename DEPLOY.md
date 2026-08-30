@@ -26,6 +26,51 @@ Cloudflare 的防火墙）都建立在这个前提上。
 
 ---
 
+## 关于「你的域名」怎么填
+
+全文用 **`shop.example.com`** 做示例，你照着替换成自己的即可。
+
+有两种写法，**用错了会静默失败或者直接报错**，所以单列一节：
+
+| 场景 | 格式 | 示例 |
+|---|---|---|
+| `./install.sh` 问你域名 | **不带协议** | `shop.example.com` |
+| 防火墙脚本 `--domain=` | **不带协议** | `--domain=shop.example.com` |
+| Cloudflare 签源站证书的主机名 | **不带协议** | `shop.example.com` 和 `*.shop.example.com` |
+| Cloudflare 面板里 Turnstile 的域名 | **不带协议** | `shop.example.com` |
+| `curl` 验证命令 | **带 `https://`** | `curl -s https://shop.example.com/` |
+| `.env` 里的 `APP_URL` | **带 `https://`** | `APP_URL=https://shop.example.com` |
+| 浏览器地址栏 | **带 `https://`** | `https://shop.example.com/admin` |
+
+一句话记法：**命令行参数和面板输入框里填裸主机名，URL 里才带 `https://`。**
+
+（`install.sh` 有容错，你贴 `https://shop.example.com/` 进去它也会自动去掉协议和结尾
+斜杠。但防火墙脚本的 `--domain=` **没有**这个容错，带协议会解析失败。）
+
+### 带不带 www，要一致
+
+这是个真的会绊人的地方。如果你在 Cloudflare 里只加了 `www` 这一条 A 记录，那么：
+
+- ✅ `www.shop.example.com` 能访问
+- ❌ `shop.example.com` 解析不到，浏览器直接打不开
+
+而防火墙脚本的第一件事就是解析你给的域名、确认它落在 Cloudflare 网段里 —— 域名解析
+不了它会直接拒绝执行，报「解析不到任何 IP」。
+
+**所以：本文所有出现域名的地方，都要填你实际能访问的那一个。** 只加了 `www` 记录就
+一律用 `www.shop.example.com`，包括 `--domain=`、`APP_URL`、证书主机名。
+
+更省事的做法是在 Cloudflare 的 DNS 里把两个都加上，橙云都开：
+
+| 类型 | 名称 | 内容 | 代理 |
+|---|---|---|---|
+| `A` | `@` | 服务器公网 IP | 已代理 |
+| `CNAME` | `www` | `shop.example.com` | 已代理 |
+
+这样带不带 `www` 都能访问，后面每一步就不用再纠结了。
+
+---
+
 ## 第 1 步：域名接入 Cloudflare
 
 这一步必须在最前面。不先做的话，后面每一步都没法验证——容器全起来了、日志全绿、
@@ -34,8 +79,14 @@ Cloudflare 的防火墙）都建立在这个前提上。
 
 在 Cloudflare 面板：
 
-1. **DNS** → 添加一条 `A` 记录，名称填 `@`（或你要用的子域名），内容填**服务器公网 IP**
-2. 代理状态必须是 **已代理**（橙色云朵），不能是「仅限 DNS」（灰色）
+1. **DNS** → 添加记录。建议两条都加，省得后面每一步都要纠结带不带 `www`：
+
+   | 类型 | 名称 | 内容 | 代理状态 |
+   |---|---|---|---|
+   | `A` | `@` | 服务器公网 IP，如 `129.146.48.95` | **已代理**（橙色云朵） |
+   | `CNAME` | `www` | `shop.example.com` | **已代理**（橙色云朵） |
+
+2. 代理状态必须是**橙色云朵**，不能是「仅限 DNS」（灰色）
 3. **SSL/TLS** → 概述 → 加密模式暂时选 **灵活 (Flexible)**（第 5 步做完再改成 Full strict）
 
 **橙云一定要开。** 不开的话 nginx 里那 22 条 `set_real_ip_from` 永远匹配不上，真实访客 IP
@@ -46,7 +97,7 @@ Cloudflare 的防火墙）都建立在这个前提上。
 **怎么确认成功**（在你自己电脑上跑，不是服务器）：
 
 ```bash
-curl -sI https://你的域名/ | grep -i "cf-ray\|server:"
+curl -sI https://shop.example.com/ | grep -i "cf-ray\|server:"
 ```
 
 出现 `cf-ray` 这一行就说明流量确实经过 Cloudflare 了。此时站点还没部署，返回 5xx 是正常的，
@@ -81,7 +132,8 @@ cd ~/card-shop
 
 脚本会做两件事：
 
-1. **问你域名**——填新域名即可，不用带 `https://`。它会写进 `.env` 的 `APP_URL`。
+1. **问你域名**——填 `shop.example.com` 这样的**裸主机名**，不用带 `https://`
+   （贴了也没关系，脚本会自动去掉）。它会写进 `.env` 的 `APP_URL`。
    这个值决定会话 cookie 的 `Secure` 标志、资源链接的协议、canonical、以及发给买家的
    订单链接。填错的典型症状是**后台登不进去**，或者 HTTPS 页面加载不到样式。
 2. **按你这台机器的 CPU 和内存算出 PHP-FPM 进程数**并让你选。镜像默认只有 5 个工作
@@ -95,9 +147,21 @@ cd ~/card-shop
 grep -E '^(APP_URL|PHP_FPM_MAX_CHILDREN|TRUSTED_PROXIES)=' .env
 ```
 
-预期：`APP_URL` 是你的新域名且以 `https://` 开头；`PHP_FPM_MAX_CHILDREN` 有值（不是空）；
-`TRUSTED_PROXIES` **是空的**——真实 IP 由 nginx 还原，这里填任何值（尤其是 `*`）反而会让
-任何人直连源站伪造 `X-Forwarded-For` 绕过全部按 IP 的防护。
+应该看到这样三行（域名换成你自己的）：
+
+```
+APP_URL=https://shop.example.com
+PHP_FPM_MAX_CHILDREN=20
+TRUSTED_PROXIES=
+```
+
+三点都要对上：
+
+- **`APP_URL` 带 `https://`，且是你实际能访问的那个主机名**（只加了 `www` 记录就要写
+  `https://www.shop.example.com`）。这里写错，症状是后台登不进去或者页面没样式。
+- **`PHP_FPM_MAX_CHILDREN` 有值**，不是空。空的话容器会退回镜像默认的 5 个进程。
+- **`TRUSTED_PROXIES` 是空的**——真实 IP 由 nginx 还原，这里填任何值（尤其是 `*`）反而会
+  让任何人直连源站伪造 `X-Forwarded-For`，绕过全部按 IP 的防护。
 
 ---
 
@@ -183,7 +247,8 @@ docker compose exec app php artisan admin:password
 **① 签证书**
 
 Cloudflare 面板 → **SSL/TLS** → **源服务器 (Origin Server)** → **创建证书**。
-主机名填 `你的域名` 和 `*.你的域名`，有效期选 15 年。签完会给你两段文本。
+主机名填**裸主机名**，两行：`shop.example.com` 和 `*.shop.example.com`（不带 `https://`）。
+有效期选 15 年。签完会给你两段文本。
 
 **② 放到服务器**
 
@@ -229,7 +294,7 @@ cd ~/card-shop && ./install.sh --recommended && docker compose up -d --force-rec
 curl -sk https://127.0.0.1/ | grep -c "csrf-token"
 
 # 从外网经 Cloudflare 访问
-curl -s https://你的域名/ | grep -c "csrf-token"
+curl -s https://shop.example.com/ | grep -c "csrf-token"
 ```
 
 两个都要大于 0。
@@ -246,7 +311,8 @@ curl -s https://你的域名/ | grep -c "csrf-token"
 
 ```bash
 cd ~/card-shop
-sudo ./scripts/cf-only-firewall.sh --check --domain=你的域名
+# --domain= 后面是**裸主机名**，不带 https:// —— 这里没有容错，带协议会解析失败
+sudo ./scripts/cf-only-firewall.sh --check --domain=shop.example.com
 ```
 
 它会确认：域名确实解析到 Cloudflare 网段、经 CF 能正常访问、外网网卡识别正确、
@@ -257,7 +323,7 @@ sudo ./scripts/cf-only-firewall.sh --check --domain=你的域名
 体检通过后应用：
 
 ```bash
-sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --persist
+sudo ./scripts/cf-only-firewall.sh --apply --domain=shop.example.com --persist
 ```
 
 `--persist` 会装一个开机自启单元，否则重启后规则就没了（iptables 规则不持久，而失效时
@@ -272,7 +338,7 @@ sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --persist
 docker compose exec app curl -m 10 -s -o /dev/null -w '%{http_code}\n' https://api.github.com
 
 # ② 经 Cloudflare 入站正常
-curl -s https://你的域名/ | grep -c "csrf-token"
+curl -s https://shop.example.com/ | grep -c "csrf-token"
 ```
 
 ① 应该是 2xx/3xx，② 应该大于 0。
@@ -300,7 +366,7 @@ sudo ./scripts/cf-only-firewall.sh --remove
 
 ## 第 7 步：后台配置
 
-打开 `https://你的域名/admin`，用第 4 步拿到的密码登录。
+打开 `https://shop.example.com/admin`，用第 4 步拿到的密码登录。
 
 后台菜单：概览 / 商品 / 交易 / 内容 / 系统。下面这些都在**系统 → 系统设置**这一页里，
 分卡片排列。
@@ -328,7 +394,7 @@ Site Key 和 Secret Key 填进后台。
 你用 `http://服务器IP/` 下一笔测试单，回调地址就被写成 `https://服务器IP/payment/...`
 发给支付网关——网关回调打不进来，**订单永远停在未支付**，而下单流程本身一切正常。
 
-**所有测试都走 `https://你的域名/`。**
+**所有测试都走 `https://shop.example.com/`。**
 
 ---
 
@@ -348,7 +414,7 @@ cd ~/card-shop && ./install.sh --show
 ```bash
 # 前台、订单查询、后台都能出内容（三个数字都要大于 0）
 for p in "/" "/order/query" "/admin"; do
-  printf "%-14s %s\n" "$p" "$(curl -s https://你的域名$p | grep -c csrf-token)"
+  printf "%-14s %s\n" "$p" "$(curl -s https://shop.example.com$p | grep -c csrf-token)"
 done
 
 # .env 权限
@@ -434,7 +500,7 @@ chmod +x /etc/cron.daily/cardshop-backup
 而日志里什么都看不到。建议每月跑一次：
 
 ```bash
-cd ~/card-shop && sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --yes
+cd ~/card-shop && sudo ./scripts/cf-only-firewall.sh --apply --domain=shop.example.com --yes
 ```
 
 （`docker/nginx/default.conf` 里那份列表需要手工同步，文件里标注了抓取日期。）
@@ -454,6 +520,9 @@ cd ~/card-shop && sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域�
 | 订单一直停在未支付 | 用 IP 下的单，回调地址是错的。改用域名重下一单 |
 | USDT 跳转不过去 / 通知不发 | 容器出站被切了。跑第 6 步的验证 ① |
 | 访客 IP 都一样 | Cloudflare 的橙云没开 |
+| 防火墙脚本报「解析不到任何 IP」 | `--domain=` 填的主机名没有 DNS 记录。只加了 `www` 记录就要写 `www.shop.example.com`，别写裸域 |
+| 防火墙脚本报「不在 Cloudflare 网段内」 | 那条 DNS 记录的代理状态是灰云，不是橙云 |
+| 直连服务器 IP 还能打开站点 | 第 6 步没做，或者做了但没生效。从**外网**（不是服务器本机）测才准 |
 
 看日志：
 
