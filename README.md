@@ -342,6 +342,16 @@ Cloudflare 回不了源，站点会 522。建议这一层也只放行 Cloudflare
 Oracle Cloud 注意：VCN 安全列表和 NSG 是**并集**关系（任一放行即放行），
 只改一处可能不生效。
 
+### 一键自检
+
+```bash
+cd ~/card-shop && sudo ./scripts/doctor.sh        # 只检查
+cd ~/card-shop && sudo ./scripts/doctor.sh --fix  # 顺便修能安全修的
+```
+
+域名从 `.env` 读，不用填。检查配置、权限、容器、页面渲染、Cloudflare、证书、
+容器出站、防火墙和开机自启，跳过的项也会计数列出。详见 [DEPLOY.md](DEPLOY.md) 第 8 步。
+
 ### 维护
 
 Cloudflare 的回源网段一年会变几次。`cf-only-firewall.sh` 每次运行都会重新拉取最新列表，
