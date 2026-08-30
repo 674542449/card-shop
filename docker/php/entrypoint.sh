@@ -145,7 +145,16 @@ chmod 640 .env 2>/dev/null || true
 # entirely, and a .env the workers cannot read is indistinguishable, from the logs,
 # from a missing APP_KEY.
 if su -s /bin/sh -c 'test -r /var/www/html/.env' www-data 2>/dev/null; then
-    echo "    .env restricted to 640, group www-data."
+    # Readable is necessary but not sufficient: 644 is readable too. Report the mode
+    # actually on disk rather than the one we asked for, so the line is not a promise
+    # the filesystem never kept.
+    ENV_MODE="$(stat -c '%a' .env 2>/dev/null || echo '?')"
+    if [ "$ENV_MODE" = "640" ]; then
+        echo "    .env restricted to 640, group www-data, readable by the workers."
+    else
+        echo "    .env is mode $ENV_MODE (wanted 640) but the workers can read it."
+        echo "    WARNING: it holds the database password, APP_KEY and payment secrets."
+    fi
 else
     # Put it back rather than leave the site broken. World-readable is bad; a shop
     # that returns 500 on every page while claiming a clean boot is worse, and the
@@ -203,7 +212,8 @@ if php artisan migrate --force --no-interaction; then
         echo "    !! Seeding failed. The admin account may not exist."
     fi
 else
-    echo "    !! MIGRATIONS FAILED. The site will return 500 until this is fixed."
+    echo "    !! MIGRATIONS FAILED."
+    MIGRATIONS_FAILED=1
 fi
 
 echo "==> [7/8] Precompiling Blade views"
@@ -286,6 +296,30 @@ elif [ -d admin-frontend ] && command -v npm >/dev/null 2>&1; then
     ) &
 else
     echo "    !! Admin assets missing and npm unavailable. /admin will show the fallback page."
+fi
+
+# Refuse to start rather than serve a broken database.
+#
+# Starting php-fpm anyway is the worst of both worlds: the healthcheck only probes
+# whether port 9000 accepts a connection, so the container reports healthy, nginx
+# starts behind it, and every single request returns 500 — with a stack that looks
+# entirely green in `docker compose ps`. That is the same shape as the .env
+# permission failure this file already guards against, and it is just as hard to
+# diagnose from the outside.
+#
+# Exiting non-zero puts the container into a visible restart loop instead, with the
+# reason immediately above in the log. `restart: unless-stopped` then retries, which
+# is the right behaviour when the cause is a database that was briefly unreachable.
+if [ "${MIGRATIONS_FAILED:-0}" = "1" ]; then
+    echo ""
+    echo "=================================================================="
+    echo "  REFUSING TO START: database migrations failed."
+    echo "  Serving requests now would return 500 on every page while this"
+    echo "  container reported itself healthy. The error is logged above."
+    echo "  Common causes: wrong DB_PASSWORD in .env, or a database volume"
+    echo "  that was initialised with a different password."
+    echo "=================================================================="
+    exit 1
 fi
 
 echo "==> Starting PHP-FPM"

@@ -346,9 +346,18 @@ esac
 #   · canonical、og:url、以及邮件里发给买家的订单链接
 # 检测出来还让人自己去改文件是没道理的，所以这里直接问。
 CURRENT_URL=$(grep '^APP_URL=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || true)
+# 交互模式下**始终**问，哪怕 APP_URL 已经是 https:// 的。
+# 「已经设好了就不打扰」在换域名时恰好是错的：搬站或复用旧 .env 时，这里躺着的是
+# 旧域名，脚本一声不吭地保留它，而后果要等到 cookie 拿不到 Secure、后台登不进去、
+# 或者发给买家的订单链接指向一个已经下线的站点时才暴露出来。
+# 已有值会作为默认值显示，直接回车即保留 —— 不问的成本远高于多问一句。
+NEED_ASK=1
 case "$CURRENT_URL" in
-    https://*) ;;                       # 已经设好了，不打扰
-    *)
+    https://*) [ "$MODE" = "interactive" ] || NEED_ASK=0 ;;
+    *) ;;
+esac
+case "$NEED_ASK" in
+    1)
         if [ "$MODE" = "interactive" ]; then
             echo
             echo "=============================================================="
@@ -356,15 +365,21 @@ case "$CURRENT_URL" in
             echo "=============================================================="
             echo "  当前 APP_URL：${CURRENT_URL:-（空）}"
             echo "  挂 Cloudflare 时这里要填**对外的域名**，而不是服务器 IP。"
+            echo "  换域名或搬站时，这里很可能还是旧域名，记得改。"
             echo
-            printf "请输入域名（如 shop.example.com，直接回车跳过）: "
+            printf "请输入域名（如 shop.example.com，直接回车保持不变）: "
             read -r site_domain || site_domain=""
             # 容错：把用户可能连带贴进来的协议和结尾斜杠去掉
             site_domain="${site_domain#http://}"
             site_domain="${site_domain#https://}"
             site_domain="${site_domain%/}"
             case "$site_domain" in
-                '') echo "  已跳过。记得之后手工把 .env 的 APP_URL 改成 https://你的域名。" ;;
+                '')
+                    case "$CURRENT_URL" in
+                        https://*) echo "  保持不变：$CURRENT_URL" ;;
+                        *) echo "  已跳过。记得之后手工把 .env 的 APP_URL 改成 https://你的域名。" ;;
+                    esac
+                    ;;
                 *[!a-zA-Z0-9.-]*|.*|*.|*..*|-*|*-)
                     echo "  '$site_domain' 不像一个域名，未改动。请之后手工设置 APP_URL。" ;;
                 *.*)
@@ -426,16 +441,46 @@ set_env POSTGRES_MAX_CONNECTIONS "$PG_MAX_CONN"
 # 排查会被彻底带偏。640 + 属组 www-data 同时满足三边：容器里的 worker 能读、
 # 宿主机上的属主能读写（docker compose 需要读它做变量替换）、其他用户仍然读不到。
 chgrp www-data "$ENV_FILE" 2>/dev/null || chgrp 33 "$ENV_FILE" 2>/dev/null || true
-# 不用 `|| true` 一笔带过：chmod 失败而我们假装成功，就是「看起来安全、实际没有」，
-# 而这恰恰是最不该发生在密钥文件上的。失败就明说。
-if ! chmod 640 "$ENV_FILE" 2>/dev/null; then
-    echo "  警告：无法把 .env 权限收紧到 640，里面有数据库密码和各种密钥，请手工处理。"
+
+# 上面这两条 chgrp 只有 root 会成功。把文件改成一个自己不是成员的组需要 CAP_CHOWN，
+# 普通用户即使是属主也是 EPERM —— 而 README 让你把当前用户加进 docker 组正是为了免 sudo，
+# Oracle / AWS 的默认登录用户（ubuntu / opc）本来就是普通用户。失败被 2>/dev/null 和
+# || true 一起吞掉，紧接着的 chmod 640 却一定成功（属主 chmod 自己的文件不需要特权）。
+# 两者相加的最终态是「640 + 属组是调用者自己」：容器里 uid/gid 33 的 PHP-FPM 工作进程
+# 属主位不匹配、属组位不匹配、other 位没有 r，一样读不到 —— 跟之前那个 600 把全站
+# 打成 500 的事故是同一个故障，只差一个 bit。
+#
+# 所以 mode 必须等属组确认之后再定，不能反过来。
+# 用 %g 而不是 %G：容器里起作用的只有数字 33，宿主机上 www-data 这个名字对应哪个 gid
+#（Debian/Ubuntu 是 33，Alpine 是 82）跟容器没有关系。
+if ENV_GID=$(stat -c '%g' "$ENV_FILE" 2>/dev/null || stat -f '%g' "$ENV_FILE" 2>/dev/null); then
+    if [ "$ENV_GID" = "33" ]; then
+        if chmod 640 "$ENV_FILE" 2>/dev/null; then
+            echo "  .env 已收紧到 640，属组 www-data(33)，容器里的工作进程能读到。"
+        else
+            echo "  警告：无法把 .env 权限收紧到 640，里面有数据库密码和各种密钥，请手工处理。"
+        fi
+    else
+        # 640 配一个容器读不到的属组，等于把站点锁死，而且悄无声息：Laravel 用 safeLoad()
+        # 读 .env，读不到不抛错，APP_KEY 和 DB_PASSWORD 全空，每页 500。仓库里没有
+        # config:cache，.env 是每个请求实时读的，不需要重启就立刻生效 —— 而参数没变时
+        # docker compose up -d 不会重建 app 容器，entrypoint 里那道属组修复根本不会跑。
+        # 所以宁可退回 644 也不锁死：世界可读很糟，一个每页 500 而启动日志全绿的商城更糟。
+        chmod 644 "$ENV_FILE" 2>/dev/null || true
+        echo
+        echo "  警告：.env 的属组是 gid $ENV_GID，不是容器里 PHP-FPM 用的 33(www-data)，没能改过来。"
+        echo "  chgrp 到自己不是成员的组需要 root —— 你多半是以普通用户跑的本脚本。"
+        echo "  已退回 644 以免站点被锁死。但 .env 里有数据库密码、APP_KEY 和支付商户密钥，"
+        echo "  现在宿主机上任何用户都能读。请用 root 补上这一刀："
+        echo "      sudo chgrp 33 $ENV_FILE && sudo chmod 640 $ENV_FILE"
+        echo "      docker compose restart app     # 让 entrypoint 重新验一遍"
+        echo
+    fi
 else
-    ENV_MODE=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '')
-    case "$ENV_MODE" in
-        640|'') ;;   # 空表示这个平台不支持 stat -c（如 macOS/Git Bash），不误报
-        *) echo "  警告：.env 权限是 $ENV_MODE 而不是 640，里面有数据库密码和各种密钥。" ;;
-    esac
+    # 这个平台没有 GNU/BSD stat（Git Bash 之类）—— 不是部署目标，但也不该误报。
+    # 属组无从确认，就不敢把 other 的读权限去掉。
+    chmod 644 "$ENV_FILE" 2>/dev/null || true
+    echo "  提醒：本平台无法读取 .env 的属组，未做收紧（保持 644）。正式部署的 Linux 机器上重跑本脚本即可。"
 fi
 
 echo
