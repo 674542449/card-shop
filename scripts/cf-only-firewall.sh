@@ -135,7 +135,9 @@ detect_iface() {
         i="$IFACE"
         ip link show "$i" >/dev/null 2>&1 || die "指定的网卡 $i 不存在。"
     else
-        i="$(ip -o route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1)"
+        # || true 同上：ip 命令不存在或没有默认路由时，这条管道会失败并直接终止脚本，
+        # 下面那句「请用 --iface= 手工指定」就永远打不出来。
+        i="$(ip -o route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -1 || true)"
         [ -n "$i" ] || die "无法探测外网网卡。请用 --iface=网卡名 手工指定。"
     fi
     case "$i" in
@@ -295,13 +297,17 @@ install_jump() {
 assert_jump_reachable() {
     local ipt="$1" rules jump_at return_at
     rules="$($ipt -S DOCKER-USER)"
-    jump_at="$(printf %s"\n" "$rules" | grep -n -- "-j $CHAIN" | head -1 | cut -d: -f1)"
-    return_at="$(printf %s"\n" "$rules" | grep -n -E "^-A DOCKER-USER -j RETURN$" | head -1 | cut -d: -f1)"
+    # 两条都必须 || true。脚本开头是 set -euo pipefail，grep 无匹配返回 1，pipefail 把
+    # 整条管道判为失败，而命令替换的退出码就是赋值语句的退出码 —— set -e 会当场终止
+    # 脚本，一个字都不打印。DOCKER-USER 里没有无条件 RETURN 是完全正常的状态，
+    # 真撞上时的表现是：规则刚装完，--persist 和最终验证全都没跑，而你看不出发生了什么。
+    jump_at="$(printf %s"\n" "$rules" | grep -n -- "-j $CHAIN" | head -1 | cut -d: -f1 || true)"
+    return_at="$(printf %s"\n" "$rules" | grep -n -E "^-A DOCKER-USER -j RETURN$" | head -1 | cut -d: -f1 || true)"
     [ -n "$jump_at" ] || die "DOCKER-USER 里没有找到跳转到 $CHAIN 的规则，规则未生效。"
     # iptables -S 的第一行是 "-N DOCKER-USER" 链头，不是规则。减掉它，报出来的
     # 序号才和 iptables -L --line-numbers 对得上，否则排查的人会对着错位的数字找。
     jump_at=$((jump_at - 1))
-    [ -n "$return_at" ] && return_at=$((return_at - 1))
+    if [ -n "$return_at" ]; then return_at=$((return_at - 1)); fi
     if [ -n "$return_at" ] && [ "$jump_at" -gt "$return_at" ]; then
         die "跳转规则排在 DOCKER-USER 第 $jump_at 条，而无条件 RETURN 在第 $return_at 条 —— 跳转永远执行不到，防护为零。
   请先运行 --remove 再重试。"
@@ -334,15 +340,25 @@ verify_outbound() {
         info "  docker compose exec app curl -m 10 -so /dev/null -w '%{http_code}\\n' https://api.github.com"
         return 0
     fi
-    code="$(docker compose -f "$dir/docker-compose.yml" exec -T app \
-            curl -m 15 -so /dev/null -w '%{http_code}' https://api.github.com 2>/dev/null || echo 000)"
-    case "$code" in
-        2*|3*|4*) ok "容器出站正常（HTTP $code）" ;;
-        *)
-            printf "\n  %s容器出站被切断了（返回 %s）。正在自动回滚……%s\n" "$RED" "$code" "$RST"
-            do_remove
-            die "已回滚。出站不通说明跳转规则的 -i 网卡判断有误，请用 --iface= 指定正确的外网网卡后重试。" ;;
-    esac
+    # 多探几个站点。单探针会把「GitHub 这会儿正好不通」误判成「防火墙切断了出站」，
+    # 而误判的代价是自动把整套防护拆掉 —— 那比不验还糟。只有全部探针都失败才认定断了。
+    local hosts="https://api.github.com https://www.cloudflare.com https://1.1.1.1"
+    local h ok_count=0 codes=""
+    for h in $hosts; do
+        code="$(docker compose -f "$dir/docker-compose.yml" exec -T app \
+                curl -m 15 -so /dev/null -w '%{http_code}' "$h" 2>/dev/null || echo 000)"
+        codes="$codes $h=$code"
+        case "$code" in 2*|3*|4*) ok_count=$((ok_count + 1)) ;; esac
+    done
+    if [ "$ok_count" -gt 0 ]; then
+        ok "容器出站正常（$ok_count/3 个探针可达）"
+    else
+        printf "\n  %s容器出站全部不通：%s%s\n" "$RED" "$codes" "$RST"
+        do_remove
+        die "已回滚，防火墙规则已撤销，站点不受影响。
+  三个探针全部失败，通常说明跳转规则的 -i 网卡判断有误。
+  请用 --iface=<正确的外网网卡> 重试；网卡名可用 ip route show default 查看。"
+    fi
 }
 
 # 排序很关键：unit 若在 dockerd 之前跑，DOCKER-USER 链还不存在，规则装不上。
@@ -350,7 +366,11 @@ verify_outbound() {
 # 重新对全网暴露。这是最糟的失败模式，所以脚本在链不存在时是硬失败而非静默跳过。
 install_unit() {
     local script_path="$1" extra=""
-    [ -n "$IFACE" ] && extra=" --iface=$IFACE"
+    # 固化**这次已经验证过**的网卡，而不是让开机时重新探测。
+    # 探测依赖默认路由，而默认路由会变：后来装了 WireGuard、Cloudflare Tunnel、加了
+    # 第二块网卡，开机探到的可能就不是当初那一块。而 --boot 为了能在容器还没起来时
+    # 装规则跳过了所有验证 —— 探错也没人拦得住。
+    extra=" --iface=${IFACE:-$WAN}"
     cat > /etc/systemd/system/cf-only-firewall.service <<UNIT
 [Unit]
 Description=只放行 Cloudflare 网段访问 Docker 发布的 80/443

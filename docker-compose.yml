@@ -135,10 +135,11 @@ services:
       - work_mem=${POSTGRES_WORK_MEM:-4MB}
       - -c
       - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
-    # Bound to loopback only. Publishing 5432 on 0.0.0.0 exposes the database to the
-    # internet; the app reaches it over the internal `cardshop` network regardless.
-    ports:
-      - "127.0.0.1:5432:5432"
+    # 不发布端口，理由和 redis 那边一模一样：应用通过内部的 cardshop 网络访问它，
+    # 宿主机上没有任何东西需要连数据库。绑在 127.0.0.1 确实挡住了公网，但仍然把
+    # 「宿主机上任意一个普通用户，或任意一次 SSRF / 命令执行」直接升级成「拿到全部
+    # 订单和卡密」—— 而这个库的密码就写在同一台机器的 .env 里。
+    # 需要连库时临时用：docker compose exec postgres psql -U cardshop
     volumes:
       - pgdata:/var/lib/postgresql/data
     environment:
