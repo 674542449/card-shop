@@ -106,6 +106,19 @@ if [ ! -f .env ]; then
     echo "    .env missing, creating from .env.example"
     cp .env.example .env
 fi
+# Match APP_KEY= with nothing (or only whitespace/CR) after it.
+if grep -Eq '^APP_KEY=[[:space:]]*$' .env; then
+    echo "    Generating APP_KEY"
+    php artisan key:generate --force --no-interaction
+else
+    echo "    APP_KEY present."
+fi
+
+# 权限收紧放在**所有会写 .env 的步骤之后**，这不是风格问题。
+# 上面的 key:generate 会改写 .env；install.sh 的 set_env 用 sed -i 改写它；从备份恢复
+# 也会带来新的属主和 mode。这些操作是否保留属组和权限取决于具体实现（sed -i 是先写
+# 临时文件再 rename，非 root 身份下 chown 会静默失败），赌不起。放在最后就没有这个
+# 依赖：无论前面谁动过这个文件，最终态都由这里决定。
 # .env holds the database password, APP_KEY, the payment gateway's merchant secret
 # and the SMTP password. Under the default umask it is created 0644 — readable by
 # every user on the host, since this file is bind-mounted from there. Tightened on
@@ -142,14 +155,6 @@ else
     echo "    WARNING: .env is now readable by every user on the host, and it holds the"
     echo "    WARNING: database password, APP_KEY and the payment gateway secrets."
     echo "    WARNING: Fix it on the host with:  sudo chgrp 33 .env && sudo chmod 640 .env"
-fi
-
-# Match APP_KEY= with nothing (or only whitespace/CR) after it.
-if grep -Eq '^APP_KEY=[[:space:]]*$' .env; then
-    echo "    Generating APP_KEY"
-    php artisan key:generate --force --no-interaction
-else
-    echo "    APP_KEY present."
 fi
 
 echo "==> [4/8] Public storage symlink"

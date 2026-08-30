@@ -276,28 +276,6 @@ if [ ! -f "$ENV_FILE" ]; then
         touch "$ENV_FILE"
     fi
 fi
-# .env 里有数据库密码、APP_KEY、易支付商户密钥、SMTP 密码。默认 umask 022 下它是
-# 0644，宿主机上任何普通用户、以及任何被攻破的其他服务都能读到。
-#
-# 收成 640 而不是 600，属组给 www-data。原因：.env 会被 bind mount 进 app 容器，
-# 而 PHP-FPM 的工作进程以 www-data（uid 33）运行。600 且属主是 root（典型部署就是
-# 用 root clone 的）意味着那些进程根本读不到，于是 APP_KEY 和 DB_PASSWORD 全为空、
-# 每个页面 500 —— 偏偏 artisan 是 root 跑的，迁移和种子照样成功，启动日志一片绿，
-# 排查会被彻底带偏。640 + 属组 www-data 同时满足三边：容器里的 worker 能读、
-# 宿主机上的属主能读写（docker compose 需要读它做变量替换）、其他用户仍然读不到。
-chgrp www-data "$ENV_FILE" 2>/dev/null || chgrp 33 "$ENV_FILE" 2>/dev/null || true
-# 不用 `|| true` 一笔带过：chmod 失败而我们假装成功，就是「看起来安全、实际没有」，
-# 而这恰恰是最不该发生在密钥文件上的。失败就明说。
-if ! chmod 640 "$ENV_FILE" 2>/dev/null; then
-    echo "  警告：无法把 .env 权限收紧到 640，里面有数据库密码和各种密钥，请手工处理。"
-else
-    ENV_MODE=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '')
-    case "$ENV_MODE" in
-        640|'') ;;   # 空表示这个平台不支持 stat -c（如 macOS/Git Bash），不误报
-        *) echo "  警告：.env 权限是 $ENV_MODE 而不是 640，里面有数据库密码和各种密钥。" ;;
-    esac
-fi
-
 set_env() { # set_env KEY VALUE —— 存在则替换，不存在则追加，其余行不动
     local key="$1" value="$2"
     if grep -q "^${key}=" "$ENV_FILE"; then
@@ -433,6 +411,32 @@ set_env POSTGRES_SHARED_BUFFERS "$PG_SHARED"
 set_env POSTGRES_EFFECTIVE_CACHE "$PG_CACHE"
 set_env POSTGRES_WORK_MEM       "$PG_WORK_MEM"
 set_env POSTGRES_MAX_CONNECTIONS "$PG_MAX_CONN"
+
+# ---------------------------------------------------------------- .env 权限
+# 放在所有 set_env 之后，不是随手排的。set_env 用 sed -i 改写 .env，而 sed -i 是
+# 先写临时文件再 rename —— 它是否保留属组和 mode 取决于实现和运行身份，赌不起。
+# 放在最后，最终态就只由这里决定，前面谁动过都不影响。
+# .env 里有数据库密码、APP_KEY、易支付商户密钥、SMTP 密码。默认 umask 022 下它是
+# 0644，宿主机上任何普通用户、以及任何被攻破的其他服务都能读到。
+#
+# 收成 640 而不是 600，属组给 www-data。原因：.env 会被 bind mount 进 app 容器，
+# 而 PHP-FPM 的工作进程以 www-data（uid 33）运行。600 且属主是 root（典型部署就是
+# 用 root clone 的）意味着那些进程根本读不到，于是 APP_KEY 和 DB_PASSWORD 全为空、
+# 每个页面 500 —— 偏偏 artisan 是 root 跑的，迁移和种子照样成功，启动日志一片绿，
+# 排查会被彻底带偏。640 + 属组 www-data 同时满足三边：容器里的 worker 能读、
+# 宿主机上的属主能读写（docker compose 需要读它做变量替换）、其他用户仍然读不到。
+chgrp www-data "$ENV_FILE" 2>/dev/null || chgrp 33 "$ENV_FILE" 2>/dev/null || true
+# 不用 `|| true` 一笔带过：chmod 失败而我们假装成功，就是「看起来安全、实际没有」，
+# 而这恰恰是最不该发生在密钥文件上的。失败就明说。
+if ! chmod 640 "$ENV_FILE" 2>/dev/null; then
+    echo "  警告：无法把 .env 权限收紧到 640，里面有数据库密码和各种密钥，请手工处理。"
+else
+    ENV_MODE=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '')
+    case "$ENV_MODE" in
+        640|'') ;;   # 空表示这个平台不支持 stat -c（如 macOS/Git Bash），不误报
+        *) echo "  警告：.env 权限是 $ENV_MODE 而不是 640，里面有数据库密码和各种密钥。" ;;
+    esac
+fi
 
 echo
 echo "=============================================================="
