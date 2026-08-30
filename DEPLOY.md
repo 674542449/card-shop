@@ -39,6 +39,7 @@ Cloudflare 的防火墙）都建立在这个前提上。
 | Cloudflare 签源站证书的主机名 | **不带协议** | `shop.example.com` 和 `*.shop.example.com` |
 | Cloudflare 面板里 Turnstile 的域名 | **不带协议** | `shop.example.com` |
 | `curl` 验证命令 | **带 `https://`** | `curl -s https://shop.example.com/` |
+| 防火墙脚本 | **不用填**，自动从 `.env` 读 | （只在想覆盖时才 `--domain=`） |
 | `.env` 里的 `APP_URL` | **带 `https://`** | `APP_URL=https://shop.example.com` |
 | 浏览器地址栏 | **带 `https://`** | `https://shop.example.com/admin` |
 
@@ -311,9 +312,12 @@ curl -s https://shop.example.com/ | grep -c "csrf-token"
 
 ```bash
 cd ~/card-shop
-# --domain= 后面是**裸主机名**，不带 https:// —— 这里没有容错，带协议会解析失败
-sudo ./scripts/cf-only-firewall.sh --check --domain=shop.example.com
+sudo ./scripts/cf-only-firewall.sh --check
 ```
+
+**不用填域名**——脚本自己从 `.env` 的 `APP_URL` 读（就是第 3 步 `install.sh` 写进去的
+那个），并把读到的值打印出来给你确认。要用别的域名才需要 `--domain=shop.example.com`
+（裸主机名，不带 `https://`）。
 
 它会确认：域名确实解析到 Cloudflare 网段、经 CF 能正常访问、外网网卡识别正确、
 端口映射一致、有没有 IPv6 旁路。**任何一项不满足就会拒绝执行**——在没挂 CDN 的机器上
@@ -323,11 +327,14 @@ sudo ./scripts/cf-only-firewall.sh --check --domain=shop.example.com
 体检通过后应用：
 
 ```bash
-sudo ./scripts/cf-only-firewall.sh --apply --domain=shop.example.com --persist
+sudo ./scripts/cf-only-firewall.sh --apply --persist
 ```
 
 `--persist` 会装一个开机自启单元，否则重启后规则就没了（iptables 规则不持久，而失效时
 站点访问一切正常，你不会察觉，源站却重新对全网敞开）。
+
+它装完会**立刻执行一次**这个单元，所以你当场就知道开机时能不能跑通，不用等到下次重启。
+成功的话输出里会有「开机自启已安装并**当场执行成功**」。
 
 脚本只操作 `DOCKER-USER` 链，从不触碰 `INPUT`，**不会影响 SSH**。
 
@@ -500,7 +507,7 @@ chmod +x /etc/cron.daily/cardshop-backup
 而日志里什么都看不到。建议每月跑一次：
 
 ```bash
-cd ~/card-shop && sudo ./scripts/cf-only-firewall.sh --apply --domain=shop.example.com --yes
+cd ~/card-shop && sudo ./scripts/cf-only-firewall.sh --apply --yes
 ```
 
 （`docker/nginx/default.conf` 里那份列表需要手工同步，文件里标注了抓取日期。）

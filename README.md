@@ -317,8 +317,8 @@ HTTPS**（中文界面叫「始终使用 HTTPS」）和 **HSTS**。
 限速和 Bot 防护直连，CDN 等于白挂。
 
 ```bash
-sudo ./scripts/cf-only-firewall.sh --check --domain=你的域名    # 先体检，不改任何规则
-sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --persist
+sudo ./scripts/cf-only-firewall.sh --check    # 先体检，不改任何规则
+sudo ./scripts/cf-only-firewall.sh --apply --persist
 ```
 
 `--check` 会先确认：域名确实解析到 Cloudflare 网段、经 CF 能正常访问、外网网卡识别正确、
@@ -348,7 +348,7 @@ Cloudflare 的回源网段一年会变几次。`cf-only-firewall.sh` 每次运�
 建议每月跑一次：
 
 ```bash
-sudo ./scripts/cf-only-firewall.sh --apply --domain=你的域名 --yes
+sudo ./scripts/cf-only-firewall.sh --apply --yes
 ```
 
 `docker/nginx/default.conf` 里那份列表需要手工同步（文件里标注了抓取日期）。
@@ -432,8 +432,8 @@ gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d ca
 防火墙要在新服务器上重新装一次（规则在内核里，不随代码走）：
 
 ```bash
-sudo ./scripts/cf-only-firewall.sh --check --domain=新域名
-sudo ./scripts/cf-only-firewall.sh --apply --domain=新域名 --persist
+sudo ./scripts/cf-only-firewall.sh --check
+sudo ./scripts/cf-only-firewall.sh --apply --persist
 ```
 
 ### 7. 收尾核对

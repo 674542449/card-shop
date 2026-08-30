@@ -23,9 +23,12 @@
 #   链第一条必须放行 ESTABLISHED,RELATED。
 #
 # 用法：
-#   sudo ./scripts/cf-only-firewall.sh --check  --domain=example.com   只体检，不改规则
-#   sudo ./scripts/cf-only-firewall.sh --apply  --domain=example.com   应用规则
-#   sudo ./scripts/cf-only-firewall.sh --apply  --domain=example.com --persist
+#   sudo ./scripts/cf-only-firewall.sh --check            只体检，不改规则
+#   sudo ./scripts/cf-only-firewall.sh --apply            应用规则
+#   sudo ./scripts/cf-only-firewall.sh --apply --persist  应用并装开机自启
+#
+# 域名不用填：默认从同目录上级的 .env 里读 APP_URL（install.sh 写进去的那个）。
+# 要用别的域名才需要 --domain=example.com（不带 https://）。
 #   sudo ./scripts/cf-only-firewall.sh --status                        看当前生效的规则
 #   sudo ./scripts/cf-only-firewall.sh --remove                        撤销
 #
@@ -215,7 +218,9 @@ ip_in_cidr() {
 # 网段内」并拒绝执行，还反过来让用户去面板打开本来就开着的橙云。
 verify_behind_cf() {
     local d="$1" cf_list="${2:-$CF4_FALLBACK}" ips ip cidr inside=0 code
-    [ -n "$d" ] || die "--apply 必须同时给出 --domain=你的域名，用来验证站点确实挂在 Cloudflare 后面。"
+    [ -n "$d" ] || die "拿不到域名，无法验证站点是否挂在 Cloudflare 后面。
+  正常情况下它会从 $REPO_DIR/.env 的 APP_URL 自动读取 —— 先确认那一行是
+  APP_URL=https://你的域名，或者手工指定：--domain=你的域名（不带 https://）。"
 
     head2 "验证 $d 确实在 Cloudflare 后面"
     ips="$(getent ahosts "$d" 2>/dev/null | awk '{print $1}' | sort -u || true)"
@@ -387,14 +392,50 @@ ExecStart=${script_path} --boot --domain=${DOMAIN} --ports=${PORTS}${extra} --ye
 WantedBy=multi-user.target
 UNIT
     systemctl daemon-reload
-    systemctl enable cf-only-firewall.service >/dev/null 2>&1
-    ok "已安装开机自启：cf-only-firewall.service"
+    # --now 不是可有可无：只 enable 的话这个单元要到下次重启才第一次执行，
+    # 而它能不能跑通在那之前完全是未知的。真到那时失败了，表现是源站重新对全网
+    # 敞开，而站点访问一切正常、没有任何迹象。现在就跑一次，当场知道结果。
+    if systemctl enable --now cf-only-firewall.service >/dev/null 2>&1; then
+        sleep 1
+        if systemctl is-active --quiet cf-only-firewall.service; then
+            ok "开机自启已安装并**当场执行成功**：cf-only-firewall.service"
+        else
+            warn "开机自启已安装，但首次执行没有成功。开机后规则可能装不上，源站会重新暴露。"
+            warn "请查看原因：journalctl -u cf-only-firewall -n 40 --no-pager"
+        fi
+    else
+        warn "安装开机自启失败。规则现在是生效的，但重启后会消失。"
+    fi
     info "  查看：systemctl status cf-only-firewall"
 }
 
 # ---------------------------------------------------------------- 主流程
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+# 没给 --domain 就从 .env 的 APP_URL 推导。
+# 域名在部署过程里要填好几处（install.sh、这里、证书主机名、Turnstile），每多一处
+# 手填就多一次填错或填不一致的机会 —— 而这里填错的表现是「解析不到任何 IP」，
+# 错误信息完全不指向「你少打了个 www」。install.sh 已经把它写进 APP_URL 了，直接用。
+if [ -z "$DOMAIN" ] && [ -f "$REPO_DIR/.env" ]; then
+    DOMAIN="$(grep '^APP_URL=' "$REPO_DIR/.env" 2>/dev/null | cut -d= -f2- | head -1 || true)"
+    DOMAIN="${DOMAIN#http://}"
+    DOMAIN="${DOMAIN#https://}"
+    DOMAIN="${DOMAIN%/}"
+    case "$DOMAIN" in
+        ''|*localhost*|*[!a-zA-Z0-9.-]*|*' '*)
+            DOMAIN="" ;;                       # 明显不是域名就当没读到
+        *) DOMAIN_FROM_ENV=1 ;;
+    esac
+fi
+
+if [ -n "${DOMAIN_FROM_ENV:-}" ]; then
+    printf "
+  域名取自 %s 的 APP_URL：%s
+" "$REPO_DIR/.env" "$DOMAIN"
+    printf "  要用别的域名就加 --domain=... 覆盖。
+"
+fi
 
 case "$MODE" in
   status)
