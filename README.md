@@ -291,13 +291,17 @@ chmod 600 /opt/cf/key.pem
 **③ 启用 443 监听**——不要手工 `cp`，重跑安装脚本即可：
 
 ```bash
-./install.sh --recommended && docker compose up -d
+./install.sh --recommended && docker compose up -d --force-recreate nginx
 ```
 
 它只在**确认两个证书文件都在**时才创建 `docker/nginx/tls/ssl.conf`，所以不存在
-「配置建好了但证书还没到位」这个能把站点搞挂的中间状态。用 `up -d` 而不是
-`restart`：如果你改过 `TLS_CERT_DIR`，挂载点变了，`restart` 是拿旧挂载重启容器，
-新路径不会生效，nginx 照样找不到证书。
+「配置建好了但证书还没到位」这个能把站点搞挂的中间状态。
+
+**`--force-recreate nginx` 不能省。** `ssl.conf` 是通过 bind mount 进容器的，新建这个
+文件容器里立刻能看到——但 nginx 只在启动时读一次配置，不重建容器它就一直用旧配置，
+443 永远起不来。而下一步把 Cloudflare 改成 Full (strict) 之后，CF 连不上 443，站点直接
+521 下线。不带 `--force-recreate` 的 `docker compose up -d` 在 compose 配置没变时不会
+重建任何容器，只会输出一行 Running。
 
 `docker/nginx/tls/*.conf` 被 gitignore 忽略，所以你的证书路径不会跟 `git pull` 冲突。
 少了 `ssl.conf` 这一步的现象是「443 端口通了但连不上 HTTPS」，很容易误判成证书问题 ——
@@ -395,14 +399,18 @@ git clone https://github.com/674542449/card-shop.git && cd card-shop
 在**旧**服务器上导出：
 
 ```bash
-cd ~/card-shop && docker compose exec -T postgres pg_dump -U cardshop cardshop | gzip > backup.sql.gz
+cd ~/card-shop && docker compose exec -T postgres pg_dump -U cardshop --clean --if-exists cardshop | gzip > backup.sql.gz
 ```
 
 传到新服务器后导入（新站容器要先起来，让它建好库结构，再覆盖）：
 
 ```bash
-gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d cardshop
+gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d cardshop -v ON_ERROR_STOP=1
 ```
+
+`--clean --if-exists` 让脚本先删同名表再建（否则导进已经跑过迁移的库，全是「已存在」
+错误）；`-v ON_ERROR_STOP=1` 让 psql 遇错即停并返回非零 —— **默认它会跳过错误跑完并
+返回 0**，于是你以为导成功了，实际只导进去一半。
 
 上传的图片在 `storage/app/public/uploads/`，一并 rsync 过去。
 
@@ -540,10 +548,10 @@ docker compose exec app php artisan config:clear
 docker compose exec app php artisan view:clear
 
 # 数据库备份
-docker compose exec postgres pg_dump -U cardshop cardshop > backup.sql
+docker compose exec -T postgres pg_dump -U cardshop --clean --if-exists cardshop > backup.sql
 
 # 数据库恢复
-docker compose exec -T postgres psql -U cardshop cardshop < backup.sql
+docker compose exec -T postgres psql -U cardshop -d cardshop -v ON_ERROR_STOP=1 < backup.sql
 ```
 
 ## 更新升级
@@ -551,6 +559,7 @@ docker compose exec -T postgres psql -U cardshop cardshop < backup.sql
 ```bash
 git pull origin master
 docker compose up -d --build
+docker compose restart nginx    # nginx 启动时缓存了 app 的 IP，app 重建后会变
 docker compose exec app php artisan migrate
 docker compose exec app php artisan cache:clear
 ```

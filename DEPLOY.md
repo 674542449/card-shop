@@ -134,7 +134,10 @@ curl -s http://127.0.0.1/ | grep -c "csrf-token"
 - ② **必须输出 `readable`**。PHP-FPM 的工作进程以 `www-data` 运行，读不到 `.env` 就会
   全站 500，而启动日志会一片绿（entrypoint 里的迁移和种子是 root 跑的，照样成功）。
   这个坑真实发生过，非常难自己诊断。输出 `NOT-readable` 的话执行
-  `chgrp 33 .env && chmod 640 .env && docker compose up -d` 再验一次。
+  `sudo chgrp 33 .env && sudo chmod 640 .env && docker compose restart app` 再验一次。
+  两个 `sudo` 都不能省：把文件改成一个自己不是成员的组需要 root，普通用户即使是属主也会
+  被拒。用 `restart app` 而不是 `up -d`：compose 配置没变时 `up -d` 不会重建容器，
+  entrypoint 里那道权限修复和验证根本不会重跑。
 - ③ **输出必须大于 0**。只看 HTTP 状态码会被骗——Laravel 的 500 错误页也是一个完整的
   HTML 页面，`curl -o /dev/null -w '%{http_code}'` 分不出它和正常页面。
   用 `csrf-token` 做标记是因为它在应用的布局模板里，而框架的错误页没有它：能抓到它，
@@ -207,8 +210,14 @@ chmod 600 /opt/cf/key.pem
 `ssl.conf`，所以不存在「配置建好了但证书还没到位」这个能把站点搞挂的中间状态：
 
 ```bash
-cd ~/card-shop && ./install.sh --recommended && docker compose up -d
+cd ~/card-shop && ./install.sh --recommended && docker compose up -d --force-recreate nginx
 ```
+
+**必须带 `--force-recreate nginx`。** `ssl.conf` 是通过 bind mount 进容器的，新建这个文件
+容器里立刻就能看到——但 nginx 只在启动时读一次配置，不重建容器它就一直用着旧配置，
+443 永远起不来。而下一步把 Cloudflare 改成 Full (strict) 之后，CF 连不上 443，
+站点直接 521 下线。`docker compose up -d`（不带 --force-recreate）在 compose 配置没变时
+不会重建任何容器，只会输出一行 Running。
 
 **④ 回 Cloudflare 面板**，把加密模式从「灵活」改成 **完全（严格）/ Full (strict)**，
 并开启 **始终使用 HTTPS** 和 **HSTS**。
@@ -362,14 +371,18 @@ systemctl is-enabled cf-only-firewall
 
 ```bash
 cd ~/card-shop
-docker compose exec -T postgres pg_dump -U cardshop cardshop | gzip > backup.sql.gz
+docker compose exec -T postgres pg_dump -U cardshop --clean --if-exists cardshop | gzip > backup.sql.gz
 ```
 
 传到新服务器后导入（新站容器要先起来，让它建好库结构）：
 
 ```bash
-gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d cardshop
+gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d cardshop -v ON_ERROR_STOP=1
 ```
+
+两个参数都不能省。`--clean --if-exists` 让导出的脚本先删掉同名的表再建，否则导进一个
+已经跑过迁移、表都在的库只会一路报「已存在」；`-v ON_ERROR_STOP=1` 让 psql 一遇错就停并
+返回非零，**默认它会跳过错误继续跑完然后返回 0**，于是你以为导成功了，实际只导进去一半。
 
 上传的图片在 `storage/app/public/uploads/`，一并 `rsync` 过去。
 
@@ -385,11 +398,15 @@ SEO 里可能写死的旧域名），直接搬库过来它们全是旧值。
 ### 升级
 
 ```bash
-cd ~/card-shop && git pull && docker compose up -d --build
+cd ~/card-shop && git pull && docker compose up -d --build && docker compose restart nginx
 ```
 
 用 `up -d` 而不是 `restart`：`restart` 是拿旧配置和旧挂载重启容器，改过 `docker-compose.yml`
 或 `TLS_CERT_DIR` 的话不会生效。
+
+末尾那条 `restart nginx` 是因为 nginx 在启动时就把 `app:9000` 解析成了一个固定 IP。
+`up -d --build` 重建了 app 容器，它会拿到新 IP，而 nginx 不在重建之列，还握着旧地址 ——
+表现是升级后整站 502，而 `docker compose ps` 里五个容器全是 Up。
 
 升级后按第 4 步的三条验证跑一遍。
 
@@ -402,7 +419,7 @@ mkdir -p /opt/cardshop-backups
 cat > /etc/cron.daily/cardshop-backup <<'EOF'
 #!/bin/sh
 cd /root/card-shop || exit 1
-docker compose exec -T postgres pg_dump -U cardshop cardshop \
+docker compose exec -T postgres pg_dump -U cardshop --clean --if-exists cardshop \
   | gzip > /opt/cardshop-backups/db-$(date +%F).sql.gz
 find /opt/cardshop-backups -name 'db-*.sql.gz' -mtime +14 -delete
 EOF
