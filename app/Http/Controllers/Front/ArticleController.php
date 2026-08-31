@@ -23,7 +23,7 @@ class ArticleController extends Controller
         $seoKeywords = setting('seo_default_keywords', '');
         $currentCategory = null;
 
-        return view('front.article.list', compact(
+        return theme_view('article.list', compact(
             'categories',
             'articles',
             'seoTitle',
@@ -49,7 +49,7 @@ class ArticleController extends Controller
         $seoDescription = setting('seo_default_description', '');
         $seoKeywords = setting('seo_default_keywords', '');
 
-        return view('front.article.list', compact(
+        return theme_view('article.list', compact(
             'categories',
             'articles',
             'seoTitle',
@@ -81,7 +81,7 @@ class ArticleController extends Controller
         $seoDescription = $article->seo_description ?: ($article->summary ?: setting('seo_default_description', ''));
         $seoKeywords = $article->seo_keywords ?: setting('seo_default_keywords', '');
 
-        return view('front.article.show', compact(
+        return theme_view('article.show', compact(
             'article',
             'contentHtml',
             'relatedArticles',

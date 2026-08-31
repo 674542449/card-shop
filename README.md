@@ -247,6 +247,48 @@ docker compose exec app php artisan admin:password
 
 登录后在「系统设置 → 修改密码」里可以随时更改。
 
+## 前台模板
+
+后台 → 系统设置 → **前台模板** 里切换，立刻生效，不用重启。自带两套：
+
+| 目录 | 名称 | 长什么样 |
+|---|---|---|
+| `default` | 默认（表格式） | 商品按分类分组，每组一张表，信息密度高 |
+| `minimal` | 极简卡片流 | 浅色大留白，商品是卡片网格，数字全部等宽 |
+
+### 自己加一套
+
+模板就是 `resources/views/templates/` 下的一个目录，**建好目录就会出现在下拉框里**，
+不需要注册、不需要改代码：
+
+```
+resources/views/templates/你的模板名/
+    layout.blade.php          必需，其余都可以不写
+    home.blade.php            想改哪页就放哪页
+    product/list.blade.php
+    partials/xxx.blade.php
+public/themes/你的模板名/
+    style.css                 用 theme_asset('style.css') 引用
+```
+
+三条规矩：
+
+1. **没提供的视图会自动回落到 `default`。** 所以一套模板只需要覆盖它真想改的页面，
+   剩下的自动可用——不用把 17 个文件全抄一遍，抄漏一个的表现是白屏而不是提示。
+2. **页面用 `@extends(theme_view_path('layout'))`**，不要写死 `templates.xxx.layout`。
+   这样回落过来的页面会套在**你的**布局里，而不是默认布局。
+3. **互相引用用 `@themeInclude('partials.x')`** 而不是 `@include`。它同样走回落，
+   所以你的 partial 覆盖得了默认的，没覆盖的也能用。
+
+最省事的起点是抄 `minimal`：它的 `style.css` 只做两件事——覆盖 `front.css` 的
+`:root` token（`front.css` 从头到尾是变量驱动的，改 token 等于整站换肤，**包括你
+没覆盖的页面**），再加自己的组件。整套只有一个装饰元素，其余靠留白和发丝线。
+
+模板名只允许字母数字和 `-` `_`，最长 32 位——这个值会拼进视图路径，所以 `theme()`
+会校验它真实存在，不存在就回落 `default`。
+
+---
+
 ## HTTPS 与源站防护
 
 挂 Cloudflare 的标准做法，四步。前两步保证回源加密，后两步保证别人绕不过 CDN。

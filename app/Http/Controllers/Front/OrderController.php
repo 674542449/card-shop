@@ -199,7 +199,7 @@ class OrderController extends Controller
                     ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
             }
 
-            return view('front.order.detail', [
+            return theme_view('order.detail', [
                 'order' => $order,
                 'cards' => $order->cards,
                 'message' => '订单已支付成功',
@@ -226,7 +226,7 @@ class OrderController extends Controller
         // buyer then got a countdown initialised from a timestamp in the past, which
         // front.js reads as finished and reloads two seconds later, forever.
         if (!$order->isPending()) {
-            return view('front.order.pay', [
+            return theme_view('order.pay', [
                 'order' => $order,
                 'expired' => true,
                 'deadReason' => $order->status === 'closed'
@@ -240,7 +240,7 @@ class OrderController extends Controller
         // Try to generate payment URL if needed
         $paymentUrl = session('payment_url_' . $order->order_no);
 
-        return view('front.order.pay', [
+        return theme_view('order.pay', [
             'order' => $order,
             'expired' => false,
             'paymentUrl' => $paymentUrl,
@@ -288,7 +288,7 @@ class OrderController extends Controller
      */
     public function queryForm()
     {
-        return view('front.order.query');
+        return theme_view('order.query');
     }
 
     /**
@@ -312,7 +312,7 @@ class OrderController extends Controller
 
         $this->grantAccess($matched);
 
-        return view('front.order.result', ['orders' => $matched->load('product')]);
+        return theme_view('order.result', ['orders' => $matched->load('product')]);
     }
 
     /**
@@ -481,7 +481,7 @@ class OrderController extends Controller
 
         $cards = $order->isPaid() ? $order->cards : collect();
 
-        return view('front.order.detail', compact('order', 'cards', 'verified'));
+        return theme_view('order.detail', compact('order', 'cards', 'verified'));
     }
 
     /**

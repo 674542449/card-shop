@@ -34,7 +34,7 @@ class HomeController extends Controller
         $siteDescription = setting('site_description', '');
         $siteAnnouncement = setting('site_announcement', '');
 
-        return view('front.home', compact(
+        return theme_view('home', compact(
             'categories',
             'products',
             'groupedProducts',

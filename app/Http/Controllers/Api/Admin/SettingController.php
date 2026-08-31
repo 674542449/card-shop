@@ -41,6 +41,11 @@ class SettingController extends Controller
                 : $setting->value;
         }
 
+        // 前台模板是「磁盘上有什么」决定的，不是设置项能穷举的。把可选值一起带回去，
+        // 后台就不用再发一次请求，也不会出现下拉框里列着一个已经被删掉的模板。
+        // 下划线开头表示这不是设置项：update() 的白名单里没有它，写不进数据库。
+        $settings['_available_themes'] = themes_available();
+
         return response()->json($settings);
     }
 
@@ -48,7 +53,7 @@ class SettingController extends Controller
     {
         $settingGroups = [
             'site' => [
-                'site_name', 'site_description', 'site_logo', 'site_favicon',
+                'site_name', 'site_theme', 'site_description', 'site_logo', 'site_favicon',
                 'site_announcement', 'popup_announcement', 'popup_interval_hours',
                 'contact_text', 'contact_url', 'contact_qr_image',
             ],

@@ -25,7 +25,7 @@ class ProductController extends Controller
         $seoDescription = $category->description ?: setting('seo_default_description', '');
         $seoKeywords = setting('seo_default_keywords', '');
 
-        return view('front.product.list', compact(
+        return theme_view('product.list', compact(
             'category',
             'products',
             'seoTitle',
@@ -51,7 +51,7 @@ class ProductController extends Controller
         $seoDescription = $product->seo_description ?: setting('seo_default_description', '');
         $seoKeywords = $product->seo_keywords ?: setting('seo_default_keywords', '');
 
-        return view('front.product.show', compact(
+        return theme_view('product.show', compact(
             'product',
             'stockCount',
             'descriptionHtml',

@@ -74,6 +74,9 @@ class DatabaseSeeder extends Seeder
             // Site settings
             'site' => [
                 'site_name' => 'CardShop',
+                // 前台模板。值必须是 resources/views/templates/ 下真实存在的目录名，
+                // theme() 会校验，填了不存在的会回落 default。
+                'site_theme' => 'default',
                 'site_logo' => '',
                 'site_favicon' => '',
                 'site_description' => '',

@@ -6,12 +6,21 @@ import { getSettings, updateSettings, changePassword, sendTestEmail } from '../s
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
 
+/**
+ * 模板目录名 -> 显示名。没登记的模板直接显示目录名，所以别人加了模板不改这里也能用。
+ */
+const THEME_LABELS = {
+  default: '默认（表格式）',
+  minimal: '极简卡片流',
+};
+
 export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [initialValues, setInitialValues] = useState({});
   const [testTo, setTestTo] = useState('');
   const [testing, setTesting] = useState(false);
+  const [themes, setThemes] = useState(['default']);
   const [form] = ProForm.useForm();
 
   useEffect(() => {
@@ -20,7 +29,14 @@ export default function Settings() {
         const data = res.data?.data || res.data;
         // Switch fields are stored as the strings '0'/'1'; antd's Switch needs a real
         // boolean or it renders "0" as checked, since a non-empty string is truthy.
+        // 接口把磁盘上真实存在的模板一起带回来了（下划线开头，不是设置项）。
+        // 拿它填下拉框，而不是在前端写死一份列表——否则加了模板要改两处，
+        // 删了模板下拉框里还留着一个选了会回落 default 的死选项。
+        if (Array.isArray(data._available_themes) && data._available_themes.length) {
+          setThemes(data._available_themes);
+        }
         const normalised = { ...data, telegram_enabled: data.telegram_enabled === '1' || data.telegram_enabled === true };
+        delete normalised._available_themes;
         setInitialValues(normalised);
         form.setFieldsValue(normalised);
       })
@@ -77,6 +93,13 @@ export default function Settings() {
       children: (
         <>
           <ProFormText name="site_name" label="站点名称" />
+          <ProFormSelect
+            name="site_theme"
+            label="前台模板"
+            options={themes.map((t) => ({ label: THEME_LABELS[t] || t, value: t }))}
+            allowClear={false}
+            extra="切换后立刻生效，不用重启。模板放在 resources/views/templates/ 下，一个目录一套；新增目录后这里会自动出现。"
+          />
           <ProFormTextArea name="site_description" label="站点描述" fieldProps={{ rows: 3 }} />
           <ProForm.Item name="site_announcement" label="站点公告" extra="显示在首页和商品详情页顶部。">
             <RichTextEditor placeholder="支持加粗、颜色、链接、图片等" height={220} />
