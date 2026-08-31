@@ -266,7 +266,13 @@ if [ -f public/admin-assets/index.html ]; then
     # would notice: the backend keeps working, the admin just silently runs old code.
     # docker/php/spa-stamp.sh hashes the SPA source; the build writes that hash next to
     # the bundle. Comparing them turns a stale deploy into a visible line here.
-    if [ -f public/admin-assets/.build-stamp ] && [ -f docker/php/spa-stamp.sh ]; then
+    if [ ! -f public/admin-assets/.build-stamp ]; then
+        # Say so rather than skipping in silence. A missing stamp means the staleness
+        # check below never runs, and the deploy would look exactly like a clean one
+        # while the admin quietly serves whatever bundle happens to be committed.
+        echo "    !! No .build-stamp next to the bundle — cannot tell if it is current."
+        echo "    !! Regenerate it after building: sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp"
+    elif [ -f docker/php/spa-stamp.sh ]; then
         WANT="$(sh docker/php/spa-stamp.sh 2>/dev/null || echo unknown)"
         HAVE="$(cat public/admin-assets/.build-stamp)"
         if [ "$WANT" = "unknown" ]; then
