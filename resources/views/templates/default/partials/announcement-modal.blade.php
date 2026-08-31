@@ -31,7 +31,10 @@
      data-countdown="5">
     <div class="ann-modal-backdrop" data-ann-dismiss></div>
 
-    <div class="ann-modal-box" role="dialog" aria-modal="true" aria-labelledby="ann-modal-title">
+    {{-- tabindex="-1"：弹窗打开时焦点要落进对话框里。倒计时期间关闭按钮是禁用的，
+         没有这个落点，Tab 会直接走到背后的页面上去。 --}}
+    <div class="ann-modal-box" role="dialog" aria-modal="true"
+         aria-labelledby="ann-modal-title" tabindex="-1">
         <div class="ann-modal-header">
             <h2 class="ann-modal-title" id="ann-modal-title">公告</h2>
         </div>

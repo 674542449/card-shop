@@ -185,6 +185,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if (btn) {
                 if (!btn.dataset.guardLabel) btn.dataset.guardLabel = btn.textContent;
                 btn.disabled = true;
+                // is-loading 是样式钩子：主题可以在按钮上画一个转环。禁用态本身
+                // 只是让按钮变灰，看不出「正在处理」和「不能点」的区别。
+                btn.classList.add('is-loading');
                 btn.textContent = '处理中...';
             }
         });
@@ -198,6 +201,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!e.persisted) return;
         document.querySelectorAll('form[data-guard] button[type="submit"]').forEach(function (btn) {
             btn.disabled = false;
+            btn.classList.remove('is-loading');
             if (btn.dataset.guardLabel) btn.textContent = btn.dataset.guardLabel;
         });
     });
@@ -262,6 +266,23 @@ document.addEventListener('DOMContentLoaded', function () {
             var annRemaining = annSeconds;
             var annTimer = null;
             var annPreviousOverflow = document.body.style.overflow;
+            var annBox = annModal.querySelector('.ann-modal-box');
+            // 打开前记住焦点在哪，关闭时还回去。不还的话，关掉弹窗后焦点回到
+            // <body>，键盘用户得从页头重新 Tab 一遍才能回到原来的位置。
+            var annOpener = document.activeElement;
+
+            // 对话框里当前可聚焦的元素。每次 Tab 都重新查：关闭按钮在倒计时结束前
+            // 是禁用的，可聚焦集合会变。
+            var annFocusable = function () {
+                return Array.prototype.filter.call(
+                    annBox.querySelectorAll('a[href], button, input, textarea, select, [tabindex]'),
+                    function (el) {
+                        return !el.disabled
+                            && el.tabIndex >= 0
+                            && el.getClientRects().length > 0;
+                    }
+                );
+            };
 
             var annFinish = function () {
                 if (annTimer) {
@@ -283,6 +304,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 annModal.hidden = true;
                 document.body.style.overflow = annPreviousOverflow;
                 annWrite();
+                if (annOpener && typeof annOpener.focus === 'function') {
+                    annOpener.focus();
+                }
             };
 
             // Recorded on open, not on close. Someone who opens the home page and
@@ -292,6 +316,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             annModal.hidden = false;
             document.body.style.overflow = 'hidden';
+            annBox.focus();
 
             if (annRemaining > 0) {
                 annCounter.textContent = '(' + annRemaining + ')';
@@ -312,8 +337,39 @@ document.addEventListener('DOMContentLoaded', function () {
             });
 
             document.addEventListener('keydown', function (e) {
-                if (e.key === 'Escape' && !annModal.hidden) {
+                if (annModal.hidden) {
+                    return;
+                }
+
+                if (e.key === 'Escape') {
                     annClose();
+                    return;
+                }
+
+                // 焦点约束。aria-modal="true" 只告诉读屏「底下的内容不算数」，
+                // 它不拦 Tab —— 没有这段，键盘用户会 Tab 出对话框，走到一个被
+                // 遮罩盖住、点不到也看不清的页面里。
+                if (e.key !== 'Tab') {
+                    return;
+                }
+
+                var items = annFocusable();
+                if (!items.length) {
+                    // 倒计时还没结束，对话框里没有可聚焦的东西：焦点留在框上。
+                    e.preventDefault();
+                    annBox.focus();
+                    return;
+                }
+
+                var first = items[0];
+                var last = items[items.length - 1];
+
+                if (e.shiftKey && (document.activeElement === first || document.activeElement === annBox)) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
                 }
             });
         }
