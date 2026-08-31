@@ -77,7 +77,8 @@ export default function Products() {
       valueType: 'option',
       width: 200,
       render: (_, record) => [
-        <a key="cards" onClick={() => navigate(`/admin/products/${record.id}/cards`)}>
+        // 同 Orders.jsx：不要带 /admin 前缀，basename 已经包含它。
+        <a key="cards" onClick={() => navigate(`/products/${record.id}/cards`)}>
           卡密管理
         </a>,
         <a

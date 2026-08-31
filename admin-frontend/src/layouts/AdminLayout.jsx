@@ -4,6 +4,7 @@ import { ProLayout, PageContainer } from '@ant-design/pro-components';
 import { LogoutOutlined, UserOutlined, ShopOutlined } from '@ant-design/icons';
 import { Dropdown, Skeleton, Space, Typography, message } from 'antd';
 import { logout } from '../services/api';
+import { ADMIN_BASE } from '../base';
 import { menuTree, leafPaths, preloadPage, pageMeta } from '../navigation';
 
 /**
@@ -88,7 +89,11 @@ export default function AdminLayout({ admin }) {
       }}
       menuItemRender={(item, dom) => (
         <a
-          href={item.path}
+          // href 要带 basename。item.path 是路由内的路径（'/orders'），浏览器不认
+          // basename —— 直接拿它当 href，中键和「在新标签页打开」会跳到站点根下的
+          // /orders，那里没有任何路由，结果是 404。而这个 href 存在的唯一理由正是
+          // 支持这两种操作（见下面的 onClick 注释），不带前缀等于白写。
+          href={item.path === '/' ? ADMIN_BASE || '/' : `${ADMIN_BASE}${item.path}`}
           // Warm the page's chunk before the click. Hover for pointers, focus for
           // keyboard — a keyboard user must not be the only one who waits.
           onMouseEnter={() => preloadPage(item.path)}

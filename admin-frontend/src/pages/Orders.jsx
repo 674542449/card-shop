@@ -116,7 +116,11 @@ export default function Orders() {
       valueType: 'option',
       width: 80,
       render: (_, record) => [
-        <a key="detail" onClick={() => navigate(`/admin/orders/${record.id}`)}>
+        // 路径不带 /admin 前缀：Router 的 basename 已经是 ADMIN_BASE，这里再写一次会
+        // 拼成 {basename}/admin/orders/5，匹配不到任何路由，落到 <Route path="*"> 被
+        // 重定向回概览页 —— 表现就是「点查看没反应，跳回首页」。
+        // 同一个目的地在 Dashboard.jsx 的最近订单里用的就是这种写法。
+        <a key="detail" onClick={() => navigate(`/orders/${record.id}`)}>
           查看
         </a>,
       ],
