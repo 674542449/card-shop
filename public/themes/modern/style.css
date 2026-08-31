@@ -89,6 +89,33 @@
     --radius: var(--ui-radius-md);
     --shadow-sm: var(--ui-shadow-1);
     --shadow: var(--ui-shadow-2);
+    /* ---- 间距刻度 ----
+       改之前的实情：front.css 里 padding 有 12 个互不成体系的取值
+       （20 / 10-15 / 15 / 8-12 / 6-10 / 12-15 / 5-20 / 3-9 …），
+       每处按手感写。以 4px 为基数定一把尺，之后所有间距只从这里取。 */
+    --sp-1: 4px;
+    --sp-2: 8px;
+    --sp-3: 12px;
+    --sp-4: 16px;
+    --sp-5: 20px;
+    --sp-6: 24px;
+    --sp-8: 32px;
+    --sp-10: 40px;
+    --sp-12: 48px;
+    --sp-16: 64px;
+
+    /* ---- 字号刻度 ----
+       改之前：13px 出现 25 次、14px 出现 20 次——两个相邻字号在干同一件事，
+       这正是「没有刻度」的症状。收敛成 7 档，相邻两档之间要有肉眼可辨的差别，
+       否则层级传达不出去。 */
+    --fs-xs: 12px;    /* 徽章、眉标、辅助说明 */
+    --fs-sm: 13px;    /* 次要正文、表格内容 */
+    --fs-base: 14px;  /* 正文与表单 */
+    --fs-md: 16px;    /* 卡片标题 */
+    --fs-lg: 20px;    /* 区块标题、金额 */
+    --fs-xl: 28px;    /* 页面标题 */
+    --fs-2xl: 40px;   /* 首屏 */
+
     --font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
                    "PingFang SC", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
 }
@@ -687,3 +714,416 @@ body {
     .mcard, .ncard, .hero-btn, .mcard-buy, .site-nav li a, .hdr-action { transition: none; }
     .mcard:hover, .ncard:hover, .hero-btn-primary:hover { transform: none; }
 }
+
+/* ============================================================================
+   组件系统
+   ============================================================================
+   这一段是本次 UI 优化的地基：把散落在各页、各自为政的写法收敛成少数几个有状态、
+   有尺寸、有变体的组件。判断标准只有一条——同一个东西全站只能有一种写法。
+   ============================================================================ */
+
+/* ---------------------------------------------------------------- 按钮 */
+/* 收敛之前全站有 8 个按钮类：.btn-buy-sm / .btn-submit / .btn-all-articles /
+   .hero-btn(+primary/ghost) / .mcard-buy / .pcard-btn，尺寸、圆角、状态各不相同，
+   而且大多没有 disabled 和 loading 态。
+   这里定义一套 .btn 加变体与尺寸，并把历史类名映射过来，于是回落页面（订单、
+   文章）不改标记也能拿到统一的按钮。 */
+.btn,
+.btn-buy-sm,
+.btn-submit,
+.btn-all-articles {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    height: 40px;
+    padding: 0 var(--sp-5);
+    border: 1px solid transparent;
+    border-radius: var(--ui-radius-sm);
+    background: var(--ui-accent);
+    color: #fff;
+    font-size: var(--fs-base);
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    transition: background var(--ui-duration-fast) var(--ui-ease-out),
+                border-color var(--ui-duration-fast) var(--ui-ease-out),
+                color var(--ui-duration-fast) var(--ui-ease-out),
+                transform var(--ui-duration-fast) var(--ui-ease-out);
+}
+.btn svg,
+.btn-buy-sm svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.btn:hover,
+.btn-buy-sm:hover,
+.btn-submit:hover,
+.btn-all-articles:hover { background: var(--ui-accent-hover); color: #fff; }
+
+/* active 要有真实的按下反馈，而不是只换个颜色。1px 位移足够，再多就成了弹跳。 */
+.btn:active,
+.btn-buy-sm:active,
+.btn-submit:active { transform: translateY(1px); }
+
+.btn:focus-visible,
+.btn-buy-sm:focus-visible,
+.btn-submit:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ui-focus-ring);
+}
+
+/* disabled 保留尺寸：按钮一禁用就缩小的话，整行会跳。 */
+.btn:disabled,
+.btn.is-disabled {
+    opacity: .45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+/* loading 保留文字，只在左侧加一个转环。只转圈不留字，用户不知道自己点的是哪个动作。 */
+.btn.is-loading { pointer-events: none; opacity: .8; }
+.btn.is-loading::before {
+    content: "";
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: btn-spin .6s linear infinite;
+}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
+
+.btn-secondary {
+    background: var(--ui-bg-elevated);
+    border-color: var(--ui-border);
+    color: var(--ui-text-primary);
+}
+.btn-secondary:hover {
+    background: var(--ui-bg-soft);
+    border-color: var(--ui-border-strong);
+    color: var(--ui-text-primary);
+}
+.btn-ghost { background: none; color: var(--ui-text-secondary); }
+.btn-ghost:hover { background: var(--ui-bg-soft); color: var(--ui-text-primary); }
+
+.btn-sm,
+.btn-buy-sm { height: 32px; padding: 0 var(--sp-3); font-size: var(--fs-sm); }
+.btn-lg { height: 48px; padding: 0 var(--sp-6); font-size: var(--fs-md); }
+.btn-block,
+.btn-submit { width: 100%; }
+
+/* ---------------------------------------------------------------- 面板 */
+/* 页面的分区容器。之前每页各写各的卡片（.page-card / .card-panel / .pd-info /
+   .article-detail），圆角、内距、标题栏都不一致。 */
+.panel {
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    overflow: hidden;
+}
+.panel + .panel { margin-top: var(--sp-4); }
+.panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
+    border-bottom: 1px solid var(--ui-border);
+    font-size: var(--fs-base);
+    font-weight: 600;
+    color: var(--ui-text-primary);
+}
+.panel-body { padding: var(--sp-5); }
+.panel-body > :first-child { margin-top: 0; }
+.panel-body > :last-child { margin-bottom: 0; }
+
+/* ---------------------------------------------------------------- 表单 */
+.field { margin-bottom: var(--sp-4); }
+.field:last-child { margin-bottom: 0; }
+.field-label {
+    display: block;
+    margin-bottom: var(--sp-2);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    color: var(--ui-text-secondary);
+}
+.field-label .req { color: var(--ui-danger); margin-left: 2px; }
+
+.input,
+.pd-form .form-input,
+.form-input {
+    display: block;
+    width: 100%;
+    height: 42px;
+    padding: 0 var(--sp-3);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-sm);
+    background: var(--ui-bg-elevated);
+    color: var(--ui-text-primary);
+    font-size: var(--fs-base);
+    font-family: inherit;
+    transition: border-color var(--ui-duration-fast) var(--ui-ease-out),
+                box-shadow var(--ui-duration-fast) var(--ui-ease-out);
+}
+.input::placeholder,
+.form-input::placeholder { color: var(--ui-text-muted); }
+.input:hover,
+.form-input:hover { border-color: var(--ui-border-strong); }
+.input:focus,
+.form-input:focus {
+    outline: none;
+    border-color: var(--ui-accent);
+    box-shadow: 0 0 0 3px var(--ui-focus-ring);
+}
+.input:disabled,
+.form-input:disabled {
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-muted);
+    cursor: not-allowed;
+}
+/* 错误态给边框**和**下方文案。只靠红边框的话，色觉障碍用户看不出是哪个字段错了。 */
+.input.is-invalid,
+.form-input.is-invalid {
+    border-color: var(--ui-danger);
+    box-shadow: 0 0 0 3px var(--ui-danger-soft);
+}
+.field-error {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1);
+    margin-top: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--ui-danger);
+}
+.field-error svg { width: 14px; height: 14px; flex-shrink: 0; }
+.field-hint {
+    margin-top: var(--sp-2);
+    font-size: var(--fs-sm);
+    color: var(--ui-text-muted);
+}
+
+/* ---------------------------------------------------------------- 订单状态 */
+/* 状态不能只靠颜色区分：色觉障碍用户会把「已完成」和「已取消」看成同一个东西。
+   每个状态配一个形状不同的图标，再加文字。 */
+.opill {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    height: 24px;
+    padding: 0 var(--sp-2);
+    border-radius: 999px;
+    font-size: var(--fs-xs);
+    font-weight: 500;
+    white-space: nowrap;
+}
+.opill svg { width: 13px; height: 13px; }
+.opill-paid      { background: var(--ui-success-soft); color: var(--ui-success); }
+.opill-pending   { background: var(--ui-warning-soft); color: var(--ui-warning); }
+.opill-cancelled { background: var(--ui-bg-muted);     color: var(--ui-text-muted); }
+.opill-refunded  { background: var(--ui-info-soft);    color: var(--ui-info); }
+
+/* ---------------------------------------------------------------- 空状态 */
+.state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--sp-16) var(--sp-5);
+    color: var(--ui-text-muted);
+}
+.state-icon {
+    width: 48px;
+    height: 48px;
+    margin-bottom: var(--sp-4);
+    color: var(--ui-border-strong);
+}
+.state-icon svg { width: 100%; height: 100%; }
+.state-title {
+    font-size: var(--fs-md);
+    font-weight: 600;
+    color: var(--ui-text-primary);
+    margin-bottom: var(--sp-2);
+}
+.state-desc { font-size: var(--fs-base); margin-bottom: var(--sp-5); max-width: 32em; }
+.state-desc:last-child { margin-bottom: 0; }
+
+/* ---------------------------------------------------------------- 骨架屏 */
+/* 只用在真的有等待的地方（支付轮询）。给内容占位而不是转个圈，数据到达时页面
+   不会整体跳动。 */
+.skel {
+    background: linear-gradient(90deg,
+        var(--ui-bg-soft) 25%, var(--ui-bg-muted) 37%, var(--ui-bg-soft) 63%);
+    background-size: 400% 100%;
+    animation: skel-shimmer 1.4s ease infinite;
+    border-radius: var(--ui-radius-sm);
+}
+@keyframes skel-shimmer {
+    0%   { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+.skel-line { height: 12px; margin-bottom: var(--sp-2); }
+.skel-line:last-child { margin-bottom: 0; width: 60%; }
+
+/* ---------------------------------------------------------------- Toast */
+.toast-wrap {
+    position: fixed;
+    left: 50%;
+    bottom: var(--sp-6);
+    transform: translateX(-50%);
+    z-index: 1200;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    pointer-events: none;
+}
+.toast {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    max-width: 90vw;
+    padding: var(--sp-3) var(--sp-4);
+    border-radius: var(--ui-radius-md);
+    background: var(--ui-text-primary);
+    color: var(--ui-bg-elevated);
+    font-size: var(--fs-base);
+    box-shadow: var(--ui-shadow-2);
+    animation: toast-in .22s var(--ui-ease-out);
+}
+.toast svg { width: 16px; height: 16px; flex-shrink: 0; }
+.toast-success svg { color: var(--ui-success); }
+.toast-error svg { color: var(--ui-danger); }
+.toast.is-out { animation: toast-out .18s ease forwards; }
+@keyframes toast-in  { from { opacity: 0; transform: translateY(8px); } }
+@keyframes toast-out { to   { opacity: 0; transform: translateY(8px); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .skel { animation: none; }
+    .toast,
+    .toast.is-out { animation: none; }
+    .btn.is-loading::before { animation-duration: 1.6s; }
+}
+
+/* ============================================================================
+   回落页面：硬编码浅色的全量覆盖
+   ============================================================================
+   前一版只挑了几个显眼的类来覆盖，是逐条打补丁——于是漏了一批，而漏掉的表现不是
+   「颜色不好看」，是**深色模式下白字压白底，内容直接读不出来**。最严重的一处在结算
+   路径上：选中的支付方式那张卡片，文字消失，只剩一个空框。
+
+   这次改成系统性的：把 front.css 里全部 17 处硬编码浅色背景和 8 处浅色边框一次列全
+   （grep 'background: #f|#e|#d' 与 'solid #f'），逐一接到 token 上。
+   ============================================================================ */
+
+/* ---- 表面 ---- */
+.product-table tbody tr:hover,
+.order-table tbody tr:hover,
+.sidebar-card-header,
+.article-block-header,
+.pd-tabs {
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-primary);
+}
+.sidebar-card,
+.article-block {
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+}
+
+/* ---- 分隔线：原值 #f0f0f0 / #f5f5f5 在深色下比卡片本身还亮 ---- */
+.product-table tbody td,
+.order-table tbody td,
+.sidebar-article-list li,
+.article-list li,
+.card-panel-header,
+.order-info-table tr td,
+.order-info-table tr th {
+    border-color: var(--ui-border);
+}
+
+/* ---- 支付方式选中态 ----
+   front.css:1118 把选中背景写死成 #f0fdfa（浅薄荷），而标签文字走 --text-color。
+   深色下 #f5f5f7 压 #f0fdfa 约 1.03:1 —— 买家选中支付宝之后，那张卡片上唯一告诉他
+   「要用什么付款」的文字就消失了。这是整条结算路径上最不能出的一种问题。 */
+.pay-radio:checked + .pay-option-inner {
+    background: var(--ui-accent-soft);
+    border-color: var(--ui-accent);
+}
+.pay-option-inner { background: var(--ui-bg-elevated); border-color: var(--ui-border); }
+.pay-label { color: var(--ui-text-primary); }
+
+/* ---- 阶梯价当前档 ---- */
+.wholesale-table .active-tier { background: var(--ui-accent-soft); }
+.wholesale-table th, .wholesale-table td { border-color: var(--ui-border); }
+.wholesale-table th { background: var(--ui-bg-soft); color: var(--ui-text-muted); }
+
+/* ---- 富文本里的 code / pre / blockquote ----
+   商品描述和文章正文都会用到，而发卡商品的描述里放兑换码格式、激活步骤几乎必然
+   用到代码块——正好是买家下单前要读的那部分。原值是硬编码 #f5f5f5 / #f9f9f9。 */
+.pd-tab-content code,
+.pd-tab-content pre,
+.article-detail .content code,
+.article-detail .content pre {
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-primary);
+    border: 1px solid var(--ui-border);
+}
+.pd-tab-content pre code,
+.article-detail .content pre code {
+    background: none;
+    border: 0;
+    color: inherit;
+}
+.pd-tab-content blockquote,
+.article-detail .content blockquote {
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-secondary);
+    border-left: 3px solid var(--ui-accent);
+}
+
+/* ---- 订单状态胶囊 ----
+   原来四个状态各写死一对浅底深字（#fff3cd/#856404 …）。它们自身对比度是够的，
+   但在深色页面上会变成四块刺眼的浅色贴纸，而且和 modern 已有的 .badge 是同一件
+   东西的两份实现。接到语义 token 上，明暗两套都跟着走。 */
+.order-status { border-radius: 999px; font-weight: 500; }
+.order-status.pending  { background: var(--ui-warning-soft); color: var(--ui-warning); }
+.order-status.paid     { background: var(--ui-success-soft); color: var(--ui-success); }
+.order-status.expired  { background: var(--ui-bg-muted);     color: var(--ui-text-muted); }
+.order-status.closed   { background: var(--ui-danger-soft);  color: var(--ui-danger); }
+
+/* ---- 提示条 ---- */
+.alert {
+    border-radius: var(--ui-radius-md);
+    border-width: 1px;
+    border-style: solid;
+}
+.alert-success { background: var(--ui-success-soft); color: var(--ui-success); border-color: transparent; }
+.alert-danger  { background: var(--ui-danger-soft);  color: var(--ui-danger);  border-color: transparent; }
+.alert-warning { background: var(--ui-warning-soft); color: var(--ui-warning); border-color: transparent; }
+
+/* ============================================================================
+   页头：复位 front.css 的固定行高
+   ============================================================================
+   front.css 的页头是 --header-height: 50px 的定高横条，靠 line-height: 50px 让内容
+   垂直居中。modern 把页头改成了自动高度（padding 撑开），但没有复位那个行高——
+   于是 logo 胶囊被 50px 的行高撑到 66px，页头实际约 87px，而导航行只有 34px，
+   两者完全不在一条线上。
+   ============================================================================ */
+.site-header,
+.site-header .container,
+.site-logo,
+.site-nav li a,
+.hdr-action { line-height: 1; }
+
+.site-logo { height: 36px; box-sizing: border-box; }
+
+/* 移动抽屉原本按 --header-height（50px）定位，而 modern 的页头是自动高度（约 60px），
+   于是抽屉会盖住页头底部一截；它的 z-index 又高于页头，盖住的部分点不到。
+   改成紧贴页头下沿：sticky 页头的高度由内容决定，用 100% 让它自己算。 */
+.mobile-nav {
+    top: auto;
+    z-index: 890;
+    box-shadow: var(--ui-shadow-2);
+}
+.site-header { position: sticky; }
