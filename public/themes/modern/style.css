@@ -1,0 +1,689 @@
+/* ============================================================================
+   modern —— 仿独角数卡新版前台
+   ============================================================================
+
+   参照 https://shop2.ino.ee/ 的视觉系统实现。那是一套 Vue + Tailwind 的 SPA，
+   这里用 Blade + 原生 CSS 重新实现同一套设计语言，而不是移植它的技术栈。
+
+   设计 token 取自该站运行时的实际计算值（明暗两套），不是目测配的：这是一套
+   苹果风的系统——#f5f5f7 的页底、#1d1d1f 的正文、#0071e3 的强调色、四档圆角、
+   以及一组负扩散的大模糊柔影。
+
+   加载顺序：front.css 在前，本文件在后。front.css 通体变量驱动，所以覆盖它的
+   :root 就能把本模板没有覆盖的页面（订单查询、订单详情、文章页）一起带过来。
+
+   深色模式是这套设计的显著特征，所以做了：跟随系统偏好，页头有开关，选择存在
+   localStorage。回落页面的深色由下方「回落页面的深色补齐」一节负责——front.css
+   有若干处硬编码的浅色，仅靠 token 覆盖不到。
+   ============================================================================ */
+
+:root {
+    /* ---- 取自目标站的明色 token ---- */
+    --ui-bg-page: #f5f5f7;
+    --ui-bg-elevated: #ffffff;
+    --ui-bg-soft: #f2f2f4;
+    --ui-bg-muted: #ececf0;
+    --ui-bg-overlay: rgba(255, 255, 255, .8);
+
+    --ui-text-primary: #1d1d1f;
+    --ui-text-secondary: #424245;
+    --ui-text-muted: #6e6e73;
+    --ui-text-on-accent: #ffffff;
+
+    --ui-border: rgba(0, 0, 0, .12);
+    --ui-border-strong: rgba(0, 0, 0, .2);
+
+    --ui-accent: #0071e3;
+    --ui-accent-hover: #0067d2;
+    --ui-accent-soft: rgba(0, 113, 227, .14);
+
+    --ui-success: #2f8f6f;
+    --ui-success-soft: rgba(47, 143, 111, .14);
+    --ui-warning: #b06b00;
+    --ui-warning-soft: rgba(176, 107, 0, .15);
+    --ui-danger: #c9342f;
+    --ui-danger-soft: rgba(201, 52, 47, .15);
+    --ui-info: #0a84ff;
+    --ui-info-soft: rgba(10, 132, 255, .14);
+    --ui-focus-ring: rgba(0, 113, 227, .22);
+
+    --ui-radius-sm: .5rem;
+    --ui-radius-md: .75rem;
+    --ui-radius-lg: 1rem;
+    --ui-radius-xl: 1.5rem;
+
+    /* 负扩散是这套阴影的关键：模糊很大而扩散为负，于是影子只在下方晕开一点点，
+       不会在元素四周描出一圈灰边。这是它看起来「轻」的原因。 */
+    --ui-shadow-1: 0 10px 24px -18px rgba(0, 0, 0, .26);
+    --ui-shadow-2: 0 18px 38px -24px rgba(0, 0, 0, .3);
+    --ui-shadow-card: 0 24px 52px -32px rgba(0, 0, 0, .35);
+
+    --ui-leading-display: 1.1;
+    --ui-leading-title: 1.2;
+    --ui-leading-body: 1.62;
+
+    --ui-duration-fast: .15s;
+    --ui-duration-normal: .25s;
+    --ui-ease-out: cubic-bezier(.16, 1, .3, 1);
+
+    /* ---- 接到 front.css 的 token 上，让回落页面一起换肤 ---- */
+    --body-bg: var(--ui-bg-page);
+    --card-bg: var(--ui-bg-elevated);
+    --quote-bg: var(--ui-bg-elevated);
+    --footer-bg: transparent;
+    --text-color: var(--ui-text-primary);
+    --text-muted: var(--ui-text-secondary);
+    --text-light: var(--ui-text-muted);
+    --border-color: var(--ui-border);
+    --table-header-bg: var(--ui-bg-soft);
+    --teal: var(--ui-accent);
+    --teal-dark: var(--ui-accent-hover);
+    --price-color: var(--ui-text-primary);
+    --warm-btn: var(--ui-accent);
+    --warm-btn-hover: var(--ui-accent-hover);
+    --thumb-bg: var(--ui-bg-soft);
+    --thumb-icon: var(--ui-text-muted);
+    --container-width: 1200px;
+    --section-gap: 40px;
+    --block-gap: 16px;
+    --radius: var(--ui-radius-md);
+    --shadow-sm: var(--ui-shadow-1);
+    --shadow: var(--ui-shadow-2);
+    --font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   "PingFang SC", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* 深色。data-ui-theme 由页头的开关写在 <html> 上，优先于系统偏好；没有这个属性时
+   才跟随 prefers-color-scheme。两个来源分开写，是为了「我明确选了浅色」不会被系统
+   的深色偏好推翻。 */
+:root[data-ui-theme="dark"] {
+    --ui-bg-page: #000000;
+    --ui-bg-elevated: #1c1c1e;
+    --ui-bg-soft: #2c2c2e;
+    --ui-bg-muted: #242426;
+    --ui-bg-overlay: rgba(28, 28, 30, .78);
+    --ui-text-primary: #f5f5f7;
+    --ui-text-secondary: #d2d2d7;
+    --ui-text-muted: #8e8e93;
+    --ui-border: rgba(255, 255, 255, .14);
+    --ui-border-strong: rgba(255, 255, 255, .24);
+    --ui-accent: #0a84ff;
+    --ui-accent-hover: #409cff;
+    --ui-accent-soft: rgba(10, 132, 255, .24);
+    --ui-success: #30d158;
+    --ui-success-soft: rgba(48, 209, 88, .22);
+    --ui-warning: #ffd60a;
+    --ui-warning-soft: rgba(255, 214, 10, .24);
+    --ui-danger: #ff453a;
+    --ui-danger-soft: rgba(255, 69, 58, .24);
+    --ui-info: #64d2ff;
+    --ui-info-soft: rgba(100, 210, 255, .24);
+    --ui-focus-ring: rgba(10, 132, 255, .32);
+    --ui-shadow-1: 0 14px 30px -22px rgba(0, 0, 0, .72);
+    --ui-shadow-2: 0 24px 48px -28px rgba(0, 0, 0, .78);
+    --ui-shadow-card: 0 30px 70px -34px rgba(0, 0, 0, .88);
+}
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-ui-theme="light"]) {
+        --ui-bg-page: #000000;
+        --ui-bg-elevated: #1c1c1e;
+        --ui-bg-soft: #2c2c2e;
+        --ui-bg-muted: #242426;
+        --ui-bg-overlay: rgba(28, 28, 30, .78);
+        --ui-text-primary: #f5f5f7;
+        --ui-text-secondary: #d2d2d7;
+        --ui-text-muted: #8e8e93;
+        --ui-border: rgba(255, 255, 255, .14);
+        --ui-border-strong: rgba(255, 255, 255, .24);
+        --ui-accent: #0a84ff;
+        --ui-accent-hover: #409cff;
+        --ui-accent-soft: rgba(10, 132, 255, .24);
+        --ui-success: #30d158;
+        --ui-success-soft: rgba(48, 209, 88, .22);
+        --ui-warning: #ffd60a;
+        --ui-warning-soft: rgba(255, 214, 10, .24);
+        --ui-danger: #ff453a;
+        --ui-danger-soft: rgba(255, 69, 58, .24);
+        --ui-info: #64d2ff;
+        --ui-info-soft: rgba(100, 210, 255, .24);
+        --ui-shadow-1: 0 14px 30px -22px rgba(0, 0, 0, .72);
+        --ui-shadow-2: 0 24px 48px -28px rgba(0, 0, 0, .78);
+        --ui-shadow-card: 0 30px 70px -34px rgba(0, 0, 0, .88);
+    }
+}
+
+body {
+    background: var(--ui-bg-page);
+    color: var(--ui-text-primary);
+    line-height: var(--ui-leading-body);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- 页头 */
+/* 目标站的页头是一条白色横栏：左边一枚药丸形的 logo 盒，中间带图标的导航（当前项
+   是一枚浅蓝药丸），右边一组图标动作。front.css 的页头是按深色底写的，颜色多处
+   硬编码 #fff，所以这里逐条覆盖，并且选择器要对齐它的写法（.site-nav li a）。 */
+.site-header {
+    position: sticky;
+    top: 0;
+    z-index: 900;
+    height: auto;
+    padding: 10px 0;
+    background: var(--ui-bg-overlay);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 1px solid var(--ui-border);
+}
+.site-header .container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.site-logo,
+.site-logo:hover {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 16px;
+    border: 1px solid var(--ui-border);
+    border-radius: 999px;
+    background: var(--ui-bg-elevated);
+    color: var(--ui-text-primary);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    box-shadow: var(--ui-shadow-1);
+}
+.site-logo .logo-icon {
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    border-radius: 6px;
+    background: var(--ui-accent);
+    color: #fff;
+}
+
+/* 导航居中：靠 nav 的 margin auto，而不是给容器 justify-content——右侧的动作组
+   仍要靠右，三段式布局用一个 auto margin 就够，不需要额外的包裹层。 */
+.site-header nav { margin: 0 auto; }
+.site-nav { gap: 4px; }
+.site-nav li a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 14px;
+    margin: 0;
+    border-radius: 999px;
+    background: none;
+    color: var(--ui-text-secondary);
+    font-size: 14px;
+    transition: background var(--ui-duration-fast) var(--ui-ease-out),
+                color var(--ui-duration-fast) var(--ui-ease-out);
+}
+.site-nav li a svg { width: 15px; height: 15px; flex-shrink: 0; }
+.site-nav li a:hover {
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-primary);
+}
+.site-nav li a.active {
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+    font-weight: 500;
+}
+
+.hdr-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+.hdr-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 34px;
+    padding: 0 12px;
+    border-radius: 999px;
+    border: none;
+    background: none;
+    color: var(--ui-text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background var(--ui-duration-fast) var(--ui-ease-out),
+                color var(--ui-duration-fast) var(--ui-ease-out);
+}
+.hdr-action:hover { background: var(--ui-bg-soft); color: var(--ui-text-primary); }
+.hdr-action svg { width: 16px; height: 16px; }
+.hdr-action:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ui-focus-ring);
+}
+/* 开关按当前模式只显示一个图标：两个都画出来再靠 CSS 切换，避免依赖 JS 换图标，
+   于是 JS 只负责改 <html> 上的属性这一件事。 */
+.icon-moon, .icon-sun { display: none; }
+:root:not([data-ui-theme="dark"]) .icon-moon { display: block; }
+:root[data-ui-theme="dark"] .icon-sun { display: block; }
+@media (prefers-color-scheme: dark) {
+    :root:not([data-ui-theme]) .icon-moon { display: none; }
+    :root:not([data-ui-theme]) .icon-sun { display: block; }
+}
+
+.menu-toggle { color: var(--ui-text-primary); }
+.mobile-nav {
+    background: var(--ui-bg-elevated);
+    border-bottom: 1px solid var(--ui-border);
+}
+.mobile-nav a { color: var(--ui-text-secondary); border-bottom: 1px solid var(--ui-border); }
+.mobile-nav a:hover, .mobile-nav a.active { background: var(--ui-bg-soft); color: var(--ui-text-primary); }
+
+/* ---------------------------------------------------------------- 首屏 */
+/* 深色渐变的大圆角卡片，右侧一块等距立方体的装饰。装饰用纯 CSS 画（渐变 + 变换），
+   不引图片：这块是纯装饰，为它多一次网络请求不划算，而且换配色时图片会失配。 */
+.hero {
+    position: relative;
+    overflow: hidden;
+    border-radius: var(--ui-radius-xl);
+    background: linear-gradient(135deg, #1e2a5a 0%, #16213f 55%, #0f1729 100%);
+    color: #fff;
+    padding: 48px 44px;
+    margin-bottom: var(--section-gap);
+    box-shadow: var(--ui-shadow-card);
+}
+.hero::after {
+    /* 右侧的几何装饰：两层同心的柔光，暗示一块发光的立体物。 */
+    content: "";
+    position: absolute;
+    right: -60px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 420px;
+    height: 420px;
+    background:
+        radial-gradient(circle at 40% 40%, rgba(56, 189, 248, .28), transparent 62%),
+        radial-gradient(circle at 65% 60%, rgba(20, 184, 166, .22), transparent 58%);
+    pointer-events: none;
+}
+.hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 13px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .12);
+    border: 1px solid rgba(255, 255, 255, .18);
+    font-size: 12px;
+    letter-spacing: .02em;
+    margin-bottom: 20px;
+}
+.hero-badge::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #34d399;
+}
+.hero h1 {
+    position: relative;
+    z-index: 1;
+    font-size: 40px;
+    line-height: var(--ui-leading-display);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin: 0 0 16px;
+    color: #fff;
+}
+.hero-body {
+    position: relative;
+    z-index: 1;
+    max-width: 620px;
+    font-size: 14px;
+    line-height: var(--ui-leading-body);
+    color: rgba(255, 255, 255, .78);
+    margin-bottom: 28px;
+}
+.hero-body p { margin: 0 0 8px; }
+.hero-actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 12px; }
+.hero-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 42px;
+    padding: 0 22px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: transform var(--ui-duration-fast) var(--ui-ease-out),
+                background var(--ui-duration-fast) var(--ui-ease-out);
+}
+.hero-btn-primary { background: #fff; color: #1d1d1f; }
+.hero-btn-primary:hover { background: #fff; color: #1d1d1f; transform: translateY(-1px); }
+.hero-btn-ghost {
+    background: rgba(255, 255, 255, .1);
+    border: 1px solid rgba(255, 255, 255, .22);
+    color: #fff;
+}
+.hero-btn-ghost:hover { background: rgba(255, 255, 255, .18); color: #fff; }
+.hero-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+/* ---------------------------------------------------------------- 区块标题 */
+.sec-head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+.sec-head h2 {
+    font-size: 28px;
+    line-height: var(--ui-leading-title);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ui-text-primary);
+    margin: 0 0 6px;
+}
+.sec-head .sec-sub {
+    font-size: 14px;
+    color: var(--ui-text-muted);
+    margin: 0;
+}
+.sec-head .sec-link {
+    flex-shrink: 0;
+    font-size: 14px;
+    color: var(--ui-accent);
+    white-space: nowrap;
+}
+.sec-head .sec-link:hover { color: var(--ui-accent-hover); }
+
+/* ---------------------------------------------------------------- 商品网格 */
+.mgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(234px, 1fr));
+    gap: 16px;
+    margin-bottom: var(--section-gap);
+}
+
+.mcard {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    padding: 16px;
+    transition: transform var(--ui-duration-normal) var(--ui-ease-out),
+                box-shadow var(--ui-duration-normal) var(--ui-ease-out),
+                border-color var(--ui-duration-normal) var(--ui-ease-out);
+}
+.mcard:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--ui-shadow-card);
+    border-color: var(--ui-border-strong);
+}
+.mcard:focus-within { box-shadow: 0 0 0 3px var(--ui-focus-ring); }
+
+/* 分类小标。uppercase + 字距，和目标站一致——它把分类当作卡片的「眉标」，
+   而不是一个可点的标签。 */
+.mcard-eyebrow {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--ui-text-muted);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mcard-title {
+    display: block;
+    font-size: 16px;
+    line-height: 1.35;
+    font-weight: 700;
+    color: var(--ui-text-primary);
+    margin-bottom: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.mcard-title::after { content: ""; position: absolute; inset: 0; }
+.mcard:hover .mcard-title { color: var(--ui-accent); }
+
+.mcard-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+
+.badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+.badge svg { width: 12px; height: 12px; }
+.badge-success { background: var(--ui-success-soft); color: var(--ui-success); }
+.badge-info    { background: var(--ui-info-soft);    color: var(--ui-info); }
+.badge-warning { background: var(--ui-warning-soft); color: var(--ui-warning); }
+.badge-danger  { background: var(--ui-danger-soft);  color: var(--ui-danger); }
+
+.mcard-desc {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ui-text-secondary);
+    margin-bottom: 20px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* 底部：分隔线上方是价格块（小标 + 数字），右边一个图标按钮。
+   mt-auto 把它钉在底部，于是标题长短不同的卡片，价格仍在同一条线上。 */
+.mcard-foot {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--ui-border);
+}
+.mcard-price-label {
+    display: block;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--ui-text-muted);
+    margin-bottom: 1px;
+}
+.mcard-price {
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ui-text-primary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.mcard-price .cur { font-size: 12px; font-weight: 500; color: var(--ui-text-muted); margin-left: 3px; }
+
+.mcard-buy {
+    position: relative;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    flex-shrink: 0;
+    border-radius: var(--ui-radius-sm);
+    border: 1px solid var(--ui-border);
+    background: none;
+    color: var(--ui-text-muted);
+    transition: all var(--ui-duration-fast) var(--ui-ease-out);
+}
+.mcard-buy svg { width: 17px; height: 17px; }
+.mcard-buy:hover {
+    background: var(--ui-accent);
+    border-color: var(--ui-accent);
+    color: #fff;
+}
+.mcard-buy:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ui-focus-ring); }
+
+.mcard.is-out { opacity: .72; }
+.mcard.is-out:hover { transform: none; box-shadow: none; border-color: var(--ui-border); }
+.mcard.is-out .mcard-title { color: var(--ui-text-muted); }
+.mcard-buy.is-disabled { opacity: .4; cursor: not-allowed; }
+.mcard-buy.is-disabled:hover { background: none; border-color: var(--ui-border); color: var(--ui-text-muted); }
+
+/* ---------------------------------------------------------------- 动态卡片 */
+.ncard {
+    display: block;
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    padding: 20px;
+    transition: transform var(--ui-duration-normal) var(--ui-ease-out),
+                box-shadow var(--ui-duration-normal) var(--ui-ease-out);
+}
+.ncard:hover { transform: translateY(-2px); box-shadow: var(--ui-shadow-2); }
+.ncard-tag {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+    font-size: 11.5px;
+    font-weight: 500;
+    margin-bottom: 12px;
+}
+.ncard h3 {
+    font-size: 17px;
+    font-weight: 700;
+    color: var(--ui-text-primary);
+    margin: 0 0 8px;
+    line-height: 1.35;
+}
+.ncard p {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--ui-text-secondary);
+    margin: 0 0 14px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+.ncard-more { font-size: 13px; color: var(--ui-accent); }
+
+/* ---------------------------------------------------------------- 页脚 */
+.site-footer {
+    background: transparent;
+    border-top: 1px solid var(--ui-border);
+    color: var(--ui-text-muted);
+    font-size: 13px;
+    padding: 32px 0;
+    margin-top: var(--section-gap);
+}
+
+/* ---------------------------------------------------------------- 空状态 */
+.empty-state {
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    padding: 64px 20px;
+    color: var(--ui-text-muted);
+}
+
+/* ---------------------------------------------------------------- 回落页面的补齐 */
+/* 订单查询、订单详情、支付页、文章页由 default 模板提供（theme_view_path 回落）。
+   上面的 token 映射已经把配色带过来了，这里补形状；深色下 front.css 还有若干
+   硬编码的浅色，一并拉回。 */
+.page-card, .product-table, .order-table-wrap, .article-item,
+.article-detail, .pd-info, .card-panel, .site-quote, .two-col-section .article-block {
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    box-shadow: none;
+}
+.page-card-header, .card-panel-header {
+    background: var(--ui-bg-soft);
+    border-bottom: 1px solid var(--ui-border);
+    color: var(--ui-text-primary);
+}
+.btn-buy-sm, .btn-submit {
+    border-radius: 999px;
+    font-weight: 500;
+}
+.form-input, .pd-form .form-input, .pd-qty input {
+    border-radius: var(--ui-radius-sm);
+    background: var(--ui-bg-elevated);
+    color: var(--ui-text-primary);
+    border: 1px solid var(--ui-border);
+}
+.form-input::placeholder { color: var(--ui-text-muted); }
+.product-table tbody tr:hover { background: var(--ui-bg-soft); }
+.product-table tbody td, .order-table tbody td, .order-info-table td, .order-info-table th {
+    border-color: var(--ui-border);
+    color: var(--ui-text-primary);
+}
+.product-table thead th, .order-table thead th {
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-muted);
+    border-color: var(--ui-border);
+}
+.tag-item {
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: 999px;
+    color: var(--ui-text-secondary);
+}
+.tag-item:hover { border-color: var(--ui-border-strong); color: var(--ui-text-primary); }
+.article-list li a { color: var(--ui-text-primary); }
+.contact-section { background: var(--ui-bg-elevated); border: 1px solid var(--ui-border); border-radius: var(--ui-radius-lg); }
+.fab-btn { border-radius: 50%; }
+.fab-contact { background: var(--ui-accent); }
+.fab-top { background: var(--ui-bg-elevated); color: var(--ui-text-primary); border: 1px solid var(--ui-border); }
+.mgrid + .pagination-wrap { margin-top: -24px; }
+
+/* ---------------------------------------------------------------- 响应式 */
+@media (max-width: 900px) {
+    .hero { padding: 34px 24px; }
+    .hero h1 { font-size: 28px; }
+    .hero::after { opacity: .5; right: -140px; }
+    .sec-head h2 { font-size: 22px; }
+    .site-header nav { margin: 0; }
+}
+
+@media (max-width: 768px) {
+    :root { --section-gap: 28px; }
+    .mgrid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+    .mcard { padding: 12px; border-radius: var(--ui-radius-md); }
+    .mcard-title { font-size: 14px; }
+    /* 窄屏上描述和分类眉标先让位：卡片只剩 150px 出头时，名称、状态和价格是
+       非留不可的三样，其余都是噪音。目标站在同一个断点做同样的取舍。 */
+    .mcard-desc, .mcard-eyebrow, .mcard-price-label { display: none; }
+    .mcard-badges { margin-bottom: 10px; }
+    .mcard-foot { padding-top: 10px; }
+    .mcard-price { font-size: 15px; }
+    .hdr-action span { display: none; }
+    .hdr-action { padding: 0 8px; }
+}
+
+/* 目标站在手机上保持两列，靠隐藏描述和分类眉标腾出空间（见上一个断点）。
+   这里跟随它：一列会让首屏只装得下一个半商品，而这类店铺的首屏能看到几个商品
+   直接影响成交。名称仍然单行省略，不会被挤成两三个字。 */
+@media (max-width: 340px) {
+    /* 再窄就真的放不下两列了：卡片会只剩 145px，名称退化成三四个字。 */
+    .mgrid { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mcard, .ncard, .hero-btn, .mcard-buy, .site-nav li a, .hdr-action { transition: none; }
+    .mcard:hover, .ncard:hover, .hero-btn-primary:hover { transform: none; }
+}

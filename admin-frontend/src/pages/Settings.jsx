@@ -12,6 +12,7 @@ import RichTextEditor from '../components/RichTextEditor';
 const THEME_LABELS = {
   default: '默认（表格式）',
   minimal: '极简卡片流',
+  modern: '现代（仿独角数卡新版·含深色模式）',
 };
 
 export default function Settings() {
