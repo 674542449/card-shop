@@ -1818,3 +1818,39 @@ body {
     .al-item { flex-direction: column; align-items: flex-start; gap: var(--sp-2); }
     .al-item-meta { flex-shrink: 1; }
 }
+
+/* ============================================================================
+   分页
+   ============================================================================
+   分页的标记是主题无关的共享分部，样式此前完全回落到 front.css。那套样式的颜色
+   走 --teal / --border-color，经 token 桥能跟着明暗走，但当前页那一枚是
+   `background: var(--teal); color: #fff` —— 深色下 accent 是偏亮的蓝，白字压上去
+   只有 3.65，和主按钮当初一样。这里接到 accent-fill 上，并统一成 modern 的形状。
+   ============================================================================ */
+.pagination-wrap a,
+.pagination-wrap span {
+    min-width: 36px;
+    height: 36px;
+    border-radius: var(--ui-radius-sm);
+    border-color: var(--ui-border);
+    background: var(--ui-bg-elevated);
+    color: var(--ui-text-secondary);
+    font-size: var(--fs-sm);
+    transition: border-color var(--ui-duration-fast) var(--ui-ease-out),
+                background var(--ui-duration-fast) var(--ui-ease-out);
+}
+.pagination-wrap a:hover {
+    border-color: var(--ui-border-strong);
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-primary);
+}
+.pagination-wrap .pg-current {
+    background: var(--ui-accent-fill);
+    border-color: var(--ui-accent-fill);
+    color: #fff;
+}
+.pagination-wrap a:focus-visible,
+.pagination-wrap .pg-current:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ui-focus-ring);
+}
