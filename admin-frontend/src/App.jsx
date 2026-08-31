@@ -6,19 +6,19 @@ import AdminLayout from './layouts/AdminLayout';
 import { lazyPage } from './navigation';
 import { getMe } from './services/api';
 
-const LoginPage = lazyPage('/admin/login');
-const Dashboard = lazyPage('/admin');
-const Categories = lazyPage('/admin/categories');
-const Products = lazyPage('/admin/products');
-const ProductCards = lazyPage('/admin/products/cards');
-const Orders = lazyPage('/admin/orders');
-const OrderDetail = lazyPage('/admin/orders/detail');
-const Articles = lazyPage('/admin/articles');
-const ArticleCategories = lazyPage('/admin/article-categories');
-const Coupons = lazyPage('/admin/coupons');
-const Blacklists = lazyPage('/admin/blacklists');
-const Logs = lazyPage('/admin/logs');
-const Settings = lazyPage('/admin/settings');
+const LoginPage = lazyPage('/login');
+const Dashboard = lazyPage('/');
+const Categories = lazyPage('/categories');
+const Products = lazyPage('/products');
+const ProductCards = lazyPage('/products/cards');
+const Orders = lazyPage('/orders');
+const OrderDetail = lazyPage('/orders/detail');
+const Articles = lazyPage('/articles');
+const ArticleCategories = lazyPage('/article-categories');
+const Coupons = lazyPage('/coupons');
+const Blacklists = lazyPage('/blacklists');
+const Logs = lazyPage('/logs');
+const Settings = lazyPage('/settings');
 
 /**
  * The console's visual identity, in one place.
@@ -76,7 +76,7 @@ function RequireAuth({ children }) {
       .catch(() => {
         if (!alive) return;
         setState({ checking: false, admin: null });
-        navigate('/admin/login', { replace: true });
+        navigate('/login', { replace: true });
       });
     return () => {
       alive = false;
@@ -96,7 +96,7 @@ export default function App() {
         {/* Its own boundary: the login screen has no frame to preserve, so a
             full-page spinner is the right fallback there and only there. */}
         <Route
-          path="/admin/login"
+          path="/login"
           element={
             <Suspense fallback={<FullPageSpin />}>
               <LoginPage />
@@ -104,7 +104,7 @@ export default function App() {
           }
         />
         {/*
-          Must be "/admin", not a splat pattern. A splat segment has to be the last
+          Must be "/", not a splat pattern. A splat segment has to be the last
           thing in a pattern, so nested children under a splat parent compile to a
           path with the splat in the middle, which never matches.
 
@@ -112,7 +112,7 @@ export default function App() {
           AdminLayout, wrapped around <Outlet /> — putting it at this level is what
           made every navigation blank the whole application.
         */}
-        <Route path="/admin" element={<RequireAuth>{(admin) => <AdminLayout admin={admin} />}</RequireAuth>}>
+        <Route path="/" element={<RequireAuth>{(admin) => <AdminLayout admin={admin} />}</RequireAuth>}>
           <Route index element={<Dashboard />} />
           <Route path="categories" element={<Categories />} />
           <Route path="products" element={<Products />} />
@@ -126,7 +126,7 @@ export default function App() {
           <Route path="logs" element={<Logs />} />
           <Route path="settings" element={<Settings />} />
         </Route>
-        <Route path="*" element={<Navigate to="/admin" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ConfigProvider>
   );

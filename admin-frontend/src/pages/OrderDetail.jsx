@@ -105,7 +105,7 @@ export default function OrderDetail() {
   return (
     <div>
       <Space style={{ marginBottom: 16 }}>
-        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin/orders')}>
+        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
           返回订单列表
         </Button>
         {order.status === 'pending' && (

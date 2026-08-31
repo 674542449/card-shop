@@ -1,7 +1,8 @@
 import axios from 'axios';
+import { ADMIN_BASE, API_BASE } from '../base';
 
 const api = axios.create({
-  baseURL: '/api/admin',
+  baseURL: API_BASE,
   headers: {
     'Content-Type': 'application/json',
     'Accept': 'application/json',
@@ -56,8 +57,8 @@ api.interceptors.response.use(
     const status = error.response?.status;
 
     if (status === 401) {
-      if (!window.location.pathname.startsWith('/admin/login')) {
-        window.location.href = '/admin/login';
+      if (!window.location.pathname.startsWith(`${ADMIN_BASE}/login`)) {
+        window.location.href = `${ADMIN_BASE}/login`;
       }
     }
 

@@ -144,7 +144,7 @@ export default function ProductCards() {
       <ProTable
         headerTitle={
           <Space>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/admin/products')}>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/products')}>
               返回商品列表
             </Button>
             <span>卡密管理 (商品ID: {productId})</span>

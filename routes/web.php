@@ -76,7 +76,7 @@ Route::middleware('check.blacklist')->group(function () {
 |--------------------------------------------------------------------------
 */
 
-Route::prefix('api/admin')->group(function () {
+Route::prefix('api/' . admin_path())->group(function () {
     Route::post('/login', [ApiAdmin\AuthController::class, 'login']);
 
     Route::middleware('admin.auth')->group(function () {
@@ -159,10 +159,17 @@ Route::prefix('api/admin')->group(function () {
 |--------------------------------------------------------------------------
 | Admin SPA (React + Ant Design Pro)
 |--------------------------------------------------------------------------
-| All /admin/* GET routes serve the SPA shell. The React Router handles
-| client-side routing. Data is served via /api/admin/* routes above.
+| Every GET under the admin path serves the SPA shell; React Router handles the
+| rest client-side, and data comes from the /api/<path>/* routes above.
+|
+| The segment is ADMIN_PATH from .env (default "admin"). Both this route and the
+| API prefix move together — hiding only the shell would leave the login endpoint
+| sitting at a guessable URL, which is the part that actually gets brute-forced.
+|
+| When the path is moved, /admin stops being registered at all and returns 404
+| rather than redirecting, so the response gives nothing away.
 */
 
-Route::get('/admin/{any?}', function () {
+Route::get('/' . admin_path() . '/{any?}', function () {
     return view('admin.spa');
 })->where('any', '.*');

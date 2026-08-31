@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    {{-- 后台的挂载路径。前端在运行时读它，作为 React Router 的 basename 和 API 前缀，
+         所以改 ADMIN_PATH 不需要重新构建 SPA —— 同一份构建产物适用于任何路径。 --}}
+    <meta name="admin-base" content="/{{ admin_path() }}">
     <meta name="robots" content="noindex, nofollow">
     <title>{{ setting('site_name', 'CardShop') }} - 管理后台</title>
     @php

@@ -100,6 +100,10 @@ getenv() {
 }
 
 APP_URL="$(getenv APP_URL)"
+# 后台可能被 ADMIN_PATH 搬走了。写死探 /admin 的话，搬过之后这一项必然报失败——
+# 而那是配置生效的正常结果，不是故障。
+ADMIN_SEG="$(getenv ADMIN_PATH)"; ADMIN_SEG="${ADMIN_SEG:-admin}"
+case "$ADMIN_SEG" in *[!A-Za-z0-9_-]*|'') ADMIN_SEG="admin" ;; esac
 DOMAIN="${APP_URL#http://}"; DOMAIN="${DOMAIN#https://}"; DOMAIN="${DOMAIN%/}"
 
 case "$APP_URL" in
@@ -299,7 +303,7 @@ probe "http://127.0.0.1/" "源站本地 HTTP 能渲染页面"
 if [ -n "$DOMAIN" ]; then
     probe "https://$DOMAIN/"             "经 Cloudflare 访问首页"
     probe "https://$DOMAIN/order/query"  "经 Cloudflare 访问订单查询"
-    probe "https://$DOMAIN/admin"        "经 Cloudflare 访问后台"
+    probe "https://$DOMAIN/$ADMIN_SEG"   "经 Cloudflare 访问后台（/$ADMIN_SEG）"
 else
     skip "经 Cloudflare 的页面检查" "APP_URL 里没有可用的域名"
 fi

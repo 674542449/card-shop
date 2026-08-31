@@ -14,7 +14,7 @@ export default function LoginPage() {
     try {
       await login(values.username, values.password);
       message.success('登录成功');
-      navigate('/admin', { replace: true });
+      navigate('/', { replace: true });
     } catch (err) {
       message.error(err.response?.data?.message || '登录失败，请检查用户名和密码');
     } finally {

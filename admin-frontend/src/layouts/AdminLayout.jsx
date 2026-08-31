@@ -30,12 +30,13 @@ export default function AdminLayout({ admin }) {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // '/admin' prefixes every route, so left alone the 概览 entry stays highlighted
-  // everywhere. Take the longest leaf that actually matches, which also keeps
-  // 商品管理 lit on /admin/products/3/cards and 订单管理 on /admin/orders/9.
+  // Paths here are relative to the router's basename (the ADMIN_PATH segment), so
+  // every route starts with '/' and the 概览 entry would stay highlighted everywhere
+  // if matched naively. Take the longest leaf that actually matches, which also keeps
+  // 商品管理 lit on /products/3/cards and 订单管理 on /orders/9.
   const selectedKey = useMemo(() => {
-    const path = location.pathname.replace(/\/+$/, '') || '/admin';
-    return leafPaths.find((p) => path === p || path.startsWith(`${p}/`)) || '/admin';
+    const path = location.pathname.replace(/\/+$/, '') || '/';
+    return leafPaths.find((p) => path === p || path.startsWith(`${p}/`)) || '/';
   }, [location.pathname]);
 
   const meta = pageMeta[selectedKey] || {};
@@ -53,7 +54,7 @@ export default function AdminLayout({ admin }) {
     }
 
     message.success('已退出登录');
-    navigate('/admin/login', { replace: true });
+    navigate('/login', { replace: true });
   };
 
   return (

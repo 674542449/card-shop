@@ -225,7 +225,7 @@ docker compose logs -f app
 ### 5. 访问
 
 - 前台：`https://你的域名`
-- 后台：`https://你的域名/admin`
+- 后台：`https://你的域名/admin`（路径可改，见 `.env` 的 `ADMIN_PATH`）
 
 如果按下面「HTTPS 与源站防护」配了防火墙，用 IP 直连源站是**故意封掉的**，
 访问不通不是故障。另外 `APP_URL` 必须是 `https://` 开头，否则会话 cookie 拿不到

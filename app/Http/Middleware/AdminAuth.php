@@ -17,7 +17,7 @@ class AdminAuth
             if ($request->expectsJson()) {
                 return response()->json(['message' => '未登录'], 401);
             }
-            return redirect('/admin/login');
+            return redirect('/' . admin_path() . '/login');
         }
 
         $admin = Admin::find($adminId);
@@ -27,7 +27,7 @@ class AdminAuth
             if ($request->expectsJson()) {
                 return response()->json(['message' => '未登录'], 401);
             }
-            return redirect('/admin/login');
+            return redirect('/' . admin_path() . '/login');
         }
 
         $request->attributes->set('admin', $admin);

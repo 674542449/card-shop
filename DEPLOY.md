@@ -375,6 +375,32 @@ sudo ./scripts/cf-only-firewall.sh --remove
 
 打开 `https://shop.example.com/admin`，用第 4 步拿到的密码登录。
 
+### 把后台从 /admin 挪走（可选，建议做）
+
+`/admin` 是全世界扫描器的第一个猜测。改掉它：
+
+```bash
+cd ~/card-shop
+echo "ADMIN_PATH=你起的名字" >> .env      # 只能用字母数字和 - _，最长 32 位
+docker compose up -d app
+```
+
+改完 `/admin` 直接 404，后台和它的 API 一起搬到新路径。前端是运行时读这个值的，
+**不用重新构建 SPA**。
+
+**这是「安全靠隐藏」，不是访问控制。** 它挡住的是满世界扫 `/admin`、`/wp-admin` 的
+机器人——你的日志会干净非常多——但挡不住有针对性的攻击者。真正保护后台的是强密码、
+登录限流、Turnstile 和 IP 黑名单。别因为改了路径就放松那几样。
+
+用户名和密码也可以改，而且更重要：
+
+```bash
+# 改密码（至少 12 位）
+docker compose exec app php artisan admin:password --password='新密码'
+
+# 用户名要在首次部署前设，写进 .env 的 ADMIN_USERNAME=你的用户名
+```
+
 后台菜单：概览 / 商品 / 交易 / 内容 / 系统。下面这些都在**系统 → 系统设置**这一页里，
 分卡片排列。
 

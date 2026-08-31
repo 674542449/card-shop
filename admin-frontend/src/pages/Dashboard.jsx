@@ -214,7 +214,7 @@ export default function Dashboard() {
       width: 170,
       render: (v, r) => (
         <Link
-          to={'/admin/orders/' + r.id}
+          to={'/orders/' + r.id}
           style={{ fontFamily: 'ui-monospace, Consolas, monospace', whiteSpace: 'nowrap' }}
         >
           {v}
@@ -261,11 +261,11 @@ export default function Dashboard() {
             value={pending}
             tone={pending > 0 ? 'attention' : undefined}
             hint={pending > 0 ? '点击查看，可手动确认或关闭' : '没有待处理的订单'}
-            to={pending > 0 ? '/admin/orders' : undefined}
+            to={pending > 0 ? '/orders' : undefined}
           />
         </Col>
         <Col xs={12} lg={6}>
-          <Stat label="在售商品" value={data.total_products ?? 0} hint="仅统计已上架的" to="/admin/products" />
+          <Stat label="在售商品" value={data.total_products ?? 0} hint="仅统计已上架的" to="/products" />
         </Col>
       </Row>
 
@@ -273,7 +273,7 @@ export default function Dashboard() {
         <RevenueBars labels={data.chart_labels} data={data.chart_data} />
       </Card>
 
-      <Card title="最近订单" size="small" extra={<Link to="/admin/orders">全部订单</Link>}>
+      <Card title="最近订单" size="small" extra={<Link to="/orders">全部订单</Link>}>
         <Table
           rowKey="id"
           size="small"
