@@ -120,6 +120,19 @@
                    "PingFang SC", "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
 }
 
+/* 窄屏缩的是**刻度本身**，不是逐个元素去压字号。
+   之前是后者：商品名、应付金额、单价各写一条 max-width 覆盖，结果三者在 375px 上
+   一起落到 20px——桌面端刚分出来的层级，到手机上又没了。刻度只有 20 和 28 两档可用，
+   逐元素压必然压成同一档。
+   这里只缩上面三档（正文以下保持不变，14px 在手机上不该更小），层级比例原样保留。 */
+@media (max-width: 640px) {
+    :root {
+        --fs-lg: 18px;
+        --fs-xl: 24px;
+        --fs-2xl: 30px;
+    }
+}
+
 /* 深色。data-ui-theme 由页头的开关写在 <html> 上，优先于系统偏好；没有这个属性时
    才跟随 prefers-color-scheme。两个来源分开写，是为了「我明确选了浅色」不会被系统
    的深色偏好推翻。 */
@@ -1127,3 +1140,171 @@ body {
     box-shadow: var(--ui-shadow-2);
 }
 .site-header { position: sticky; }
+
+/* ============================================================================
+   商品详情页
+   ============================================================================
+   改之前的问题（审计确认）：徽章和库存排在商品名之上，页面的主语反而不是视觉上
+   最先的；应付金额比单价还小；购买区没有视觉重心；描述和须知挤在一个 tab 里。
+   ============================================================================ */
+
+.pd-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--sp-6);
+    flex-wrap: wrap;
+    margin-bottom: var(--sp-6);
+}
+.pd-eyebrow {
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    margin-bottom: var(--sp-2);
+}
+.pd-eyebrow a { color: var(--ui-text-muted); }
+.pd-eyebrow a:hover { color: var(--ui-accent); }
+
+/* 商品名是这一页的主语，所以它是最大的字。 */
+.pd-name {
+    font-size: var(--fs-xl);
+    line-height: var(--ui-leading-title);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ui-text-primary);
+    margin: 0 0 var(--sp-3);
+    /* 长商品名（发卡店的名字常带一串管道符）要能换行，不能撑破版心。 */
+    overflow-wrap: anywhere;
+}
+.pd-badges { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+
+.pd-hero-price { flex-shrink: 0; text-align: right; }
+.pd-price-label {
+    display: block;
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--ui-text-muted);
+    margin-bottom: var(--sp-1);
+}
+/* 单价降一档，低于商品名和应付金额。这一页的层级是：商品名（主语）> 应付金额
+   （要承诺的数字，且带强调色）> 单价（参考值）。三者同为 28px 时等于没有层级——
+   这是把「商品名排在价格之后」修过头的结果。 */
+.pd-price {
+    font-size: var(--fs-lg);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ui-text-primary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.pd-price .cur { font-size: var(--fs-sm); font-weight: 500; color: var(--ui-text-muted); margin-left: 4px; }
+.pd-price-note { display: block; margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--ui-text-muted); }
+
+/* 两栏：主栏是下单与描述，侧栏是阶梯价与须知。侧栏定宽而不是按比例，
+   这样宽屏下主栏不会被拉到一行放不下的长度。 */
+.pd-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: var(--sp-5);
+    align-items: start;
+}
+.pd-col-main { min-width: 0; }
+.pd-col-side { display: flex; flex-direction: column; gap: var(--sp-4); position: sticky; top: 76px; }
+.pd-col-side .panel + .panel { margin-top: 0; }
+
+/* 购买区是这一页的视觉重心：标题条用强调色底，把它和其余面板区分开。 */
+.pd-buy .panel-head {
+    background: var(--ui-accent-soft);
+    color: var(--ui-accent);
+    border-bottom-color: transparent;
+}
+
+/* 支付方式改成等宽自适应的瓦片行。原来靠 flex 自然宽，网关多了会挤成一团。 */
+.pay-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: var(--sp-2);
+}
+.pay-option { margin: 0; }
+.pay-option-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    height: 46px;
+    padding: 0 var(--sp-2);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-sm);
+    cursor: pointer;
+    transition: border-color var(--ui-duration-fast) var(--ui-ease-out),
+                background var(--ui-duration-fast) var(--ui-ease-out);
+}
+.pay-option-inner:hover { border-color: var(--ui-border-strong); }
+/* 焦点必须可见：这是一组单选，键盘用户靠它知道自己停在哪一项。 */
+.pay-radio:focus-visible + .pay-option-inner { box-shadow: 0 0 0 3px var(--ui-focus-ring); }
+.pay-label { font-size: var(--fs-sm); }
+
+/* 结算条。金额是这一屏第二重要的信息，给它和商品名同一量级的字号——
+   之前它是内联样式写的 22px，且 480px 以下和单价同号，完全分不出主次。 */
+.pd-total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding: var(--sp-4) 0;
+    margin-bottom: var(--sp-4);
+    border-top: 1px solid var(--ui-border);
+}
+.pd-total-label { font-size: var(--fs-base); color: var(--ui-text-secondary); }
+.pd-total-value {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ui-accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.pd-links { list-style: none; margin: 0; padding: 0; }
+.pd-links li + li { border-top: 1px solid var(--ui-border); }
+/* 链接撑成块级并留出内距：原来是纯内联文字，行高只有 16px，手机上要精准点到
+   一行小字。触控目标下限是 44px。 */
+.pd-links a {
+    display: block;
+    padding: var(--sp-3) 0;
+    min-height: 44px;
+    color: var(--ui-text-secondary);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+}
+.pd-links a:hover { color: var(--ui-accent); }
+
+.wholesale-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.wholesale-table th,
+.wholesale-table td { padding: var(--sp-2) 0; text-align: left; }
+.wholesale-table td:last-child,
+.wholesale-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.wholesale-table thead th {
+    background: none;
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--ui-text-muted);
+    border-bottom: 1px solid var(--ui-border);
+}
+.wholesale-table tbody tr + tr td { border-top: 1px solid var(--ui-border); }
+
+@media (max-width: 900px) {
+    /* 单栏：侧栏跟到主栏下面，并解除 sticky——窄屏上 sticky 的侧栏会一直占着
+       半屏高度，把正文挤到看不见。 */
+    .pd-layout { grid-template-columns: 1fr; }
+    .pd-col-side { position: static; }
+    .pd-hero { gap: var(--sp-4); }
+    .pd-hero-price { text-align: left; }
+}
+
+@media (max-width: 560px) {
+    .pd-hero { flex-direction: column; }
+    .pay-options { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+    .pd-price { font-size: var(--fs-md); }
+}
