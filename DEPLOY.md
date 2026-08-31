@@ -518,17 +518,64 @@ SEO 里可能写死的旧域名），直接搬库过来它们全是旧值。
 ### 升级
 
 ```bash
-cd ~/card-shop && git pull && docker compose up -d --build && docker compose restart nginx
+cd ~/card-shop
+git status --porcelain                    # ① 必须为空，否则 git pull 会中途 abort
+git rev-parse HEAD > /tmp/rollback.txt    # ② 记下当前版本，出事好退回
+git pull
+
+docker compose up -d                      # ③ 让改过的 compose 配置生效（没改就是空操作）
+docker compose restart app                # ④ 这条不能省，理由见下
+docker compose restart nginx              # ⑤ 避免 502
 ```
 
-用 `up -d` 而不是 `restart`：`restart` 是拿旧配置和旧挂载重启容器，改过 `docker-compose.yml`
-或 `TLS_CERT_DIR` 的话不会生效。
+**① `git status --porcelain` 必须为空。** `composer.lock` 是被跟踪的文件，而 entrypoint
+在 `composer install` 失败时会兜底跑 `composer update`（会改写它）。一旦它变脏，`git pull`
+直接 abort；如果你把命令用 `&&` 串成一行，链子就断在这里，你只看到一行报错，很容易以为
+整条跑完了。所以这几条**分开执行**，不要串成一行。
 
-末尾那条 `restart nginx` 是因为 nginx 在启动时就把 `app:9000` 解析成了一个固定 IP。
-`up -d --build` 重建了 app 容器，它会拿到新 IP，而 nginx 不在重建之列，还握着旧地址 ——
-表现是升级后整站 502，而 `docker compose ps` 里五个容器全是 Up。
+**④ `restart app` 不能省，而且不能用 `up -d --build` 代替它。** compose 只在「镜像 ID 变了」
+或「服务配置变了」时才重建容器。只改了 PHP 代码和模板时，`--build` 的每一层都命中缓存，
+镜像 ID 不变，于是 `up -d --build` 打印一行 `Running` 就结束，**app 容器一秒都没停**。
+后果全是静默的：entrypoint 里的 `migrate`、`db:seed`、`view:cache`，以及那道「编译产物能不能
+被 PHP 解析」的预检，一条都不会跑；命令返回 0，日志里什么都没有。
+（同样的道理见第 4 步那条注记：配置没变时 `up -d` 不会重建容器。）
 
-升级后按第 4 步的三条验证跑一遍。
+**什么时候需要 `--build`：** 只有 `docker/` 目录或 `composer.json` 变过时才需要，此时把 ③ 换成
+`docker compose up -d --build`。判断方法：
+```bash
+git diff --name-only HEAD@{1} HEAD -- docker/ composer.json
+```
+有输出才加 `--build`。特别注意 `docker/php/entrypoint.sh`：它是构建时 COPY 进镜像的，
+容器执行的是镜像里那一份，**光 restart 不会生效，必须 build**。
+
+**⑤ `restart nginx`** 是因为 nginx 启动时就把 `app:9000` 解析成了一个固定 IP。app 容器一旦
+被重建就会换 IP，而 nginx 还握着旧地址 —— 表现是升级后整站 502，而 `docker compose ps` 里
+五个容器全是 Up。
+
+升级后按第 4 步的三条验证跑一遍，**再加下面这两条**（第 4 步只能证明「站还活着」，证明不了
+「更新到位了」）：
+
+```bash
+# 页面里的资源版本号，必须等于容器里文件的真实 mtime；对不上说明你拿到的是缓存的旧页面
+curl -s https://你的域名/ | grep -oE '(css/front\.css|js/front\.js)\?v=[0-9]+'
+docker compose exec -T app php -r 'foreach(["public/css/front.css","public/js/front.js"] as $p) echo $p, " ?v=", @filemtime($p), PHP_EOL;'
+
+# entrypoint 真的重跑了：这个时间必须是刚才
+docker inspect -f '{{.State.StartedAt}}' cardshop-app
+```
+
+**新拉下来的文件权限。** `git pull` 落地的新文件，模式由你执行 git 时的 umask 决定。
+nginx（读 `public/`）和 PHP-FPM 的 www-data（读 `resources/`）都只靠 `o+r`。umask 若是 077，
+症状是新模板整站 500、样式表 403，而启动日志和 `doctor.sh` 全绿 —— 和 `.env` 那个坑同一类。
+```bash
+docker compose exec -T app su -s /bin/sh -c 'head -c 1 public/index.php >/dev/null && echo OK || echo UNREADABLE' www-data
+# 输出 UNREADABLE 就执行：sudo chmod -R a+rX public resources
+```
+
+**回滚：**
+```bash
+git reset --hard $(cat /tmp/rollback.txt) && docker compose restart app nginx
+```
 
 ### 备份
 
