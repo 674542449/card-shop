@@ -86,26 +86,50 @@ document.addEventListener('DOMContentLoaded', function () {
         ta.style.left = '-9999px';
         document.body.appendChild(ta);
         ta.select();
-        try { document.execCommand('copy'); showCopied(btn); } catch (e) {}
+        // 失败必须说出来。原来是 catch (e) {} —— 复制不成功时按钮毫无反应，买家会
+        // 以为已经拷到剪贴板，然后粘出一片空白，而卡密正是他唯一买到的东西。
+        try {
+            if (document.execCommand('copy')) { showCopied(btn); }
+            else { showCopyFailed(btn); }
+        } catch (e) {
+            showCopyFailed(btn);
+        }
         document.body.removeChild(ta);
     }
 
-    function showCopied(btn) {
-        // Guard the re-entrant case. A second click inside the 2s window used to
-        // capture "已复制" as `original`, and the button then said 已复制 forever —
-        // on the card-delivery page, where 复制 is the one control that matters.
+    // Swap the button's label for a while, then put the original back.
+    //
+    // Guard the re-entrant case. A second click inside the window used to capture
+    // "已复制" as `original`, and the button then said 已复制 forever — on the
+    // card-delivery page, where 复制 is the one control that matters.
+    function flashLabel(btn, label, ms) {
         if (btn.dataset.copyTimer) {
             clearTimeout(Number(btn.dataset.copyTimer));
         } else {
             btn.dataset.copyOriginal = btn.textContent;
         }
 
-        btn.textContent = '已复制';
+        btn.textContent = label;
         btn.dataset.copyTimer = String(setTimeout(function () {
             btn.textContent = btn.dataset.copyOriginal || '复制';
+            btn.classList.remove('is-copy-failed');
             delete btn.dataset.copyTimer;
             delete btn.dataset.copyOriginal;
-        }, 2000));
+        }, ms));
+    }
+
+    function showCopied(btn) {
+        btn.classList.remove('is-copy-failed');
+        flashLabel(btn, '已复制', 2000);
+    }
+
+    // Failure has to say so. This used to be `catch (e) {}` — when the copy did not
+    // go through the button did nothing at all, so the buyer assumed the cards were
+    // on the clipboard, pasted nothing, and the one thing they paid for was gone.
+    // Held longer than the success label because it asks for a second action.
+    function showCopyFailed(btn) {
+        btn.classList.add('is-copy-failed');
+        flashLabel(btn, '复制失败', 3500);
     }
 
     // Payment status polling

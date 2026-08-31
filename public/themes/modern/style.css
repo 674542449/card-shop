@@ -1308,3 +1308,263 @@ body {
     .pay-options { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
     .pd-price { font-size: var(--fs-md); }
 }
+
+/* ============================================================================
+   订单支付页
+   ============================================================================
+   改之前的问题（审计确认）：信息层级整个倒过来了——倒计时 32px 独占第一张卡片，
+   金额 18px 埋在订单信息表格的一行里，「前往支付」排在倒计时后面且比它小。
+   这一页的主语是「付这笔钱」，倒计时只是约束条件。
+   ============================================================================ */
+
+.op-wrap { max-width: 560px; margin: 0 auto; }
+
+/* 结算卡片：唯一一处用强调色描边的面板，让它在页面上先被看到。 */
+.op-pay {
+    border-color: var(--ui-accent);
+    box-shadow: 0 0 0 3px var(--ui-accent-soft);
+}
+.op-pay-body { text-align: center; padding: var(--sp-8) var(--sp-5); }
+
+.op-label {
+    font-size: var(--fs-sm);
+    color: var(--ui-text-secondary);
+    margin: 0 0 var(--sp-2);
+}
+
+/* 全页最大的字，且是唯一用 2xl 的地方。 */
+.op-amount {
+    font-size: var(--fs-2xl);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.03em;
+    color: var(--ui-text-primary);
+    font-variant-numeric: tabular-nums;
+    margin: 0 0 var(--sp-4);
+}
+.op-amount .cur {
+    font-size: var(--fs-lg);
+    font-weight: 500;
+    color: var(--ui-text-secondary);
+    margin-right: 2px;
+}
+
+.op-deadline {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-6);
+}
+.op-count {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    height: 28px;
+    padding: 0 var(--sp-3);
+    border-radius: 999px;
+    background: var(--ui-warning-soft);
+    color: var(--ui-warning);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+}
+.op-count svg { width: 14px; height: 14px; }
+/* 定宽，避免 09:59 → 10:00 时整枚胶囊跟着抖。 */
+.op-count .time { min-width: 5ch; text-align: left; }
+.op-deadline-abs { font-size: var(--fs-xs); color: var(--ui-text-muted); }
+
+.op-hint {
+    margin: var(--sp-3) 0 0;
+    font-size: var(--fs-sm);
+    color: var(--ui-text-muted);
+    line-height: 1.6;
+}
+.op-wait { text-align: left; }
+.op-wait .skel-line { height: 14px; }
+
+/* 轮询状态：一个呼吸的点加一句话。原来是一个 &#8987; 沙漏字符——emoji 在不同系统
+   上渲染成完全不同的东西，而且读屏会把它念成「沙漏」。 */
+.op-poll {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    margin: var(--sp-5) 0 0;
+    padding-top: var(--sp-4);
+    border-top: 1px solid var(--ui-border);
+    font-size: var(--fs-sm);
+    color: var(--ui-text-muted);
+}
+.op-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--ui-accent);
+    flex-shrink: 0;
+    animation: op-pulse 1.6s ease-in-out infinite;
+}
+@keyframes op-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: .35; transform: scale(.75); }
+}
+
+/* 订单信息：定义列表而不是表格。它本来就是「名—值」对，用 table 是把布局需求
+   写进了语义里；而且窄屏上 table 的两列没法自然折行。 */
+.op-info {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--sp-3) var(--sp-5);
+    margin: 0;
+    font-size: var(--fs-base);
+}
+.op-info dt { color: var(--ui-text-secondary); }
+.op-info dd { margin: 0; color: var(--ui-text-primary); overflow-wrap: anywhere; }
+.op-info .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--fs-sm);
+}
+.op-discount { color: var(--ui-success); }
+
+@media (max-width: 560px) {
+    .op-pay-body { padding: var(--sp-6) var(--sp-4); }
+    /* 单列：订单号在窄屏上放不进 max-content 之外的那一列，两列会挤成一堆断词。 */
+    .op-info { grid-template-columns: 1fr; gap: var(--sp-1); }
+    .op-info dt { font-size: var(--fs-sm); }
+    .op-info dd { margin-bottom: var(--sp-3); }
+    .op-info dd:last-child { margin-bottom: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .op-dot { animation: none; }
+}
+
+/* ============================================================================
+   订单详情页
+   ============================================================================
+   改之前的问题（审计确认）：卡密是买家付钱换来的唯一东西，却排在一张订单信息表格
+   之后，而且是全页最小的字（13px 的列表项）。状态图标用的是 emoji 字符实体。
+   ============================================================================ */
+
+.od-wrap { max-width: 680px; margin: 0 auto; }
+
+.od-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    margin-bottom: var(--sp-4);
+    padding: var(--sp-2) 0;
+    font-size: var(--fs-sm);
+    color: var(--ui-text-secondary);
+}
+.od-back svg { width: 15px; height: 15px; }
+.od-back:hover { color: var(--ui-accent); }
+
+/* ---- 状态条 ---- */
+.od-state {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
+    margin-bottom: var(--sp-4);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    background: var(--ui-bg-elevated);
+}
+.od-state-icon { display: flex; flex-shrink: 0; }
+.od-state-icon svg { width: 26px; height: 26px; }
+.od-state-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.od-state-text strong { font-size: var(--fs-md); font-weight: 600; color: var(--ui-text-primary); }
+.od-state-text small { font-size: var(--fs-sm); color: var(--ui-text-secondary); }
+.od-state-action { margin-left: auto; flex-shrink: 0; }
+
+/* 四个状态各有自己的形状，颜色只是叠加上去的第二重编码。 */
+.ost-paid    { border-color: var(--ui-success); background: var(--ui-success-soft); }
+.ost-paid    .od-state-icon { color: var(--ui-success); }
+.ost-pending { border-color: var(--ui-warning); background: var(--ui-warning-soft); }
+.ost-pending .od-state-icon { color: var(--ui-warning); }
+.ost-expired .od-state-icon { color: var(--ui-text-muted); }
+.ost-closed  { border-color: var(--ui-danger); background: var(--ui-danger-soft); }
+.ost-closed  .od-state-icon { color: var(--ui-danger); }
+
+/* ---- 卡密 ---- */
+.od-cards { border-color: var(--ui-accent); }
+.od-cards .panel-head { background: var(--ui-accent-soft); color: var(--ui-accent); }
+.od-cards-count {
+    margin-left: var(--sp-1);
+    font-size: var(--fs-xs);
+    font-weight: 400;
+    color: var(--ui-text-muted);
+}
+.od-cards-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
+/* 定宽到能装下最长的一个标签（复制 / 已复制 / 复制失败）。不定宽的话，按下后
+   文字变长会把「下载 TXT」推走——偏偏是这一页最关键的那个控件在抖。 */
+.btn-copy { min-width: 6.5em; }
+.btn-copy.is-copy-failed,
+.btn-copy.is-copy-failed:hover { background: var(--ui-danger); color: #fff; }
+.od-cards-body { padding: 0; }
+
+.od-card-list { list-style: none; margin: 0; padding: 0; counter-reset: none; }
+.od-card-list li {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-5);
+}
+.od-card-list li + li { border-top: 1px solid var(--ui-border); }
+.od-card-idx {
+    flex-shrink: 0;
+    min-width: 1.5em;
+    font-size: var(--fs-xs);
+    color: var(--ui-text-muted);
+    font-variant-numeric: tabular-nums;
+}
+/* 卡密本身用等宽体，并且是这一页最大的正文——它是交付物。等宽是为了让 0/O、1/l
+   这类容易看错的字符能分辨出来，买家常常要手抄或核对。 */
+.od-card-list code {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--fs-md);
+    line-height: 1.6;
+    color: var(--ui-text-primary);
+    background: none;
+    border: 0;
+    padding: 0;
+    overflow-wrap: anywhere;
+    /* 单击即选中整条，省掉在一串没有空格的字符里拖选。 */
+    user-select: all;
+}
+
+/* 复制按钮的取值来源。移到屏幕外而不是 display:none —— 后者会让 execCommand
+   的兜底路径选不中内容。 */
+.od-card-source {
+    position: absolute;
+    left: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.od-total { font-weight: 700; color: var(--ui-accent); }
+
+.od-foot {
+    display: flex;
+    justify-content: center;
+    gap: var(--sp-6);
+    margin: var(--sp-6) 0 0;
+    font-size: var(--fs-sm);
+}
+.od-foot a { color: var(--ui-text-muted); padding: var(--sp-2) 0; }
+.od-foot a:hover { color: var(--ui-accent); }
+
+@media (max-width: 560px) {
+    /* 状态条换行：「继续支付」在窄屏上会把状态文案挤成两三行断词。 */
+    .od-state { flex-wrap: wrap; }
+    .od-state-action { margin-left: 0; width: 100%; }
+    .od-card-list li { padding: var(--sp-3) var(--sp-4); }
+    .od-cards .panel-head { flex-wrap: wrap; }
+    .od-cards-actions { width: 100%; }
+    .od-cards-actions .btn { flex: 1; }
+}
