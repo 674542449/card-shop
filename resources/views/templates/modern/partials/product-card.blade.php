@@ -27,6 +27,24 @@
     浮在它上面。这样一张卡片只有两个键盘停靠点，而不是每张卡片停三次。
 --}}
 <article class="mcard {{ $buyable ? '' : 'is-out' }}">
+    {{-- 商品图。这一套模板此前是三套里唯一完全不显示商品图的——列表卡没有、详情页
+         没有，运营在后台传的图等于白传。
+
+         槽位固定 4:3 并且**始终渲染**（没有图就放占位图）：上传的图尺寸各不相同，
+         让它自然撑开就会每张卡高度不一，整排参差。object-fit:cover 把任意比例填满
+         同一个槽，所以不管传的是 1200x400 的横幅还是 400x900 的竖图，卡片骨架都
+         一样。
+         这里用 cover 而不是详情页那样的 contain：列表要的是整齐，详情页要的是不裁
+         掉信息，两者取舍不同。 --}}
+    <div class="mcard-media">
+        @if($product->image)
+        <img src="{{ $product->image }}" alt="" class="mcard-img"
+             loading="lazy" decoding="async">
+        @else
+        @themeInclude('partials.image-placeholder', ['class' => 'mcard-img-ph'])
+        @endif
+    </div>
+
     <div class="mcard-eyebrow">分类 · {{ $product->category->name ?? '未分类' }}</div>
 
     <a href="/product/{{ $product->slug }}" class="mcard-title">{{ $product->name }}</a>

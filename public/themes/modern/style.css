@@ -350,93 +350,12 @@ body {
 .mobile-nav a:hover, .mobile-nav a.active { background: var(--ui-bg-soft); color: var(--ui-text-primary); }
 
 /* ---------------------------------------------------------------- 首屏 */
-/* 深色渐变的大圆角卡片，右侧一块等距立方体的装饰。装饰用纯 CSS 画（渐变 + 变换），
-   不引图片：这块是纯装饰，为它多一次网络请求不划算，而且换配色时图片会失配。 */
-.hero {
-    position: relative;
-    overflow: hidden;
-    border-radius: var(--ui-radius-xl);
-    background: linear-gradient(135deg, #1e2a5a 0%, #16213f 55%, #0f1729 100%);
-    color: #fff;
-    padding: 48px 44px;
-    margin-bottom: var(--section-gap);
-    box-shadow: var(--ui-shadow-card);
-}
-.hero::after {
-    /* 右侧的几何装饰：两层同心的柔光，暗示一块发光的立体物。 */
-    content: "";
-    position: absolute;
-    right: -60px;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 420px;
-    height: 420px;
-    background:
-        radial-gradient(circle at 40% 40%, rgba(56, 189, 248, .28), transparent 62%),
-        radial-gradient(circle at 65% 60%, rgba(20, 184, 166, .22), transparent 58%);
-    pointer-events: none;
-}
-.hero-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 5px 13px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, .12);
-    border: 1px solid rgba(255, 255, 255, .18);
-    font-size: 12px;
-    letter-spacing: .02em;
-    margin-bottom: 20px;
-}
-.hero-badge::before {
-    content: "";
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #34d399;
-}
-.hero h1 {
-    position: relative;
-    z-index: 1;
-    font-size: 40px;
-    line-height: var(--ui-leading-display);
-    font-weight: 700;
-    letter-spacing: -0.02em;
-    margin: 0 0 16px;
-    color: #fff;
-}
-.hero-body {
-    position: relative;
-    z-index: 1;
-    max-width: 620px;
-    font-size: 14px;
-    line-height: var(--ui-leading-body);
-    color: rgba(255, 255, 255, .78);
-    margin-bottom: 28px;
-}
-.hero-body p { margin: 0 0 8px; }
-.hero-actions { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 12px; }
-.hero-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    height: 42px;
-    padding: 0 22px;
-    border-radius: 999px;
-    font-size: 14px;
-    font-weight: 500;
-    transition: transform var(--ui-duration-fast) var(--ui-ease-out),
-                background var(--ui-duration-fast) var(--ui-ease-out);
-}
-.hero-btn-primary { background: #fff; color: #1d1d1f; }
-.hero-btn-primary:hover { background: #fff; color: #1d1d1f; transform: translateY(-1px); }
-.hero-btn-ghost {
-    background: rgba(255, 255, 255, .1);
-    border: 1px solid rgba(255, 255, 255, .22);
-    color: #fff;
-}
-.hero-btn-ghost:hover { background: rgba(255, 255, 255, .18); color: #fff; }
-.hero-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+/* Hero 区段已删除（本轮 UI 优化）。
+   原来是一块深色渐变的大卡片，桌面上连同下外边距吃掉约 350px；而它承载的公告是
+   运营写的富文本，几段话就能顶到 600px+，把商品挤出首屏。公告改成 .mnotice 窄条
+   保留在 home.blade.php 里，装饰性的渐变、光晕、两个大按钮和第二个 h1 一并去掉。
+   删除范围：.hero / .hero::after / .hero-badge / .hero h1 / .hero-body /
+   .hero-actions / .hero-btn 及其变体。全仓无 JS 引用它们。 */
 
 /* ---------------------------------------------------------------- 区块标题 */
 .sec-head {
@@ -500,7 +419,7 @@ body {
 /* 分类小标。uppercase + 字距，和目标站一致——它把分类当作卡片的「眉标」，
    而不是一个可点的标签。 */
 .mcard-eyebrow {
-    font-size: 11px;
+    font-size: var(--fs-xs);
     line-height: 1.4;
     color: var(--ui-text-muted);
     text-transform: uppercase;
@@ -517,9 +436,16 @@ body {
     font-weight: 700;
     color: var(--ui-text-primary);
     margin-bottom: 8px;
-    white-space: nowrap;
+    /* 两行而不是单行截断。280px 卡宽 16px 字大约 16 个汉字，手机 167px 卡宽只剩
+       约 10 个字，「腾讯视频VIP会员年卡…」这种被砍掉规格的标题读不出买的是什么。
+       卡片是 flex 列且 .mcard-foot 有 margin-top:auto，网格行又是 stretch，
+       所以标题占一行还是两行都不会让同排卡片错位。 */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
+    min-height: calc(2 * 1.35em);
 }
 .mcard-title::after { content: ""; position: absolute; inset: 0; }
 .mcard:hover .mcard-title { color: var(--ui-accent); }
@@ -533,7 +459,7 @@ body {
     height: 22px;
     padding: 0 9px;
     border-radius: 999px;
-    font-size: 11.5px;
+    font-size: var(--fs-xs);
     font-weight: 500;
     white-space: nowrap;
 }
@@ -567,7 +493,7 @@ body {
 }
 .mcard-price-label {
     display: block;
-    font-size: 10.5px;
+    font-size: var(--fs-xs);
     text-transform: uppercase;
     letter-spacing: .06em;
     color: var(--ui-text-muted);
@@ -726,9 +652,6 @@ body {
 
 /* ---------------------------------------------------------------- 响应式 */
 @media (max-width: 900px) {
-    .hero { padding: 34px 24px; }
-    .hero h1 { font-size: 28px; }
-    .hero::after { opacity: .5; right: -140px; }
     .sec-head h2 { font-size: 22px; }
     .site-header nav { margin: 0; }
 }
@@ -757,8 +680,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .mcard, .ncard, .hero-btn, .mcard-buy, .site-nav li a, .hdr-action { transition: none; }
-    .mcard:hover, .ncard:hover, .hero-btn-primary:hover { transform: none; }
+    .mcard, .ncard, .mcard-buy, .site-nav li a, .hdr-action { transition: none; }
+    .mcard:hover, .ncard:hover { transform: none; }
 }
 
 /* ============================================================================
@@ -1866,3 +1789,110 @@ body {
     line-height: 1.7;
 }
 .op-alert svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 3px; }
+
+/* ============================================================================
+   本轮 UI 优化：公告条、商品图、间距收敛
+   ============================================================================ */
+
+/* ---- 站点公告（原 Hero 的内容，换成窄条） ---- */
+.mnotice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-3);
+    padding: var(--sp-4) var(--sp-5);
+    margin-bottom: var(--sp-6);
+    border: 1px solid var(--ui-border);
+    border-left: 3px solid var(--ui-accent);
+    border-radius: var(--ui-radius-md);
+    background: var(--ui-bg-elevated);
+}
+.mnotice-icon { display: flex; flex-shrink: 0; color: var(--ui-accent-ink); }
+.mnotice-icon svg { width: 18px; height: 18px; margin-top: 2px; }
+.mnotice-body {
+    min-width: 0;
+    font-size: var(--fs-base);
+    line-height: 1.7;
+    color: var(--ui-text-secondary);
+}
+.mnotice-body > :first-child { margin-top: 0; }
+.mnotice-body > :last-child { margin-bottom: 0; }
+.mnotice-body p { margin: 0 0 var(--sp-2); }
+/* 公告是运营写的富文本，长度不可控。给个上限并允许滚动，避免它再一次把商品挤出首屏
+   ——那正是删掉 Hero 的原因，换成窄条也不能把这个自由度放回来。 */
+.mnotice-body { max-height: 8.5em; overflow-y: auto; }
+
+/* ---- 商品图槽位 ---- */
+.mcard-media {
+    /* 4:3。列表要的是整齐，所以槽位定比例、图片 cover 填满：上传的可能是 1200x400
+       的横幅也可能是 400x900 的竖图，不定比例就会每张卡高度不一、整排参差。 */
+    aspect-ratio: 4 / 3;
+    width: 100%;
+    margin-bottom: var(--sp-3);
+    border-radius: var(--ui-radius-sm);
+    overflow: hidden;
+    background: var(--ui-bg-soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.mcard-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+/* 没有商品图时的占位。和真图同一个槽位，所以有图没图的卡片骨架完全一致。 */
+.mcard-img-ph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--ui-border-strong);
+}
+.mcard-img-ph svg { width: 30%; height: 30%; }
+/* 缺货的卡片把图片压暗，让「不能买」在缩略图上就看得出来，而不只是一个徽章。 */
+.mcard.is-out .mcard-media { opacity: .55; }
+
+/* ---- 最新动态网格：auto-fill 会开满轨道，3 张卡永远空一格 ---- */
+/* .mgrid 用 auto-fill，1170px 下开出 4 条轨道而这里只有 3 张卡，右边永远空一整条
+   280px 的轨道。auto-fit 会把空轨道收掉，3 张卡均分整行。 */
+.mgrid-news { grid-template-columns: repeat(auto-fit, minmax(234px, 1fr)); }
+
+/* ---- 纵向节奏 ---- */
+/* 页头到第一块内容只有 15px（front.css 的 .main-container，modern 没覆盖），
+   而区块之间是 40px —— 进站看到的第一个间隔是全页最小的。
+   页脚之前则相反：contact 的 40px 下外边距 + main 的 30px 下内距 + 页脚的 40px 上
+   外边距叠出 110px，且三者都不折叠（body 是 flex 列）。最后一张卡到版权行要滚过
+   近 200px 空白。两头都收一收，让商品列表成为页面主要视觉内容。 */
+.main-container {
+    padding-top: var(--sp-6);
+    padding-bottom: var(--sp-4);
+}
+.site-footer { margin-top: var(--sp-6); }
+.contact-section { margin-bottom: var(--sp-6); }
+
+@media (max-width: 768px) {
+    .main-container { padding-top: var(--sp-4); }
+    .mnotice { padding: var(--sp-3) var(--sp-4); gap: var(--sp-2); }
+    /* 手机上卡片变窄，4:3 的图会占掉太多卡高，换成更扁的比例。 */
+    .mcard-media { aspect-ratio: 16 / 10; margin-bottom: var(--sp-2); }
+
+    /* 徽章行在窄卡里会换行，而且是否换行取决于库存文案的长度
+       （「有库存」不换、「库存紧张（剩 2）」换），于是同样内容的卡片高度差 28px。
+       实测 375px 下 7 张卡里 6 张徽章行 50px、1 张 22px，卡片高度 275 / 247 两种。
+
+       「自动交付」这枚徽章在每一张卡上都一样，不携带任何区分信息，手机上把它收起来：
+       一行放得下库存徽章，所有卡片的徽章行都回到 22px。商品详情页仍然显示它。
+       min-height 是第二道保险：将来库存文案再变长导致换行时，高度也不会跟着抖。 */
+    .mcard-badges .badge-info { display: none; }
+    .mcard-badges {
+        flex-wrap: nowrap;
+        min-height: 22px;
+        overflow: hidden;
+    }
+
+    /* 购买按钮 36x36 低于触控目标下限，而它是卡片上唯一的操作。 */
+    .mcard-buy { width: 44px; height: 44px; }
+    .mcard-buy svg { width: 18px; height: 18px; }
+}

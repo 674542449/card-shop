@@ -26,37 +26,30 @@
 
 @section('content')
 
-    {{-- 首屏。目标站把站点公告放在这块深色卡片里当正文，而不是像 default 那样做成
-         一条引用条——公告是这类店铺最该被读到的东西（质保、售后、免责），给它整个
-         首屏比给它一行引用更合适。没有配公告时退回一句站点描述，卡片不留空。 --}}
-    <section class="hero">
-        <span class="hero-badge">欢迎来到 {{ $siteName }}</span>
-        <h1>{{ $siteName }}</h1>
+    {{-- 大 Hero 已移除：它是纯装饰性首屏，桌面上要吃掉约 350px（48px 上下内距 +
+         站名 h1 + 按钮 + 40px 下外边距），1080p 视口因此少看到一整排商品；而公告是
+         运营写的富文本，几段话就能把它顶到 600px+，把商品整个挤出首屏。
 
-        <div class="hero-body">
-            @if($siteAnnouncement)
+         但公告本身是这类店铺最该被读到的东西（质保、售后、免责），不能跟着一起删。
+         所以保留内容、只换形态：一条窄通知条，没有配公告时整块不渲染。
+         站名 h1 也一并去掉——layout 里已经有一个 seo-h1，原来那个是页面上第二个 h1。
+         「查询订单」按钮不补：页头导航里本来就有。 --}}
+    @if($siteAnnouncement)
+    <section class="mnotice" aria-label="站点公告">
+        <span class="mnotice-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 11v2a1 1 0 0 0 1 1h2l4.5 3.5a1 1 0 0 0 1.5-.9V7.4a1 1 0 0 0-1.5-.9L6 10H4a1 1 0 0 0-1 1z"/>
+                <path d="M16.5 9a4 4 0 0 1 0 6"/>
+            </svg>
+        </span>
+        <div class="mnotice-body rich-text">
             {!! \App\Support\ContentRenderer::toHtml($siteAnnouncement) !!}
-            @elseif($siteDescription)
-            <p>{{ $siteDescription }}</p>
-            @else
-            <p>自动发货，付款后立即获取卡密。支持支付宝、微信与 USDT。</p>
-            @endif
-        </div>
-
-        <div class="hero-actions">
-            <a href="#products" class="hero-btn hero-btn-primary">
-                浏览商品
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                     stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true">
-                    <path d="M5 12h14M13 6l6 6-6 6"></path>
-                </svg>
-            </a>
-            <a href="/order/query" class="hero-btn hero-btn-ghost">查询订单</a>
         </div>
     </section>
+    @endif
 
     {{-- 商品。目标站按分类分段展示，每段一个标题加一个网格。 --}}
-    <div id="products"></div>
 
     @foreach($categories as $category)
         @php $catProducts = $groupedProducts->get($category->id, collect()); @endphp
@@ -100,7 +93,7 @@
             <a href="/articles" class="sec-link">全部文章 &rsaquo;</a>
         </div>
 
-        <div class="mgrid">
+        <div class="mgrid mgrid-news">
             @foreach($latestArticles->take(3) as $article)
             <a href="/articles/{{ $article->slug }}" class="ncard">
                 <span class="ncard-tag">公告</span>
