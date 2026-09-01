@@ -76,6 +76,10 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
   const editorConfig = useMemo(
     () => ({
       placeholder,
+      // wangEditor 的 autoFocus 默认是 true，编辑器一挂载就把焦点抢过去。系统设置页
+      // 有两个富文本编辑器，于是「后挂载的那个赢」，页面刚打开焦点就莫名其妙落在
+      // 公告编辑器里。编辑器是内容区，不该在用户还没点它的时候拿焦点。
+      autoFocus: false,
       MENU_CONF: {
         uploadImage: {
           async customUpload(file, insertFn) {

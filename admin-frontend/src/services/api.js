@@ -51,10 +51,29 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/**
+ * 从后台外壳页面重新取一枚 CSRF token。
+ *
+ * 外壳是 Blade 渲染的，每次响应都带一枚当前会话有效的 token（见
+ * resources/views/admin/spa.blade.php）。所以拿它刷新，不需要新增接口。
+ */
+async function refreshCsrfToken() {
+  const res = await fetch(ADMIN_BASE || '/', {
+    credentials: 'same-origin',
+    headers: { Accept: 'text/html' },
+  });
+  const html = await res.text();
+  const token = html.match(/name="csrf-token"\s+content="([^"]+)"/)?.[1];
+  if (!token) throw new Error('no csrf token in shell');
+  setCsrfToken(token);
+  return token;
+}
+
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
+    const config = error.config;
 
     if (status === 401) {
       if (!window.location.pathname.startsWith(`${ADMIN_BASE}/login`)) {
@@ -62,10 +81,24 @@ api.interceptors.response.use(
       }
     }
 
-    // 419 = expired/mismatched CSRF token. A full reload re-renders the shell with a
-    // valid token rather than leaving the admin stuck on every write.
-    if (status === 419) {
-      window.location.reload();
+    // 419 = CSRF token 过期或不匹配。
+    //
+    // 这里原来是 window.location.reload()。整页刷新确实能换到一枚新 token，但代价是
+    // 把页面上所有未提交的编辑一起冲掉——系统设置改成「改完自动保存」之后，这个代价
+    // 变得不可接受：一次 419 就会静默吃掉操作员刚敲进去的内容，而他什么都没点。
+    //
+    // 改成：静默取一枚新 token，把原请求重发一次。只重试一次（_csrfRetried 标记），
+    // 避免 token 一直不对时打成死循环。重试仍失败就把错误正常抛给调用方，由调用方
+    // 决定怎么提示——设置页会显示「保存失败」并保留输入，用户可以点重试。
+    if (status === 419 && config && !config._csrfRetried) {
+      config._csrfRetried = true;
+      try {
+        const token = await refreshCsrfToken();
+        config.headers = { ...config.headers, 'X-CSRF-TOKEN': token };
+        return api.request(config);
+      } catch (e) {
+        // 取不到新 token（多半是会话真的没了），交给下面正常报错。
+      }
     }
 
     return Promise.reject(error);

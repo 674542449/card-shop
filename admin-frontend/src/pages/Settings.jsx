@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ProForm, ProFormText, ProFormTextArea, ProFormDigit, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { Card, Tabs, Spin, message, Alert, Button, Input, Space, Typography } from 'antd';
-import { SendOutlined } from '@ant-design/icons';
+import { SendOutlined, CheckCircleFilled, LoadingOutlined, ExclamationCircleFilled } from '@ant-design/icons';
 import { getSettings, updateSettings, changePassword, sendTestEmail } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
@@ -15,14 +15,73 @@ const THEME_LABELS = {
   modern: '现代（仿独角数卡新版·含深色模式）',
 };
 
+/**
+ * 改动到落库之间等多久。
+ *
+ * 太短：富文本编辑器每敲一个字都发一次请求，而后端每次保存都写一条操作日志。
+ * 太长：用户改完就切走，改动还没发出去。800ms 大约是「停下来想一下」的间隔。
+ */
+const AUTO_SAVE_DELAY = 800;
+
+/**
+ * 自动保存的状态指示。
+ *
+ * 放在卡片标题栏右侧而不是弹 message：设置页是一个会连续改很多项的地方，每改一次
+ * 弹一条 toast 会盖住表单本身；标题栏是一个固定位置，用户想确认时看一眼就行。
+ * 失败态是唯一会一直停留的状态，并且带一个重试按钮 —— 失败的字段还在队列里，
+ * 表单里的值也没被动过，点一下就重发。
+ */
+function AutoSaveStatus({ state, onRetry }) {
+  if (state.status === 'saving') {
+    return (
+      <Typography.Text type="secondary">
+        <LoadingOutlined style={{ marginRight: 6 }} />
+        保存中…
+      </Typography.Text>
+    );
+  }
+
+  if (state.status === 'saved') {
+    return (
+      <Typography.Text type="success">
+        <CheckCircleFilled style={{ marginRight: 6 }} />
+        已保存
+      </Typography.Text>
+    );
+  }
+
+  if (state.status === 'error') {
+    return (
+      <Space size={8}>
+        <Typography.Text type="danger">
+          <ExclamationCircleFilled style={{ marginRight: 6 }} />
+          {state.error}
+        </Typography.Text>
+        <Button size="small" onClick={onRetry}>
+          重试
+        </Button>
+      </Space>
+    );
+  }
+
+  return <Typography.Text type="secondary">修改后自动保存</Typography.Text>;
+}
+
 export default function Settings() {
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [initialValues, setInitialValues] = useState({});
   const [testTo, setTestTo] = useState('');
   const [testing, setTesting] = useState(false);
   const [themes, setThemes] = useState(['default']);
   const [form] = ProForm.useForm();
+
+  // 自动保存状态：idle（没有待办）/ saving / saved / error
+  const [autoSave, setAutoSave] = useState({ status: 'idle', error: '' });
+  // 待保存的字段。只装「改过的」，不是整份表单——后端 update() 对请求里没有的 key
+  // 直接跳过，所以增量提交是天然支持的，也避免了「只保存打开过的 tab」那种隐式语义。
+  const queueRef = useRef({});
+  const timerRef = useRef(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     getSettings()
@@ -45,17 +104,78 @@ export default function Settings() {
       .finally(() => setLoading(false));
   }, [form]);
 
-  const handleSave = async (values) => {
-    setSaving(true);
-    try {
-      await updateSettings(values);
-      message.success('保存成功');
-    } catch (err) {
-      message.error(err.response?.data?.message || '保存失败');
-    } finally {
-      setSaving(false);
+  /**
+   * 把队列里攒的改动发出去。
+   *
+   * 失败时把这批原样放回队列，而不是丢掉：表单里的值一个字都不动（用户输入不会丢），
+   * 「重试」按钮再调一次这个函数就能把它们重新发一遍。不做自动重试——网关挂了的话
+   * 自动重试只会变成每 800ms 打一次。
+   */
+  const flush = useCallback(async () => {
+    if (inFlightRef.current) {
+      // 上一批还在路上。重新排一次，等它回来再发，避免同一个 key 并发写。
+      timerRef.current = setTimeout(flush, AUTO_SAVE_DELAY);
+      return;
     }
-  };
+
+    const payload = queueRef.current;
+    queueRef.current = {};
+
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
+    inFlightRef.current = true;
+    setAutoSave({ status: 'saving', error: '' });
+
+    try {
+      await updateSettings(payload);
+      // 期间又攒了新的改动就别急着说「已保存」，让下一轮去报。
+      setAutoSave(
+        Object.keys(queueRef.current).length ? { status: 'saving', error: '' } : { status: 'saved', error: '' }
+      );
+    } catch (err) {
+      queueRef.current = { ...payload, ...queueRef.current };
+      setAutoSave({
+        status: 'error',
+        error: err.response?.data?.message || '保存失败，请检查网络或重新登录',
+      });
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, []);
+
+  /** ProForm 的 onValuesChange：只把改动的字段入队，然后防抖。 */
+  const handleValuesChange = useCallback(
+    (changed) => {
+      queueRef.current = { ...queueRef.current, ...changed };
+      clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(flush, AUTO_SAVE_DELAY);
+    },
+    [flush]
+  );
+
+  // 离开页面时把没发出去的改动补发一次，否则「改完立刻点别的菜单」会丢掉最后 800ms
+  // 内的编辑。
+  useEffect(() => {
+    return () => {
+      clearTimeout(timerRef.current);
+      if (Object.keys(queueRef.current).length) {
+        updateSettings(queueRef.current).catch(() => {});
+      }
+    };
+  }, []);
+
+  // 还有没保存成功的东西时，关标签页要拦一下。这是「不能静默丢失」的最后一道。
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (Object.keys(queueRef.current).length === 0) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, []);
 
   // The test sends through the SAVED settings, not the values sitting in the form,
   // because the server reads them from the database. Saving first is therefore part
@@ -341,7 +461,7 @@ export default function Settings() {
 
   return (
     <>
-    <Card title="系统设置">
+    <Card title="系统设置" extra={<AutoSaveStatus state={autoSave} onRetry={flush} />}>
       <ProForm
         form={form}
         // Without this, clearing the logo or the QR code submits no key at all and the
@@ -350,12 +470,10 @@ export default function Settings() {
         // writes keys the request actually carries — so nothing else gets wiped.
         omitNil={false}
         initialValues={initialValues}
-        onFinish={handleSave}
-        submitter={{
-          searchConfig: { submitText: '保存设置' },
-          submitButtonProps: { loading: saving },
-          resetButtonProps: false,
-        }}
+        // 改完即存，不再有「保存设置」按钮。onValuesChange 只给出这次改动的字段，
+        // 正好就是要发的增量。
+        onValuesChange={handleValuesChange}
+        submitter={false}
       >
         <Tabs items={tabItems} />
       </ProForm>
@@ -369,6 +487,18 @@ export default function Settings() {
         description="后台地址是公开可访问的，初始密码写在项目文档里。"
       />
       <ProForm
+        // 这一行是「一进系统设置页就被弹到修改密码区」的正解。
+        //
+        // ProForm 的 autoFocusFirstInput 默认为 true，BaseForm 会把 autoFocus:true
+        // cloneElement 到第 0 个子元素上。上面那张设置表单的第 0 个子元素是 <Tabs>
+        // （渲染成 div，React 只对 button/input/select/textarea 调 focus()，所以空转），
+        // 而这张表单的第 0 个子元素正好是「当前密码」输入框 —— autoFocus 一路透传到
+        // 真实 <input>，React 在 commit 阶段调 focus()，浏览器为了让它可见就把页面
+        // 滚下去了。页面又是先渲染 Spin、数据回来后才挂载表单，所以表现为「先看到
+        // 顶部，随即被弹到底部」。
+        //
+        // 密码框本来也不该自动获得焦点：它是一个破坏性操作的入口，不是这一页的主任务。
+        autoFocusFirstInput={false}
         onFinish={handlePasswordChange}
         submitter={{
           searchConfig: { submitText: '修改密码' },
