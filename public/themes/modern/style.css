@@ -1133,34 +1133,90 @@ body {
    最先的；应付金额比单价还小；购买区没有视觉重心；描述和须知挤在一个 tab 里。
    ============================================================================ */
 
-.pd-hero {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--sp-6);
-    flex-wrap: wrap;
-    margin-bottom: var(--sp-6);
+/* ---- 商品页版式：一整块面板对半分 ----
+   图在左（浅底、拉伸等高、图片吸顶跟随），购买链路在右一条竖流。
+   改之前是「小图 + 名称 + 价格」一条横幅，横幅下面再分两栏（描述和表单在左、阶梯价
+   和须知在右），买家的视线要在两栏之间来回跳。现在把决定买不买、怎么买需要的东西
+   全部收进右栏自上而下排一遍：名称 → 徽章 → 价格 → 阶梯价 → 描述 → 下单。 */
+.pdx {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    /* 左栏的浅底要被面板圆角裁掉，否则色块会在四角露出直角。
+       用 clip 不用 hidden：hidden 会让 .pdx 成为滚动容器，右栏里的图片 sticky
+       就只相对这个不滚动的容器定位，等于完全失效（实测过）。clip 一样按圆角裁，
+       但不建立滚动容器。老浏览器不认 clip 时这条被丢弃，最多左侧色块露出直角。 */
+    overflow: clip;
+    margin-bottom: var(--sp-5);
 }
-.pd-eyebrow {
+
+/* 左栏。grid 项默认 stretch，所以浅底会自动拉伸到与右栏等高。 */
+.pdx-media {
+    padding: var(--sp-6);
+    background: var(--ui-bg-soft);
+    border-right: 1px solid var(--ui-border);
+    min-width: 0;
+}
+/* 图片在栏内吸顶跟随：右栏是整条下单流程，比图片高得多；不 sticky 的话，
+   往下填表单时左边就是一大片空色块。top 要避开吸顶的站点头部。 */
+.pdx-media-inner {
+    position: sticky;
+    top: calc(var(--modern-header-h) + var(--sp-5));
+    aspect-ratio: 4 / 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ui-bg-elevated);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-md);
+    overflow: hidden;
+}
+/* contain 而不是列表卡的 cover：详情页不能裁掉图上写着的规格。 */
+.pdx-img {
+    max-width: 100%;
+    max-height: 100%;
+    /* flex 项的 min-width/min-height 默认是 auto，很高的图会撑破槽位。 */
+    min-width: 0;
+    min-height: 0;
+    object-fit: contain;
+    display: block;
+}
+.pdx-img-ph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--ui-border-strong);
+}
+.pdx-img-ph svg { width: 32%; height: 32%; }
+
+/* 右栏。 */
+.pdx-info { padding: var(--sp-8); min-width: 0; }
+
+.pdx-eyebrow {
     font-size: var(--fs-xs);
     text-transform: uppercase;
     letter-spacing: .06em;
+    color: var(--ui-text-muted);
     margin-bottom: var(--sp-2);
 }
 /* 眉标里的分类链接原来只有 16px 高——低于 WCAG 2.2 对目标尺寸的 24px 下限。 */
-.pd-eyebrow a {
+.pdx-eyebrow a {
     display: inline-flex;
     align-items: center;
     min-height: 24px;
     color: var(--ui-text-muted);
 }
-.pd-eyebrow a:hover { color: var(--ui-accent); }
+.pdx-eyebrow a:hover { color: var(--ui-accent); }
 
 /* 商品名是这一页的主语，所以它是最大的字。 */
-.pd-name {
-    font-size: var(--fs-xl);
+.pdx-name {
+    font-size: var(--fs-2xl);
     line-height: var(--ui-leading-title);
-    font-weight: 700;
+    font-weight: 800;
     letter-spacing: -0.02em;
     color: var(--ui-text-primary);
     margin: 0 0 var(--sp-3);
@@ -1169,31 +1225,54 @@ body {
 }
 .pd-badges { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 
-.pd-hero-price { flex-shrink: 0; text-align: right; }
-.pd-price-label {
+.pdx-price-label {
     display: block;
+    margin: var(--sp-6) 0 var(--sp-1);
     font-size: var(--fs-xs);
     text-transform: uppercase;
     letter-spacing: .06em;
     color: var(--ui-text-muted);
-    margin-bottom: var(--sp-1);
 }
-/* 价格。
-   之前这里是 20px、纯文本色，理由写的是「单价只是参考值，应付金额才是要承诺的
-   数字」——那个判断放在这一页上是错的：买家进商品页第一件事就是找价格，把它做成
-   比商品名还小、还没有颜色的一行，等于让人以为价格没显示。
-   28px 与商品名同号，但靠颜色区分主次：名字是主语（文本色），价格是要找的数字
-   （价格色）。 */
-.pd-price {
-    font-size: var(--fs-xl);
-    font-weight: 700;
+/* 价格与商品名同号，靠颜色区分主次：名字是主语（文本色），价格是买家进这一页
+   第一件要找的数字（价格色）。 */
+.pdx-price {
+    font-size: var(--fs-2xl);
+    font-weight: 800;
+    line-height: 1.1;
     letter-spacing: -0.02em;
     color: var(--ui-price);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
-.pd-price .cur { font-size: var(--fs-sm); font-weight: 500; color: var(--ui-price); opacity: .7; margin-left: 4px; }
-.pd-price-note { display: block; margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--ui-text-muted); }
+.pdx-price .cur { font-size: var(--fs-md); font-weight: 500; opacity: .7; margin-left: 6px; }
+.pdx-price-note { display: block; margin-top: var(--sp-2); font-size: var(--fs-xs); color: var(--ui-text-muted); }
+
+/* 竖流里的每一节用一条分隔线起头，配一个小号节标题——这样「阶梯价 / 商品描述 /
+   下单」三段在一栏里也分得开，不必再各自套一张卡片。 */
+.pdx-sec {
+    margin-top: var(--sp-6);
+    padding-top: var(--sp-6);
+    border-top: 1px solid var(--ui-border);
+}
+.pdx-label {
+    /* flex 行是为了「下单」这一节在售罄时能在标题旁挂一个状态徽章。 */
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-base);
+    font-weight: 700;
+    color: var(--ui-text-secondary);
+    margin: 0 0 var(--sp-4);
+}
+
+/* front.css 给 .pd-tab-content 留了 15px 内距，那是它当初套在 .panel-body 里的
+   补偿。现在描述直接排在竖流中，这 15px 会让正文比同栏的节标题和表单缩进一截。 */
+.pdx-sec .pd-tab-content { padding: 0; }
+
+/* 购买须知通栏排在面板下方：它是通用条款，不是这次购买的决策依据，
+   留在右栏只会把那条竖流拉长。 */
+.pdx-notes { margin-bottom: var(--sp-5); }
+
 
 /* 两栏：主栏是下单与描述，侧栏是阶梯价与须知。侧栏定宽而不是按比例，
    这样宽屏下主栏不会被拉到一行放不下的长度。 */
@@ -1207,12 +1286,6 @@ body {
 .pd-col-side { display: flex; flex-direction: column; gap: var(--sp-4); position: sticky; top: 76px; }
 .pd-col-side .panel + .panel { margin-top: 0; }
 
-/* 购买区是这一页的视觉重心：标题条用强调色底，把它和其余面板区分开。 */
-.pd-buy .panel-head {
-    background: var(--ui-accent-soft);
-    color: var(--ui-accent-ink);
-    border-bottom-color: transparent;
-}
 
 /* 支付方式改成等宽自适应的瓦片行。原来靠 flex 自然宽，网关多了会挤成一团。 */
 .pay-options {
@@ -1274,8 +1347,12 @@ body {
 .pd-links a:hover { color: var(--ui-accent); }
 
 .wholesale-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+/* front.css 给每个单元格画了四条边（.wholesale-table th, .wholesale-table td
+   { border: 1px solid }），在侧栏小卡片里看不出来，挪进主栏就成了一张带竖线的
+   网格表。这里先清零，下面只留 thead 底线和行间横线——它们的选择器更具体，
+   不会被这条清零覆盖。 */
 .wholesale-table th,
-.wholesale-table td { padding: var(--sp-2) 0; text-align: left; }
+.wholesale-table td { padding: var(--sp-2) 0; text-align: left; border: 0; }
 .wholesale-table td:last-child,
 .wholesale-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
 .wholesale-table thead th {
@@ -1289,22 +1366,29 @@ body {
 .wholesale-table tbody tr + tr td { border-top: 1px solid var(--ui-border); }
 
 @media (max-width: 900px) {
-    /* 单栏：侧栏跟到主栏下面，并解除 sticky——窄屏上 sticky 的侧栏会一直占着
-       半屏高度，把正文挤到看不见。 */
+    /* 商品页收成单栏：图在上、购买流程在下。图片解除吸顶——单栏下它会一直
+       盖在表单上方。左栏的右边框换成下边框，否则单栏时那条线是悬空的。 */
+    .pdx { grid-template-columns: 1fr; }
+    .pdx-media {
+        padding: var(--sp-5);
+        border-right: none;
+        border-bottom: 1px solid var(--ui-border);
+    }
+    .pdx-media-inner { position: static; }
+    .pdx-info { padding: var(--sp-6); }
+
+    /* 文章页也用这套两栏。侧栏跟到主栏下面并解除 sticky——窄屏上 sticky 的侧栏
+       会一直占着半屏高度，把正文挤到看不见。 */
     .pd-layout { grid-template-columns: 1fr; }
     .pd-col-side { position: static; }
-    .pd-hero { gap: var(--sp-4); }
-    .pd-hero-price { text-align: left; }
 }
 
 @media (max-width: 560px) {
-    .pd-hero { flex-direction: column; }
+    .pdx-media { padding: var(--sp-4); }
+    .pdx-info { padding: var(--sp-5); }
     .pay-options { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
-    /* 手机上价格不降级。这行原来是 --fs-md(16px)，是把价格当「参考值」时留下的，
-       结果价格比商品名(24px)还小 —— 而这一页最该被一眼找到的就是它。
-       与商品名同号，靠颜色区分：名字是主语，价格是要找的数字。 */
-    .pd-price { font-size: var(--fs-xl); }
 }
+
 
 /* ============================================================================
    订单支付页
@@ -1929,45 +2013,4 @@ body {
     /* 购买按钮 36x36 低于触控目标下限，而它是卡片上唯一的操作。 */
     .mcard-buy { width: 44px; height: 44px; }
     .mcard-buy svg { width: 18px; height: 18px; }
-}
-
-/* ---- 商品详情页的商品图 ----
-   .pd-hero 是 flex 行，媒体块作为第一个子元素插在最前，主信息和价格保持原位。
-   定宽而不是按比例分：flex-shrink:0 让它在窄屏下不被压扁，wrap 时整块换行。 */
-.pd-hero-media {
-    flex-shrink: 0;
-    width: 180px;
-    aspect-ratio: 1 / 1;
-    padding: var(--sp-3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--ui-bg-soft);
-    border: 1px solid var(--ui-border);
-    border-radius: var(--ui-radius-lg);
-    overflow: hidden;
-}
-.pd-hero-img {
-    max-width: 100%;
-    max-height: 100%;
-    /* flex 项的 min-width/min-height 默认是 auto，很高的图会撑破槽位。 */
-    min-width: 0;
-    min-height: 0;
-    object-fit: contain;
-    display: block;
-}
-.pd-hero-img-ph {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    color: var(--ui-border-strong);
-}
-.pd-hero-img-ph svg { width: 40%; height: 40%; }
-
-@media (max-width: 640px) {
-    /* 窄屏上 .pd-hero 本来就会 wrap。图片收窄并居中，整宽的 1:1 方块会吃掉一整屏，
-       把商品名和价格推到折叠线以下。 */
-    .pd-hero-media { width: 140px; margin: 0 auto; }
 }
