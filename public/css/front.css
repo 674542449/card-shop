@@ -2060,6 +2060,19 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .pd-form .form-label { width: auto; font-size: 13px; }
     .pd-form .form-error { margin-left: 0; }
     .pd-form .form-turnstile { margin-left: 0; }
+    /* 输入框在这里必须解除 flex:1，否则它高度会塌成 18px。
+       .pd-form .form-input 有 `flex: 1`，展开是 flex-grow:1 / flex-shrink:1 /
+       flex-basis:0%。那是为**行**布局写的——让输入框吃掉标签之外的剩余宽度。
+       上面把 .form-group 改成 column 之后主轴变成纵向，flex-basis:0% 于是作用在
+       高度上，把规则里写的 height:38px 压成 min-content 的 18px：14px 的字塞在一个
+       18px 的框里，而这是结算表单上的输入框。
+       实测修复前 375px 下五个输入框全部 313x18。 */
+    .pd-form .form-input {
+        flex: 0 0 auto;
+        width: 100%;
+        /* 手机上顺便加高到能舒服点中的尺寸。 */
+        height: 44px;
+    }
     /* 支付方式那行的标签不再需要撑到卡片高度：它现在自己占一行。 */
     .pd-form .form-group-block .form-label { min-height: 0; }
     /* Title and date stop competing for one line: the date wrapped under a long
@@ -2096,4 +2109,43 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     margin-top: 6px;
     font-size: 12px;
     opacity: .75;
+}
+
+/* 悬浮按钮组会压住内容。两种情况要分开看：
+   1) 两个圆按钮之间那道 8px 的空隙。.fab-group 是一个 flex 列，它的包围盒把空隙也
+      包进去了，于是那一条什么都没有的区域照样拦截点击 —— 实测 820px 首页上
+      elementFromPoint 命中的是 .fab-group 本身而不是它底下的链接。这一条是真 bug，
+      用 pointer-events 精确解决：容器不接收事件，只有按钮接收。
+   2) 圆按钮本身压住底下的内容。这是所有悬浮按钮共有的行为，滚动一下就避开了；
+      唯一躲不开的是文档最末尾的内容，所以给内容区留一点底部余量。
+      不把余量加到能完全让开整组按钮（那要 126px），因为这一版的目标之一正是减少
+      不必要的空白；留出一个按钮的高度足够让最后一行内容不被压住。 */
+.fab-group { pointer-events: none; }
+.fab-btn { pointer-events: auto; }
+.main-container { padding-bottom: 60px; }
+
+@media (max-width: 768px) {
+    /* 手机上按钮组占屏比例更大，缩一档。 */
+    .fab-btn { width: 40px; height: 40px; }
+    .fab-group { right: 14px; bottom: 20px; gap: 6px; }
+    .main-container { padding-bottom: 56px; }
+}
+
+/* 回到顶部：滚过一屏才出现。见 front.js 里 toggleBackToTop 的说明。
+   放在 .fab-btn{pointer-events:auto} 之后，隐藏时不接收点击。 */
+.fab-top {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(6px);
+    transition: opacity .18s ease, visibility .18s ease, transform .18s ease;
+}
+.fab-top.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+    .fab-top { transition: none; transform: none; }
 }

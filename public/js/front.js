@@ -20,6 +20,16 @@ document.addEventListener('DOMContentLoaded', function () {
         backToTop.addEventListener('click', function () {
             window.scrollTo({ top: 0, behavior: 'smooth' });
         });
+
+        // 滚过一屏才出现。之前它是常驻的，于是在页面顶部也挂着一个点了什么都不会发生
+        // 的按钮，还会压住右下角的内容——实测手机上 modern 首页的「查看全部」链接就
+        // 被它盖住（elementFromPoint 命中的是这个按钮）。
+        // 用 class 切换而不是直接改 style：显示与否是状态，具体怎么隐藏交给样式表。
+        var toggleBackToTop = function () {
+            backToTop.classList.toggle('is-visible', window.scrollY > 300);
+        };
+        toggleBackToTop();
+        window.addEventListener('scroll', toggleBackToTop, { passive: true });
     }
 
     // Dynamic price calculation (product page)
