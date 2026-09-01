@@ -65,6 +65,20 @@ body {
 }
 a { color: var(--teal); text-decoration: none; }
 a:hover { color: var(--teal-dark); }
+/* 运营写的正文里的链接（公告弹窗、首页公告、文章正文、商品描述）用深一档的青色。
+   --teal #009688 压白底只有 3.67，不到 4.5；这些地方的链接是嵌在段落里的正文链接，
+   读者靠颜色把它从周围文字里认出来，对比度不够就等于没有。
+   不动全局 a：导航、按钮式链接各有自己的底色和覆盖规则，全局改会波及它们。
+   --teal-dark #00796b 压白 5.4，且已经是 hover 用色，视觉上是同一个系统。 */
+.rich-text a,
+.article-detail .content a,
+.pd-tab-content a {
+    color: var(--teal-dark);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+/* .site-quote a（首页公告）和 .ann-modal-body a（弹窗）各自已有专属规则且写在本段
+   之后，同特异性下后者胜出，所以直接在那两条上改色，不在这里叠加。 */
 img { max-width: 100%; height: auto; }
 h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-color); }
 
@@ -220,7 +234,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     box-shadow: var(--shadow-sm);
 }
 .site-quote strong { color: var(--price-color); }
-.site-quote a { color: var(--teal); font-weight: 500; }
+.site-quote a { color: var(--teal-dark); font-weight: 500; }
 
 /* The announcement is editor-authored now, so it arrives as HTML rather than a run of
    newlines. Keep its blocks from adding margin at the top and bottom of the plate, and
@@ -311,7 +325,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .ann-modal-body > *:last-child { margin-bottom: 0; }
 .ann-modal-body p { margin: 0 0 10px; }
 .ann-modal-body strong { color: var(--price-color); }
-.ann-modal-body a { color: var(--teal); }
+.ann-modal-body a { color: var(--teal-dark); text-decoration: underline; text-underline-offset: 2px; }
 .ann-modal-body ul, .ann-modal-body ol { margin: 0 0 10px; padding-left: 22px; }
 .ann-modal-body img {
     max-width: 100%;
@@ -345,7 +359,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
    the tap, which reads as a broken button. */
 .ann-modal-close:disabled {
     background: var(--border-color);
-    color: var(--text-light);
+    /* text-muted 而不是 text-light：倒计时的数字「(3)」就在这个按钮里，用户必须读到它
+       才知道还要等多久。text-light 压在 border-color 上实测只有 3.82；禁用态的灰底
+       已经足够传达「现在点不了」，不需要再把文字也压到读不清。 */
+    color: var(--text-muted);
     cursor: not-allowed;
 }
 .ann-modal-countdown { margin-left: 4px; font-variant-numeric: tabular-nums; }
