@@ -352,8 +352,21 @@ body {
     background: var(--ui-bg-elevated);
     border-bottom: 1px solid var(--ui-border);
 }
-.mobile-nav a { color: var(--ui-text-secondary); border-bottom: 1px solid var(--ui-border); }
-.mobile-nav a:hover, .mobile-nav a.active { background: var(--ui-bg-soft); color: var(--ui-text-primary); }
+/* 选择器必须写成 .mobile-nav ul li a（0,1,3），和 front.css:176 完全一致。
+   front.css 的抽屉是按深色页头写的：链接 rgba(255,255,255,.8)、active 是 #fff。
+   之前这里只写 .mobile-nav a（0,1,1），特异性低两级，无论放在哪都被压过去——
+   modern 的抽屉底是白的，于是白字白底，实测三个链接对比度全是 1.00：
+   手机上点开菜单，「查询订单」「公告」一个字都看不见。
+   minimal 的 style.css 开头就写过同一类坑（.site-nav li a），这里当时漏了。 */
+.mobile-nav ul li a {
+    color: var(--ui-text-secondary);
+    border-bottom: 1px solid var(--ui-border);
+}
+.mobile-nav ul li a:hover,
+.mobile-nav ul li a.active {
+    background: var(--ui-bg-soft);
+    color: var(--ui-text-primary);
+}
 
 /* ---------------------------------------------------------------- 首屏 */
 /* Hero 区段已删除（本轮 UI 优化）。
@@ -1094,15 +1107,24 @@ body {
 
 .site-logo { height: 36px; box-sizing: border-box; }
 
-/* 移动抽屉原本按 --header-height（50px）定位，而 modern 的页头是自动高度（约 60px），
-   于是抽屉会盖住页头底部一截；它的 z-index 又高于页头，盖住的部分点不到。
-   改成紧贴页头下沿：sticky 页头的高度由内容决定，用 100% 让它自己算。 */
+/* 移动抽屉的定位必须和页头的真实高度是**同一个数**。
+   front.css 按 --header-height（50px）给抽屉定 top，而 modern 的页头是自动高度；
+   之前这里试图用 top:auto 让 fixed 元素停在静态位置——实测反而落到 y=0，整个抽屉
+   藏到 sticky 页头后面（375px 下抽屉顶 0、页头底 63、重叠 63px）。minimal 上也是
+   同样的结论。
+   改成把页头高度钉成变量，页头和抽屉都用它，不可能再对不上。 */
+:root { --modern-header-h: 62px; }
+.site-header {
+    position: sticky;
+    height: var(--modern-header-h);
+    padding: 0;
+}
+.site-header .container { height: 100%; align-items: center; }
 .mobile-nav {
-    top: auto;
+    top: var(--modern-header-h);
     z-index: 890;
     box-shadow: var(--ui-shadow-2);
 }
-.site-header { position: sticky; }
 
 /* ============================================================================
    商品详情页
