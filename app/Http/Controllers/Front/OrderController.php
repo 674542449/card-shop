@@ -256,13 +256,51 @@ class OrderController extends Controller
             ]);
         }
 
-        // Try to generate payment URL if needed
+        // 支付链接：会话 -> 服务端缓存 -> 重新生成。
+        //
+        // 之前这里只读会话，注释却写着「Try to generate payment URL if needed」——
+        // 从来没有 generate 过。后果是支付链接只存在于下单那个浏览器里：换设备、换
+        // 浏览器、清了 cookie，或者只是把支付页链接发到手机上打开，页面上就没有
+        // 「前往支付」按钮，买家看到一个只会转圈的页面，完全不知道该怎么办。
+        //
+        // 重新生成要分两种网关看：
+        //   - 支付宝/微信（EPay）：链接是用订单自己的字段拼出来的一个提交 URL，
+        //     纯构造、无副作用，随时可以重算。
+        //   - USDT（EPUSDT）：createPayment 会真的去网关建一笔交易，反复调用可能
+        //     产生重复交易，所以结果放服务端缓存里，缓存在就直接用，不再打网关。
+        $cacheKey = 'payment_url:' . $order->order_no;
         $paymentUrl = session('payment_url_' . $order->order_no);
+
+        if (!$paymentUrl) {
+            try {
+                $paymentUrl = Cache::get($cacheKey);
+            } catch (\Throwable) {
+                $paymentUrl = null;
+            }
+        }
+
+        if (!$paymentUrl) {
+            $paymentUrl = $this->initiatePayment($order);
+
+            if ($paymentUrl) {
+                try {
+                    // 缓存到订单失效为止即可，过期订单不需要支付链接。
+                    $ttl = max(60, now()->diffInSeconds($order->expires_at, false));
+                    Cache::put($cacheKey, $paymentUrl, $ttl);
+                } catch (\Throwable) {
+                    // 缓存不可用不该让支付页打不开，链接这次照样能用。
+                }
+            }
+        }
 
         return theme_view('order.pay', [
             'order' => $order,
             'expired' => false,
             'paymentUrl' => $paymentUrl,
+            // 生成不出链接时（网关没配置、或网关调用失败），要明确告诉买家，而不是
+            // 让他对着一个「正在准备支付渠道」的骨架屏一直等。订单本身还占着库存，
+            // 到期会自动关闭并把卡密放回去。
+            'paymentUnavailable' => !$paymentUrl,
         ]);
     }
 

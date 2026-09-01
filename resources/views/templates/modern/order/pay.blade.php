@@ -67,6 +67,21 @@
                     <a href="{{ $paymentUrl }}" class="btn btn-lg btn-block"
                        target="_blank" rel="noopener">前往支付</a>
                     <p class="op-hint">支付页面在新标签页打开。付完回到这一页，状态会自动更新。</p>
+                @elseif($paymentUnavailable ?? false)
+                    {{-- 支付渠道拿不到链接（网关没配置，或者调用网关失败）。这里必须
+                         说清楚，不能挂一个「正在准备支付渠道」的骨架屏——那个骨架屏
+                         永远不会变成按钮，买家只会一直等。 --}}
+                    <div class="alert alert-warning op-alert" role="alert">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><path d="M12 16h.01"/>
+                        </svg>
+                        <span>
+                            当前支付渠道暂时不可用，无法生成支付链接。请稍后刷新本页重试；
+                            若持续如此，请联系站点客服并提供上面的订单编号。此订单到期后会
+                            自动关闭，不会扣款。
+                        </span>
+                    </div>
                 @else
                     <div class="op-wait">
                         <div class="skel skel-line" style="width:70%"></div>

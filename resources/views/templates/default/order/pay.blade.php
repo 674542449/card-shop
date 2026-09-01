@@ -61,6 +61,18 @@
            style="display:inline-block;width:auto;padding:10px 50px;font-size:16px;">前往支付</a>
         <p style="color:var(--text-light);font-size:13px;margin-top:10px;">点击上方按钮将跳转到支付页面</p>
     </div>
+    @elseif($paymentUnavailable ?? false)
+    {{-- 生成不出支付链接（网关没配置，或调用网关失败）。必须说清楚，否则买家对着
+         「等待支付」四个字一直等，而这一页永远不会长出支付按钮。 --}}
+    <div class="page-card" style="margin-bottom:15px">
+        <div class="page-card-body" style="padding:25px;">
+            <h3 style="font-size:16px;margin-bottom:8px;">暂时无法发起支付</h3>
+            <p style="color:var(--text-light);font-size:13px;line-height:1.7;">
+                当前支付渠道不可用，无法生成支付链接。请稍后刷新本页重试；若持续如此，
+                请联系站点客服并提供上方的订单编号。此订单到期后会自动关闭，不会扣款。
+            </p>
+        </div>
+    </div>
     @else
     <div class="page-card" style="margin-bottom:15px">
         <div class="page-card-body text-center" style="padding:30px;">
