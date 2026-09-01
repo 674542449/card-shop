@@ -342,8 +342,9 @@ class OrderController extends Controller
      * against someone else's email address held the password that unlocked every order
      * that person placed afterwards.
      *
-     * Bounded to the 25 most recent, because each candidate costs a bcrypt verification
-     * and this endpoint is reachable by anyone.
+     * 候选集按状态分桶取样（paid 8 + 未过期 pending 6 + expired/closed 6），因为每个
+     * 候选都要做一次 bcrypt，而这个端点任何人都能调。分桶而不是单一时间窗口，见下面
+     * phase 1 的说明。
      */
     private function matchOrders(string $email, string $password)
     {
@@ -351,21 +352,36 @@ class OrderController extends Controller
 
         // PHASE 1 — authenticate.
         //
-        // Bounded to 25 because every candidate costs a bcrypt at cost 12 and anyone
-        // can call this endpoint. The window is also restricted to orders that are paid
-        // or still live: nobody verifies the email at checkout and nothing deletes an
-        // expired order, so without that restriction 25 junk orders placed against a
-        // stranger's address would push their real one out of the window for good.
-        $probe = Order::whereRaw('lower(email) = ?', [$lower])
-            ->where(function ($q) {
-                $q->where('status', 'paid')
-                  ->orWhere(function ($q2) {
-                      $q2->where('status', 'pending')->where('expires_at', '>', now());
-                  });
-            })
-            ->orderByDesc('created_at')
-            ->limit(25)
-            ->get();
+        // 候选集要有上限，因为每个候选都要做一次 bcrypt（cost 12，本机实测 0.2 秒），
+        // 而这个端点任何人都能调。但上限不能是「按时间取最近 N 条」那种单一窗口：
+        //
+        //   - 谁都能拿别人的邮箱下单（下单不验邮箱），所以攻击者刷一批未支付订单就能
+        //     把受害者真正付过款的那单挤出窗口。之前靠「只看 paid 或未过期 pending」
+        //     来防这一手，但 pending 本身就在窗口里，刷 25 笔 pending 照样挤得掉。
+        //   - 而把 expired/closed 挡在窗口外，又造成另一个问题：订单全部过期的买家
+        //     用完全正确的密码来查，phase 1 直接空集，页面告诉他「邮箱或查询密码
+        //     错误」——他的密码没错，只是订单过期了。
+        //
+        // 所以改成按状态分桶取样：三个桶各自独立取最近若干条。刷 pending 只能填满
+        // pending 那个桶，冲不掉 paid 桶；expired/closed 有自己的名额，全过期的买家
+        // 也能通过认证走到 phase 2。总候选数 8+6+6=20，比原来的 25 还低。
+        $bucket = function (callable $filter, int $take) use ($lower) {
+            return Order::whereRaw('lower(email) = ?', [$lower])
+                ->where($filter)
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit($take)
+                ->get();
+        };
+
+        $probe = $bucket(fn ($q) => $q->where('status', 'paid'), 8)
+            ->concat($bucket(
+                fn ($q) => $q->where('status', 'pending')->where('expires_at', '>', now()),
+                6
+            ))
+            ->concat($bucket(fn ($q) => $q->whereIn('status', ['expired', 'closed']), 6))
+            ->unique('id')
+            ->values();
 
         if ($probe->isEmpty()) {
             // Equalise the cost of "this address has never bought here" with a real
@@ -383,24 +399,53 @@ class OrderController extends Controller
             return $matched->values();
         }
 
-        // PHASE 2 — now that ownership is proved, show everything.
+        // PHASE 2 — 身份已经证明，把其余订单也找出来。
         //
-        // The phase-1 restrictions exist to bound what an ANONYMOUS caller can cost us
-        // and to stop eviction; neither applies once a password has matched. Keeping
-        // them for the result set had two consequences the buyer felt: a regular
-        // customer with more than 25 purchases could not reach the cards in their older
-        // orders, and an expired or closed order was invisible — the page told them
-        // their password was wrong, when their order had simply lapsed.
+        // phase 1 的取样限制是为了给匿名调用者的开销封顶、并防止挤出；密码一旦匹配，
+        // 这两条理由都不成立了。把限制带到结果集里会让买家看不到自己的老订单，也看
+        // 不到已过期/已关闭的订单。
         //
-        // Still capped: a bcrypt per order is real work, and no genuine buyer is near
-        // this number.
-        return Order::whereRaw('lower(email) = ?', [$lower])
-            ->orderByDesc('created_at')
-            ->limit(200)
-            ->get()
-            ->filter(fn (Order $o) => Hash::check($password, $o->query_password))
+        // 两处成本控制，缺一不可：
+        //
+        // 1) 排除 phase 1 已经验过的那些 id。之前这里是无条件重新取 200 条再逐个
+        //    bcrypt，phase 1 刚验过的 20 条又被验了第二遍。实测一个被灌了 25 笔订单
+        //    的邮箱查询要 15 秒，其中约一半是这种重复验证。
+        //
+        // 2) 给整个请求的 bcrypt 次数封顶。每次 cost 12 大约几十毫秒到 0.2 秒，
+        //    没有上限时「订单越多越慢」会同时变成买家的体验问题和一个廉价的放大器
+        //    ——别人可以拿你的邮箱刷订单，把你的查询页拖成十几秒。
+        //    优先验 paid：卡密在已支付订单上，那才是买家来这一页要拿的东西。
+        $checkedIds = $probe->pluck('id')->all();
+        $budget = self::MAX_PASSWORD_CHECKS - count($checkedIds);
+
+        if ($budget > 0) {
+            $rest = Order::whereRaw('lower(email) = ?', [$lower])
+                ->whereNotIn('id', $checkedIds)
+                // paid 先验：卡密只挂在已支付订单上。
+                ->orderByRaw("case when status = 'paid' then 0 else 1 end")
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
+                ->limit($budget)
+                ->get()
+                ->filter(fn (Order $o) => Hash::check($password, $o->query_password));
+
+            $matched = $matched->concat($rest);
+        }
+
+        return $matched
+            ->unique('id')
+            ->sortByDesc(fn (Order $o) => [$o->created_at?->getTimestamp() ?? 0, $o->id])
             ->values();
     }
+
+    /**
+     * 单次查单请求允许做的 bcrypt 上限（phase 1 + phase 2 合计）。
+     *
+     * 这个数字是在「让真实买家看到自己全部订单」和「不让任何人把这一页拖垮」之间取
+     * 的折中。真实买家几乎不可能有这么多订单；超过这个数时优先返回已支付的那些，
+     * 因为卡密只在它们上面。
+     */
+    private const MAX_PASSWORD_CHECKS = 60;
 
     /**
      * A real bcrypt hash of a value nobody knows, used only to spend the time a

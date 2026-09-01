@@ -200,11 +200,6 @@ class OrderController extends Controller
 
     public function export(Request $request)
     {
-        $orders = $this->applyFilters($request, Order::with('product'))
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->get();
-
         $statusMap = [
             'pending' => '待支付', 'paid' => '已支付',
             'expired' => '已过期', 'closed' => '已关闭',
@@ -225,26 +220,56 @@ class OrderController extends Controller
             return '"' . str_replace('"', '""', $value) . '"';
         };
 
-        $csv = "\xEF\xBB\xBF";
-        $csv .= "订单号,商品名称,邮箱,数量,总金额,支付方式,状态,创建时间,支付时间\n";
+        // 边查边写，而不是先 get() 成一个大数组再拼一整个字符串。
+        //
+        // 之前是 ->get() 取出全部匹配订单，再把整份 CSV 拼进一个 PHP 字符串。两份
+        // 数据同时驻留在内存里：几万笔订单（每笔还 with('product')）就能超过
+        // memory_limit，而运维看到的是「导出订单点了没反应」或者一个 500，而且订单
+        // 越多越容易触发——恰恰是越需要导出的站点越导不出来。
+        //
+        // 改成 StreamedResponse + chunkById：每次只取 500 行，写完即刷出，内存占用
+        // 与订单总数无关。chunkById 而不是 chunk：后者用 OFFSET 翻页，导出期间有新
+        // 订单写入就会漏行或重复行。
+        $query = $this->applyFilters($request, Order::with('product'))->orderBy('id');
 
-        foreach ($orders as $order) {
-            $csv .= implode(',', array_map($cell, [
-                $order->order_no,
-                $order->product->name ?? '',
-                $order->email,
-                $order->quantity,
-                $order->total_amount,
-                $order->payment_method ?? '',
-                $statusMap[$order->status] ?? $order->status,
-                $order->created_at,
-                $order->paid_at ?? '',
-            ])) . "\n";
-        }
+        $filename = 'orders_' . date('Ymd_His') . '.csv';
 
-        return Response::make($csv, 200, [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename=orders_' . date('Ymd') . '.csv',
+        return Response::stream(function () use ($query, $statusMap, $cell) {
+            $out = fopen('php://output', 'w');
+
+            // BOM：Excel 没有它就会把 UTF-8 的中文认成本地编码，导出的表打开是乱码。
+            fwrite($out, "\xEF\xBB\xBF");
+            fwrite($out, "订单号,商品名称,邮箱,数量,总金额,支付方式,状态,创建时间,支付时间\n");
+
+            $query->chunkById(500, function ($orders) use ($out, $statusMap, $cell) {
+                foreach ($orders as $order) {
+                    fwrite($out, implode(',', array_map($cell, [
+                        $order->order_no,
+                        $order->product->name ?? '',
+                        $order->email,
+                        $order->quantity,
+                        $order->total_amount,
+                        $order->payment_method ?? '',
+                        $statusMap[$order->status] ?? $order->status,
+                        $order->created_at,
+                        $order->paid_at ?? '',
+                    ])) . "\n");
+                }
+
+                // 及时推给客户端，别攒在 PHP 的输出缓冲里——那样就白流式了。
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            });
+
+            fclose($out);
+        }, 200, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => 'attachment; filename=' . $filename,
+            // 流式响应长度未知，明确关掉 nginx 的缓冲，否则它会等整个响应结束再转发，
+            // 大导出又会卡在代理那一层。
+            'X-Accel-Buffering' => 'no',
         ]);
     }
 }
