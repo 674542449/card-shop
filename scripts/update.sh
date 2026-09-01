@@ -4,9 +4,11 @@
 #
 # 用法：
 #   ./scripts/update.sh            检查 -> 拉取 -> 重启 -> 验证（会先问一次）
-#   ./scripts/update.sh --check    只告诉你会发生什么，不动任何东西
+#   ./scripts/update.sh --check    只告诉你会发生什么，不动任何东西（可与下面几项组合）
 #   ./scripts/update.sh --yes      不询问，直接执行（无人值守用）
 #   ./scripts/update.sh --rollback 回滚到上一次更新前的版本
+#   ./scripts/update.sh --redeploy 不拉代码，只重启容器并验证
+#   ./scripts/update.sh --build    强制重建镜像（可与上面几项组合）
 #
 # 退出码：0 = 成功；1 = 有警告（更新完成了但有需要你看一眼的项）；2 = 失败。
 #
@@ -31,13 +33,17 @@
 # 之前它们共用一个 MODE 变量，后写的那个会把前面的覆盖掉。
 ACTION=update
 ASSUME_YES=0
+FORCE_BUILD=0
+DRY_RUN=0
 for a in "$@"; do
     case "$a" in
-        --check)    ACTION=check ;;
+        --check)    DRY_RUN=1 ;;
         --rollback) ACTION=rollback ;;
+        --redeploy) ACTION=redeploy ;;
+        --build)    FORCE_BUILD=1 ;;
         --yes|-y)   ASSUME_YES=1 ;;
-        -h|--help)  sed -n '2,12p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
-        *) echo "未知参数：$a（可用 --check / --yes / --rollback / --help）"; exit 2 ;;
+        -h|--help)  sed -n '2,14p' "$0" | sed 's/^#\{1,\} \{0,1\}//'; exit 0 ;;
+        *) echo "未知参数：$a（可用 --check / --yes / --rollback / --redeploy / --build / --help）"; exit 2 ;;
     esac
 done
 
@@ -97,6 +103,11 @@ if [ "$ACTION" = "rollback" ]; then
     [ -f "$ROLLBACK_FILE" ] || die "没有找到回滚点（$ROLLBACK_FILE）" "只有用本脚本更新过一次之后才会记录回滚点。"
     TARGET=$(cat "$ROLLBACK_FILE")
     echo "  将回到 ${BLD}${TARGET}${RST}  $(git log -1 --format=%s "$TARGET" 2>/dev/null | cut -c1-60)"
+    if [ "$DRY_RUN" = "1" ]; then
+        echo ""
+        echo "${DIM}（--check 模式，什么都没改）${RST}"
+        exit 0
+    fi
     confirm "确认回滚？" || { echo "  已取消"; exit 0; }
     git reset --hard "$TARGET" || die "git reset 失败"
     [ -n "$DC" ] && $DC restart app nginx
@@ -122,34 +133,91 @@ if [ -n "$DIRTY" ]; then
     echo "${RED}工作区有未提交的改动：${RST}"
     echo "$DIRTY" | sed 's/^/      /'
     echo ""
-    echo "  ${DIM}常见原因：entrypoint 在 composer install 失败时会兜底跑 composer update，${RST}"
-    echo "  ${DIM}把被跟踪的 composer.lock 改脏。确认这些改动可以丢弃后：${RST}"
-    echo "      git checkout -- ."
-    die "工作区不干净，git pull 会失败"
+    # redeploy 不跑 git pull，脏工作区拦不住它。而「上次部署跑了一半」正是
+    # redeploy 要救的场景之一 —— 那时 entrypoint 的兜底 composer update 很可能
+    # 已经把 composer.lock 改脏了。在这一档拦下来，等于恰好在需要它的时候不可用；
+    # 更糟的是提示里的 git checkout -- . 会把人正在跑的手工热修一起抹掉。
+    if [ "$ACTION" = "redeploy" ]; then
+        warn "工作区不干净，但 --redeploy 不拉代码，继续" "这些改动会原样保留。"
+    else
+        echo "  ${DIM}常见原因：entrypoint 在 composer install 失败时会兜底跑 composer update，${RST}"
+        echo "  ${DIM}把被跟踪的 composer.lock 改脏。确认这些改动可以丢弃后：${RST}"
+        echo "      git checkout -- ."
+        die "工作区不干净，git pull 会失败"
+    fi
+else
+    ok "工作区干净"
 fi
-ok "工作区干净"
 
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 BEFORE=$(git rev-parse HEAD)
 ok "当前分支 ${BRANCH}，版本 $(git rev-parse --short HEAD)"
 
-git fetch origin "$BRANCH" --quiet 2>/dev/null || die "git fetch 失败" "检查网络和 git 凭据。"
-AFTER=$(git rev-parse "origin/${BRANCH}")
+AFTER=""
+if git fetch origin "$BRANCH" --quiet 2>/dev/null; then
+    AFTER=$(git rev-parse "origin/${BRANCH}")
+elif [ "$ACTION" = "redeploy" ]; then
+    # redeploy 只用磁盘上已有的代码，够不到远端不影响它干活。而「远端够不到」
+    # 往往正是要 redeploy 的当口，在这里 die 等于把救援工具锁在门外。
+    warn "git fetch 失败，但 --redeploy 不需要远端，继续" "本次不会比对远端版本。"
+else
+    die "git fetch 失败" "检查网络和 git 凭据。"
+fi
 
-if [ "$BEFORE" = "$AFTER" ]; then
+# 早退条件必须同时排掉 --build：--build 的典型场景就是「代码没变，但要重建镜像」
+# （基础镜像更新了、上次 build 中途失败、docker/ 是手工 pull 的）。只看 ACTION
+# 的话，--build 会在这里被静默丢掉，人拿到 exit 0 以为重建过了。
+if [ -n "$AFTER" ] && [ "$BEFORE" = "$AFTER" ] && [ "$ACTION" != "redeploy" ] && [ "$FORCE_BUILD" != "1" ]; then
     ok "已经是最新版本，无需更新"
+    note "只想让站点按当前代码重新加载一遍（上次部署没跑完、或代码是手工 pull 的），用："
+    note "  ./scripts/update.sh --redeploy"
+    note "改过 .env 或只想重建镜像，用："
+    note "  ./scripts/update.sh --redeploy --build"
     exit 0
 fi
 
 # ---------------------------------------------------------------- 分析
 sect "2/5  这次会更新什么"
 
-COUNT=$(git rev-list --count "${BEFORE}..${AFTER}")
-echo "  ${COUNT} 个提交："
-git log --oneline "${BEFORE}..${AFTER}" | sed 's/^/      /' | head -20
-[ "$COUNT" -gt 20 ] && note "（只列了前 20 个）"
+# redeploy 不拉代码，没有「这次改了什么」可分析。但 CHANGED 留空不等于「什么都
+# 不用做」—— 那几个自动判断是从 diff 推出来的，没有 diff 就推不出来，只能按最坏
+# 情况处理：
+#   · 一律 up -d 而不是只 restart。restart 复用现有容器，不会重读 docker-compose.yml，
+#     也不会重新展开其中的 ${...}（PHP_FPM_*、TLS_CERT_DIR、POSTGRES_* 这些）。
+#     scripts/doctor.sh 里就写着这条，并且开的药方正是 docker compose up -d。
+#   · 一律先备份数据库。restart app 会重跑 entrypoint，而 entrypoint 无条件执行
+#     php artisan migrate --force —— 「代码是手工 pull 的」「上次部署跑了一半」
+#     这两种 redeploy 场景，磁盘上很可能正躺着没跑过的迁移。
+# 判断依据是「这一趟到底会不会拉到新提交」，而不是用了哪个 flag。
+# --redeploy 不拉；--build 在已经是最新时也不拉（它是被上面那个早退条件放行进来的）。
+# 两种情况都没有 diff 可查，所以都得按最坏情况处理。
+NO_PULL=0
+[ "$ACTION" = "redeploy" ] && NO_PULL=1
+[ -n "$AFTER" ] && [ "$BEFORE" = "$AFTER" ] && NO_PULL=1
 
-CHANGED=$(git diff --name-only "${BEFORE}..${AFTER}")
+if [ "$NO_PULL" = "1" ]; then
+    COUNT=0
+    CHANGED=""
+    NEED_UP_FORCED=1
+    NEED_BACKUP_FORCED=1
+    if [ "$ACTION" = "redeploy" ]; then
+        echo "  ${DIM}--redeploy：不拉取新代码，只重新应用配置、重启并验证。${RST}"
+    else
+        echo "  ${DIM}代码已经是最新，本次只重新应用配置并重建/重启。${RST}"
+    fi
+    if [ -n "$AFTER" ] && [ "$BEFORE" != "$AFTER" ]; then
+        warn "远端还有 $(git rev-list --count "${BEFORE}..${AFTER}") 个提交没拉"              "本次不会拉取。要更新代码请去掉 --redeploy。"
+    fi
+else
+    NEED_UP_FORCED=0
+    NEED_BACKUP_FORCED=0
+    COUNT=$(git rev-list --count "${BEFORE}..${AFTER}")
+    echo "  ${COUNT} 个提交："
+    git log --oneline "${BEFORE}..${AFTER}" | sed 's/^/      /' | head -20
+    [ "$COUNT" -gt 20 ] && note "（只列了前 20 个）"
+
+    CHANGED=$(git diff --name-only "${BEFORE}..${AFTER}")
+fi
 
 # 需要重建镜像吗
 NEED_BUILD=0
@@ -160,15 +228,20 @@ fi
 if echo "$CHANGED" | grep -qE '^composer\.(json|lock)$'; then
     NEED_BUILD=1; BUILD_WHY="${BUILD_WHY:+$BUILD_WHY，}composer 依赖有改动"
 fi
+if [ "$FORCE_BUILD" = "1" ]; then
+    NEED_BUILD=1; BUILD_WHY="${BUILD_WHY:+$BUILD_WHY，}--build 强制指定"
+fi
 
 # compose 配置变了要 up -d 而不是只 restart
 NEED_UP=0
 echo "$CHANGED" | grep -qE '^docker-compose\.ya?ml$' && NEED_UP=1
+[ "$NEED_UP_FORCED" = "1" ] && NEED_UP=1
 
 # 新迁移
 MIGRATIONS=$(echo "$CHANGED" | grep '^database/migrations/' || true)
 NEED_BACKUP=0
 [ -n "$MIGRATIONS" ] && NEED_BACKUP=1
+[ "$NEED_BACKUP_FORCED" = "1" ] && NEED_BACKUP=1
 
 # .env.example 变了，提醒人工比对
 ENV_CHANGED=0
@@ -185,6 +258,11 @@ if [ -n "$MIGRATIONS" ]; then
     echo "  ${YEL}有新的数据库迁移${RST}："
     echo "$MIGRATIONS" | sed 's/^/      /'
     note "更新前会自动备份数据库。"
+elif [ "$NEED_BACKUP_FORCED" = "1" ]; then
+    # 这一档没有 diff 可查，所以不能断言「没有迁移」—— entrypoint 会无条件跑
+    # migrate，磁盘上有没有待跑的迁移，这里根本不知道。
+    echo "  ${YEL}无法判断有没有待跑的迁移${RST}（本次没拉新代码，没有差异可比对）"
+    note "重启会触发 entrypoint 的 migrate，所以一律先备份数据库。"
 else
     ok "没有新的数据库迁移"
 fi
@@ -192,20 +270,30 @@ if [ "$ENV_CHANGED" = "1" ]; then
     warn ".env.example 有改动" "更新后请比对一下你的 .env 是否缺了新配置项：git diff ${BEFORE}..${AFTER} -- .env.example"
 fi
 
-if [ "$ACTION" = "check" ]; then
+if [ "$DRY_RUN" = "1" ]; then
     echo ""
     echo "${DIM}（--check 模式，什么都没改）${RST}"
     exit 0
 fi
 
 echo ""
-confirm "开始更新？" || { echo "  已取消"; exit 0; }
+if [ "$ACTION" = "redeploy" ]; then
+    confirm "开始重启并验证？" || { echo "  已取消"; exit 0; }
+else
+    confirm "开始更新？" || { echo "  已取消"; exit 0; }
+fi
 
 # ---------------------------------------------------------------- 执行
 sect "3/5  更新"
 
-echo "$BEFORE" > "$ROLLBACK_FILE"
-ok "回滚点已记录（$(git rev-parse --short "$BEFORE")）"
+# redeploy 不动代码，写回滚点只会把上一次真正更新留下的回滚点覆盖成当前版本，
+# 等于把回滚能力删掉。所以这一档不碰它。
+if [ "$NO_PULL" = "1" ]; then
+    note "未改动代码，保留原有回滚点"
+else
+    echo "$BEFORE" > "$ROLLBACK_FILE"
+    ok "回滚点已记录（$(git rev-parse --short "$BEFORE")）"
+fi
 
 if [ "$NEED_BACKUP" = "1" ]; then
     mkdir -p storage/backups
@@ -221,10 +309,13 @@ fi
 
 # --quiet：这个仓库把后台 SPA 的构建产物也提交了，一次更新动辄一百多个文件重命名，
 # 默认输出会把脚本自己的进度整个淹掉。要看改了什么，上面第 2 步已经列过提交了。
-if ! git pull --ff-only --quiet origin "$BRANCH"; then
+if [ "$NO_PULL" = "1" ]; then
+    ok "代码保持在 $(git rev-parse --short HEAD)（本次不拉取）"
+elif ! git pull --ff-only --quiet origin "$BRANCH"; then
     die "git pull 失败" "如果提示 divergent branches，说明本地有远端没有的提交，需要人工处理。"
+else
+    ok "代码已更新到 $(git rev-parse --short HEAD)（$(git diff --name-only "$BEFORE"..HEAD | wc -l | tr -d ' ') 个文件）"
 fi
-ok "代码已更新到 $(git rev-parse --short HEAD)（$(git diff --name-only "$BEFORE"..HEAD | wc -l | tr -d ' ') 个文件）"
 
 # 记下重启前的启动时间，用来证明容器真的重启了
 APP_CID=$($DC ps -q app 2>/dev/null | head -1)
