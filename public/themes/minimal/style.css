@@ -55,6 +55,9 @@
     --thumb-icon: #D6D3D1;
 
     --container-width: 1120px;
+    /* 页头高度的唯一来源。.site-header 和 .mobile-nav 的 top 都用它，
+       改一处两边同时变，不会再出现「抽屉钻到页头底下」。 */
+    --minimal-header-h: 62px;
     /* 留白。默认模板是 25/20，这里把大间隔拉到 44 —— 「大留白」是这套模板的
        主要主张，而留白只有在版心也收窄时才成立，所以两个数一起改。 */
     --section-gap: 44px;
@@ -85,8 +88,40 @@
     border-bottom: 1px solid var(--border-color);
     height: auto;
     padding: 14px 0;
+    /* front.css:83 给页头写了 line-height: var(--header-height)（50px）。上面把 height
+       改成 auto 了，但那个行高没覆盖，于是页头实际高 79px（14×2 内距 + 50px 行高 +
+       1px 边框）—— 而 --header-height 仍是 50px，front.css:163 的
+       .mobile-nav { top: var(--header-height) } 就按 50px 定位抽屉，抽屉顶端钻到页头
+       底下 20px，手机上第一项「购买商品」有 42% 被页头盖住，点那块点到的是 logo。
+       这是本模板唯一一个用户一定会撞上的功能缺陷。
+       复位行高，让页头高度由内容真实决定。 */
+    line-height: 1;
+    /* front.css:88 那条 0 1px 4px rgba(0,0,0,.2) 是为深色页头设计的重投影。本模板的
+       页头是「一条发丝线」（见 layout.blade.php 的注释），--shadow-sm 也已设为 none，
+       但这条 box-shadow 是写死的、token 覆盖不到，于是分隔线被画了两次。 */
+    box-shadow: none;
 }
 .site-header .container { align-items: center; }
+
+/* 导航链接同样吃 front.css:137-138 的 height/line-height: var(--header-height)。
+   不复位的话它自己就有 50px 高，页头怎么调都下不来。 */
+.site-nav li a {
+    height: auto;
+    line-height: 1.4;
+    padding: 7px 12px;
+}
+
+/* 抽屉的定位必须和页头的真实高度是**同一个数**。
+   原来页头 height:auto（由内容决定，实测 79px/71px），而抽屉按 front.css 的
+   --header-height（50px）定位，两者对不上，抽屉钻到页头底下、首项 42% 点不到。
+   试过 top:auto（让 fixed 元素停在静态位置），实测反而落到 y=0 —— 更糟。
+   所以改成把页头高度钉死成一个变量，页头和抽屉都用它，不可能再对不上。 */
+.site-header { height: var(--minimal-header-h); padding: 0; }
+.site-header .container { height: 100%; }
+.mobile-nav {
+    top: var(--minimal-header-h);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, .08);
+}
 
 .site-logo,
 .site-logo:hover {
@@ -478,4 +513,85 @@
         transition: none;
     }
     .pcard:hover { transform: none; }
+}
+
+/* ============================================================================
+   本轮 UI 优化补的几处
+   ============================================================================ */
+
+/* ---- 页头到内容的间距 ----
+   整页的段间距都是 --section-gap（44px / 手机 32px），唯独「页头 → 第一屏内容」
+   走的是 front.css:203 的 .main-container{padding:15px 0 30px}，是全页最小的一个
+   纵向间隔 —— 而它恰恰是进站看到的第一个间隔，「大留白」的第一印象在这里就没了。 */
+.main-container {
+    padding-top: var(--block-gap);
+    padding-bottom: var(--section-gap);
+}
+@media (min-width: 993px) {
+    .main-container { padding-top: 28px; }
+}
+
+/* ---- 分类小方块被 --radius 变成了圆 ----
+   本模板把 --radius 从 2px 提到 10px，而 front.css:522-540 的 .cat-thumb /
+   .cat-thumb-empty 吃的正是这个 token。16/18/20px 的小方块套 10px 圆角，半径超过
+   边长一半，浏览器钳成正圆 —— 同一张首页上，商品缩略图是 8px 圆角的方块，分类
+   缩略图却是圆形，而 front.css 的注释明说它是「一个方形标记复用三种尺寸」。
+   给小尺寸单独定一个与商品缩略图同族的圆角。 */
+.cat-thumb,
+.cat-thumb-empty {
+    border-radius: 6px;
+}
+.cat-thumb-lg { border-radius: 8px; }
+
+/* ---- 商品名里的长英文串 ----
+   line-clamp 只在**纵向**截断时给省略号；一个不可断的长串（发卡站常见，比如
+   aws-ec2-ohio-16vcpu-longsku）会横向撑出去被 overflow:hidden 生硬切断，没有任何
+   「后面还有」的提示。允许在任意字符间断行。 */
+.pcard-name {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+/* ---- meta 行换行导致卡片长高 ----
+   .pcard-meta 是 flex 但没有 flex-wrap 也没有 min-width:0，库存位数多时
+   .pcard-stock 被压到 min-content 以下，文字在自己内部折成两行，meta 从 23.2px
+   变 42.4px，整张卡默默长高 19.2px —— 这是这套卡片里唯一没被约束住的高度自由度
+   （实测触发条件：库存 ≥7 位且视口 421~445px）。
+   让库存不换行、放不下时省略，卡高就恒定了。 */
+.pcard-meta { min-width: 0; }
+.pcard-stock {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.pcard-badge { flex-shrink: 0; }
+
+/* ---- 手机上的触摸目标 ----
+   「购买」在手机上是 62×32，而同一个站的 default 模板在 ≤768px 会把同类按钮放大到
+   76×40 并有注释说明理由。这里漏了对应规则，等于把 default 已经修过的问题又带回来。 */
+@media (max-width: 768px) {
+    .pcard-btn,
+    .pcard-out {
+        min-height: 40px;
+        min-width: 76px;
+        font-size: 14px;
+    }
+    /* 左右边距：卡片自身内距 14px，外层只有 15px，卡间距 12px —— 外边距和卡间距太
+       接近，卡片组读起来像贴边铺满而不是一个有留白的块。 */
+    .container { padding-left: 18px; padding-right: 18px; }
+}
+
+/* ---- 单列时卡片过空 ----
+   ≤420px 是单列，卡片有 330px 宽，而内容只有一个 44px 小方块加两行字，中间大片空白。
+   单列时把缩略图放大到 56px，信息密度回来一些。
+   56 仍然 ≥ 商品名两行的 42.05px，.pcard-head 的高度依旧由缩略图决定 —— 这套卡片的
+   等高就是靠这个不等式成立的，调整时必须守住。 */
+@media (max-width: 420px) {
+    .pcard-thumb,
+    .pcard-thumb-ph {
+        width: 56px;
+        height: 56px;
+    }
+    .pcard-thumb-ph svg { width: 26px; height: 26px; }
 }
