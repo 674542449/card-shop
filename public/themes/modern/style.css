@@ -1930,3 +1930,44 @@ body {
     .mcard-buy { width: 44px; height: 44px; }
     .mcard-buy svg { width: 18px; height: 18px; }
 }
+
+/* ---- 商品详情页的商品图 ----
+   .pd-hero 是 flex 行，媒体块作为第一个子元素插在最前，主信息和价格保持原位。
+   定宽而不是按比例分：flex-shrink:0 让它在窄屏下不被压扁，wrap 时整块换行。 */
+.pd-hero-media {
+    flex-shrink: 0;
+    width: 180px;
+    aspect-ratio: 1 / 1;
+    padding: var(--sp-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--ui-bg-soft);
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius-lg);
+    overflow: hidden;
+}
+.pd-hero-img {
+    max-width: 100%;
+    max-height: 100%;
+    /* flex 项的 min-width/min-height 默认是 auto，很高的图会撑破槽位。 */
+    min-width: 0;
+    min-height: 0;
+    object-fit: contain;
+    display: block;
+}
+.pd-hero-img-ph {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    color: var(--ui-border-strong);
+}
+.pd-hero-img-ph svg { width: 40%; height: 40%; }
+
+@media (max-width: 640px) {
+    /* 窄屏上 .pd-hero 本来就会 wrap。图片收窄并居中，整宽的 1:1 方块会吃掉一整屏，
+       把商品名和价格推到折叠线以下。 */
+    .pd-hero-media { width: 140px; margin: 0 auto; }
+}

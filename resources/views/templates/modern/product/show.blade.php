@@ -21,6 +21,20 @@
     {{-- 身份区。改之前徽章和库存排在商品名**之上**，页面的主语反而不是视觉上最先的
          东西。顺序改成：分类眉标 → 商品名 → 状态徽章 → 价格。 --}}
     <section class="pd-hero">
+        {{-- 商品图。这一页此前一张图都没有——列表卡在上一轮补上了，详情页漏了，
+             于是买家从有图的卡片点进来，落到一个没有图的页面。
+             槽位固定 1:1 且始终渲染（没有图就放占位图），所以有图没图的版面骨架一致。
+             图片用 contain letterbox 而不是列表卡的 cover：详情页要的是不裁掉信息
+             （商品图上常有规格文字），列表页要的是整排整齐，两处取舍不同。 --}}
+        <div class="pd-hero-media">
+            @if($product->image)
+            <img src="{{ $product->image }}" alt="{{ $product->name }} 商品图"
+                 class="pd-hero-img" decoding="async" fetchpriority="high">
+            @else
+            @themeInclude('partials.image-placeholder', ['class' => 'pd-hero-img-ph'])
+            @endif
+        </div>
+
         <div class="pd-hero-main">
             <div class="pd-eyebrow">
                 <a href="/category/{{ $product->category->slug ?? '' }}">{{ $product->category->name ?? '未分类' }}</a>
