@@ -81,6 +81,25 @@ class OrderController extends Controller
                         throw new \RuntimeException('该优惠码不适用于此商品');
                     }
 
+                    // 门槛不满足时必须报错，不能静默按原价下单。
+                    //
+                    // calculateDiscount() 在低于 min_amount 时返回 0，而这里之前没有
+                    // 单独校验，于是买家用一张「满 1000 减 50」的码去买 350 元的东西，
+                    // 得到的是：订单按 350 原价建立、discount_amount=0、coupon_id 却
+                    // 写进了订单，然后直接跳转到网关收 350，全程没有任何一句提示——
+                    // 支付页的「优惠金额」那一行是 @if($order->discount_amount > 0)
+                    // 才渲染的，买家在付款前也看不出优惠码被吞了。
+                    //
+                    // 同一张券走 /api/v1/orders（OrderService::createOrder）会明确报
+                    // 「订单金额不满足优惠券最低消费」并返回 422。两条下单路径对同一
+                    // 份数据给出相反的行为，这里跟 OrderService 对齐。
+                    if ((float) $totalAmount < (float) $coupon->min_amount) {
+                        throw new \RuntimeException(
+                            '订单金额不满足该优惠码的最低消费 ¥'
+                            . number_format((float) $coupon->min_amount, 2) . ' 的要求'
+                        );
+                    }
+
                     $discountAmount = $coupon->calculateDiscount($totalAmount);
                     $couponId = $coupon->id;
                 }

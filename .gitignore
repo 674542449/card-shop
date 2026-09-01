@@ -5,6 +5,8 @@
 /.env.production
 /storage/*.key
 /storage/.composer-installed
+# seeder 首次建号时把随机密码写在这里（mode 600），绝不能进仓库
+/storage/app/initial-admin-password.txt
 /storage/app/public/uploads/
 /storage/framework/cache/data/*
 /storage/framework/cache/purifier/*

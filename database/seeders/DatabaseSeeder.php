@@ -26,8 +26,13 @@ class DatabaseSeeder extends Seeder
      * gateway credentials.
      *
      * ADMIN_PASSWORD from .env is used when set. When it is not, a random one is
-     * generated and printed to the boot log once, which keeps a first install usable
-     * without ever shipping a password an attacker already knows.
+     * generated and written to storage/app/initial-admin-password.txt (mode 600),
+     * which keeps a first install usable without ever shipping a password an attacker
+     * already knows.
+     *
+     * 之前这里说的是「printed to the boot log once」。那句话把留存性讲轻了：容器的
+     * stdout 会被 Docker 落盘成日志文件并长期保留，还常被集中日志系统采集，所以
+     * 「一次」实际上是「永久且很多人可读」。见下面写文件那段的说明。
      */
     private function seedAdmin(): void
     {
@@ -53,18 +58,61 @@ class DatabaseSeeder extends Seeder
         ]);
 
         if ($generated) {
+            // 密码写进受限文件，不写进 stdout。
+            //
+            // 这个 seeder 由 entrypoint 以容器 PID 1 的子进程身份调用，stdout 没有任何
+            // 重定向，所以「打印一次」实际上等于用 Docker 的 json-file 驱动把明文密码
+            // 落盘到宿主机 /var/lib/docker/containers/<id>/<id>-json.log，之后
+            // `docker compose logs app` 随时能翻出来，直到日志轮转或容器重建为止。
+            // 更要命的是容器 stdout 常被 Loki / ELK / CloudWatch 这类集中日志系统采集，
+            // 那里的读权限通常给整个团队，范围远大于能 SSH 上宿主机的人——初始管理员
+            // 密码就摆在一个几十人可全文检索的界面里。
+            //
+            // 写文件而不是打印，泄露面就回到「能读容器文件系统的人」，和 .env 一致。
+            $path = storage_path('app/initial-admin-password.txt');
+            $written = false;
+
+            try {
+                @mkdir(dirname($path), 0775, true);
+                $written = file_put_contents(
+                    $path,
+                    "username: {$username}\npassword: {$password}\n"
+                    . "读取后请立即登录修改密码，并删除本文件。\n"
+                ) !== false;
+
+                if ($written) {
+                    // 只给属主读写。容器里 seeder 以 root 跑，www-data 不需要读它。
+                    @chmod($path, 0600);
+                }
+            } catch (\Throwable) {
+                $written = false;
+            }
+
             $banner = str_repeat('=', 64);
-            $this->command?->getOutput()->writeln([
+            $lines = [
                 '',
                 $banner,
                 '  管理员账号已创建 / Administrator account created',
                 "  用户名 username: {$username}",
-                "  密码   password: {$password}",
-                '  这条信息只出现一次，请立即保存并登录后修改。',
-                '  This is shown once. Save it now and change it after logging in.',
-                $banner,
-                '',
-            ]);
+            ];
+
+            if ($written) {
+                $lines[] = '  密码已写入容器内文件（不打印到日志）：';
+                $lines[] = '    storage/app/initial-admin-password.txt';
+                $lines[] = '  读取：docker compose exec app cat storage/app/initial-admin-password.txt';
+                $lines[] = '  登录后请立即修改密码，并删除该文件。';
+            } else {
+                // 写不进去就只能打印，否则运维拿不到密码、站点等于锁死。
+                // 这种情况下明确告诉运维这条记录留在日志里了，需要自己清理。
+                $lines[] = "  密码 password: {$password}";
+                $lines[] = '  警告：密码文件写入失败，密码已打印到容器日志。';
+                $lines[] = '  请登录修改密码后清理日志（docker compose logs 仍可读到它）。';
+            }
+
+            $lines[] = $banner;
+            $lines[] = '';
+
+            $this->command?->getOutput()->writeln($lines);
         }
     }
 

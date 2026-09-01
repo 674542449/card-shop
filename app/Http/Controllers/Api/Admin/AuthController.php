@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\AdminAuth;
 use App\Models\Admin;
 use App\Models\OperationLog;
 use Illuminate\Http\Request;
@@ -36,6 +37,8 @@ class AuthController extends Controller
         $request->session()->regenerate();
         $request->session()->put('admin_id', $admin->id);
         $request->session()->put('admin_username', $admin->username);
+        // 见 AdminAuth：会话绑到当时的密码哈希上，密码一变所有旧会话立即失效。
+        $request->session()->put('admin_pw', AdminAuth::passwordFingerprint($admin->password));
 
         $admin->update([
             'last_login_at' => now(),
@@ -93,12 +96,20 @@ class AuthController extends Controller
         }
 
         $admin->update(['password' => Hash::make($request->input('new_password'))]);
+        $admin->refresh();
 
-        // Rotate the session so any other session holding the old credentials is not
-        // silently left signed in, and hand the SPA the token that rotation produced.
+        // 这里原来的注释写着 regenerate() 能让「其他持有旧凭据的会话不会被悄悄留在
+        // 登录状态」——那是错的，而且错得很危险：regenerate() 默认 $destroy=false，
+        // 只换当前请求自己的 session ID，存储里同一个管理员的其他会话完全不受影响。
+        // 也就是说「察觉被入侵 → 改密码」这个标准补救动作，在此之前对被盗的 cookie
+        // 一点作用都没有，而且那个 cookie 会被每次请求续期，攻击者只要保持活动就永不
+        // 掉线。真正让旧会话失效的是 AdminAuth 里的密码指纹比对；这里换 session ID
+        // 只是防会话固定，并顺带给 SPA 一枚新的 CSRF token。
         $request->session()->regenerate();
         $request->session()->put('admin_id', $admin->id);
         $request->session()->put('admin_username', $admin->username);
+        // 自己这条会话跟着新密码走，否则改完密码当场把自己也踢下线。
+        $request->session()->put('admin_pw', AdminAuth::passwordFingerprint($admin->password));
 
         OperationLog::log('修改密码', 'admin', $admin->id, '管理员修改了自己的密码');
 

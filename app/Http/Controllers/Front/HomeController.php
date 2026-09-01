@@ -28,7 +28,9 @@ class HomeController extends Controller
         $groupedProducts = $products->groupBy('category_id');
 
         $latestArticles = Article::published()->recent()->limit(5)->get();
-        $recommendedArticles = Article::published()->orderByDesc('views')->limit(5)->get();
+        // views 全为 0 是新站的常态，并列时顺序同样不稳定，补一个 tiebreaker。
+        $recommendedArticles = Article::published()
+            ->orderByDesc('views')->orderByDesc('id')->limit(5)->get();
 
         $siteName = setting('site_name', 'CardShop');
         $siteDescription = setting('site_description', '');
