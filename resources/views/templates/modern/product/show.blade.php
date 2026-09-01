@@ -51,6 +51,20 @@
 
             {{-- 购买区。这一页的目的就是完成这个动作，所以它是版面的视觉重心：
                  独立面板、强调色标题条、提交按钮 48px 通栏。 --}}
+            {{-- 商品描述排在购买表单**之前**。
+                 之前它在表单下面，实测整页 1372px 而描述面板在 1018px —— 买家要滚过
+                 整个结算表单才看得到商品介绍。可顺序是反的：描述是用来决定买不买的，
+                 决定之后才填表单。
+                 （之前它和「购买须知」挤在一个 tab 里，拆成独立面板这一点保留。） --}}
+            @if(trim(strip_tags($descriptionHtml)) !== '')
+            <section class="panel">
+                <div class="panel-head">商品描述</div>
+                <div class="panel-body">
+                    <div class="pd-tab-content rich-text">{!! $descriptionHtml !!}</div>
+                </div>
+            </section>
+            @endif
+
             <section class="panel pd-buy">
                 <div class="panel-head">
                     <span>下单</span>
@@ -215,17 +229,6 @@
                     @endif
                 </div>
             </section>
-
-            {{-- 商品描述。之前和「购买须知」挤在一个 tab 里，这里拆成独立面板，
-                 各自有标题，买家不用切换就能都看到。 --}}
-            @if(trim(strip_tags($descriptionHtml)) !== '')
-            <section class="panel">
-                <div class="panel-head">商品描述</div>
-                <div class="panel-body">
-                    <div class="pd-tab-content rich-text">{!! $descriptionHtml !!}</div>
-                </div>
-            </section>
-            @endif
 
         </div>
 

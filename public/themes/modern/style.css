@@ -36,6 +36,10 @@
     --ui-accent: #0071e3;
     --ui-accent-hover: #0067d2;
     --ui-accent-soft: rgba(0, 113, 227, .14);
+    /* 价格专用色。价格不该跟正文一个颜色——它是买家扫一眼就要找到的东西。
+       用暖红而不是品牌蓝：中文电商里价格是红的，蓝色会被读成链接。
+       #c0392b 压白卡 5.44、压页面底 4.99，都过 4.5。 */
+    --ui-price: #c0392b;
     /* 实心按钮的底色。浅色下就是 accent 本身；深色下 accent 太亮，白字压上去只有
        3.65，所以填充另用一档更深的蓝——accent 在深色里是给文字用的，不是给填充用的。 */
     --ui-accent-fill: #0071e3;
@@ -93,7 +97,7 @@
     --table-header-bg: var(--ui-bg-soft);
     --teal: var(--ui-accent);
     --teal-dark: var(--ui-accent-hover);
-    --price-color: var(--ui-text-primary);
+    --price-color: var(--ui-price);
     --warm-btn: var(--ui-accent);
     --warm-btn-hover: var(--ui-accent-hover);
     --thumb-bg: var(--ui-bg-soft);
@@ -165,6 +169,7 @@
     --ui-accent: #0a84ff;
     --ui-accent-hover: #409cff;
     --ui-accent-soft: rgba(10, 132, 255, .24);
+    --ui-price: #ff6b60;
     --ui-accent-fill: #0072e5;
     --ui-accent-fill-hover: #0068d0;
     --ui-success: #30d158;
@@ -201,6 +206,7 @@
         --ui-accent: #0a84ff;
         --ui-accent-hover: #409cff;
         --ui-accent-soft: rgba(10, 132, 255, .24);
+        --ui-price: #ff6b60;
         --ui-accent-fill: #0072e5;
         --ui-accent-fill-hover: #0068d0;
         --ui-success: #30d158;
@@ -1150,18 +1156,21 @@ body {
     color: var(--ui-text-muted);
     margin-bottom: var(--sp-1);
 }
-/* 单价降一档，低于商品名和应付金额。这一页的层级是：商品名（主语）> 应付金额
-   （要承诺的数字，且带强调色）> 单价（参考值）。三者同为 28px 时等于没有层级——
-   这是把「商品名排在价格之后」修过头的结果。 */
+/* 价格。
+   之前这里是 20px、纯文本色，理由写的是「单价只是参考值，应付金额才是要承诺的
+   数字」——那个判断放在这一页上是错的：买家进商品页第一件事就是找价格，把它做成
+   比商品名还小、还没有颜色的一行，等于让人以为价格没显示。
+   28px 与商品名同号，但靠颜色区分主次：名字是主语（文本色），价格是要找的数字
+   （价格色）。 */
 .pd-price {
-    font-size: var(--fs-lg);
+    font-size: var(--fs-xl);
     font-weight: 700;
     letter-spacing: -0.02em;
-    color: var(--ui-text-primary);
+    color: var(--ui-price);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
-.pd-price .cur { font-size: var(--fs-sm); font-weight: 500; color: var(--ui-text-muted); margin-left: 4px; }
+.pd-price .cur { font-size: var(--fs-sm); font-weight: 500; color: var(--ui-price); opacity: .7; margin-left: 4px; }
 .pd-price-note { display: block; margin-top: var(--sp-1); font-size: var(--fs-xs); color: var(--ui-text-muted); }
 
 /* 两栏：主栏是下单与描述，侧栏是阶梯价与须知。侧栏定宽而不是按比例，
@@ -1269,7 +1278,10 @@ body {
 @media (max-width: 560px) {
     .pd-hero { flex-direction: column; }
     .pay-options { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
-    .pd-price { font-size: var(--fs-md); }
+    /* 手机上价格不降级。这行原来是 --fs-md(16px)，是把价格当「参考值」时留下的，
+       结果价格比商品名(24px)还小 —— 而这一页最该被一眼找到的就是它。
+       与商品名同号，靠颜色区分：名字是主语，价格是要找的数字。 */
+    .pd-price { font-size: var(--fs-xl); }
 }
 
 /* ============================================================================
