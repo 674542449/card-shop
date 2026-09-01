@@ -613,21 +613,13 @@ docker compose exec -T postgres psql -U cardshop -d cardshop -v ON_ERROR_STOP=1 
 ## 更新升级
 
 ```bash
-cd ~/card-shop
-git status --porcelain                    # 必须为空（composer.lock 被跟踪，脏了会让 pull abort）
-git rev-parse HEAD > /tmp/rollback.txt
-git pull origin master
-
-docker compose up -d                      # compose 配置变了才有动作
-docker compose restart app                # 必须：up -d 在镜像 ID 没变时不会重建容器，
-                                          # entrypoint 的 migrate / view:cache / 预检就都不会跑
-docker compose restart nginx              # nginx 启动时缓存了 app 的 IP，app 重建后会变
+cd ~/card-shop && ./scripts/update.sh
 ```
 
-改过 `docker/` 或 `composer.json` 时，把 `up -d` 换成 `up -d --build`
-（`docker/php/entrypoint.sh` 是构建时 COPY 进镜像的，光 restart 不生效）。
+自动完成：检查工作区 → 列出待更新的提交 → 判断要不要重建镜像和备份数据库 → 拉代码 →
+重启 → 验证站点确实是新版。`--check` 只看不做，`--yes` 免确认，`--rollback` 回滚。
 
-详细说明、验证命令和回滚见 [DEPLOY.md](DEPLOY.md) 的「升级」一节。
+详细说明见 [DEPLOY.md](DEPLOY.md) 的「升级」一节。
 
 ## License
 

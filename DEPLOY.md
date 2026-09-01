@@ -517,15 +517,34 @@ SEO 里可能写死的旧域名），直接搬库过来它们全是旧值。
 
 ### 升级
 
+一条命令：
+
+```bash
+cd ~/card-shop && ./scripts/update.sh
+```
+
+它会自己完成：检查工作区是否干净 → 列出这次会更新哪些提交 → 判断要不要重建镜像、
+要不要备份数据库 → 拉代码 → 重启 → 验证站点确实是新版。中间会问一次要不要继续。
+
+```bash
+./scripts/update.sh --check      # 只告诉你会发生什么，不动任何东西
+./scripts/update.sh --yes        # 不询问，直接执行（无人值守用）
+./scripts/update.sh --rollback   # 回滚到上一次更新前的版本
+```
+
+退出码：0 = 成功，1 = 更新完成但有警告，2 = 失败。
+
+下面是它替你做掉的判断，写在这里是为了出问题时能自己接手，正常情况下不用手动跑：
+
 ```bash
 cd ~/card-shop
-git status --porcelain                    # ① 必须为空，否则 git pull 会中途 abort
-git rev-parse HEAD > /tmp/rollback.txt    # ② 记下当前版本，出事好退回
+git status --porcelain --untracked-files=no   # ① 必须为空，否则 git pull 会中途 abort
+git rev-parse HEAD > /tmp/rollback.txt        # ② 记下当前版本，出事好退回
 git pull
 
-docker compose up -d                      # ③ 让改过的 compose 配置生效（没改就是空操作）
-docker compose restart app                # ④ 这条不能省，理由见下
-docker compose restart nginx              # ⑤ 避免 502
+docker compose up -d                          # ③ 让改过的 compose 配置生效（没改就是空操作）
+docker compose restart app                    # ④ 这条不能省，理由见下
+docker compose restart nginx                  # ⑤ 避免 502
 ```
 
 **① `git status --porcelain` 必须为空。** `composer.lock` 是被跟踪的文件，而 entrypoint

@@ -7,6 +7,9 @@
 /storage/.composer-installed
 # seeder 首次建号时把随机密码写在这里（mode 600），绝不能进仓库
 /storage/app/initial-admin-password.txt
+# scripts/update.sh 产生的：回滚点和更新前的数据库备份
+/storage/.update-rollback
+/storage/backups/
 /storage/app/public/uploads/
 /storage/framework/cache/data/*
 /storage/framework/cache/purifier/*
