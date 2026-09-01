@@ -166,12 +166,16 @@
     background: var(--card-bg);
     border-bottom: 1px solid var(--border-color);
 }
-.mobile-nav a {
+/* 选择器必须是 .mobile-nav ul li a（0,1,3），与 front.css:176 完全一致。
+   之前写的是 .mobile-nav a（0,1,1），低两级，被 front.css 为深色页头写的
+   rgba(255,255,255,.8) 压过去——本模板的抽屉底是白的，于是白字白底。
+   和文件开头 .site-nav li a 那条注释说的是同一类坑，当时漏了抽屉。 */
+.mobile-nav ul li a {
     color: var(--text-muted);
     border-bottom: 1px solid var(--border-color);
 }
-.mobile-nav a:hover,
-.mobile-nav a.active {
+.mobile-nav ul li a:hover,
+.mobile-nav ul li a.active {
     color: var(--text-color);
     background: var(--body-bg);
 }
