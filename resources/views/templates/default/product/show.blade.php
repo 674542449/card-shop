@@ -76,20 +76,58 @@
                     — this is the page's main image, above the fold.
                 --}}
                 <div class="pd-head">
-                    @if($product->image)
+                    {{-- 图片槽位始终渲染，没有图就放占位图。之前是 @if($product->image)
+                         整块不渲染，于是有图的商品是双栏、没图的塌成单栏，同一个页面
+                         两种骨架。槽位固定 1:1 比例，竖图和横图都靠 contain letterbox
+                         进去，不会因为上传尺寸不同而把版面撑坏。 --}}
                     <div class="pd-image-wrap">
+                        @if($product->image)
                         <img src="{{ $product->image }}" alt="{{ $product->name }} 商品图"
                              class="pd-image" decoding="async" fetchpriority="high">
+                        @else
+                        @themeInclude('partials.image-placeholder', ['class' => 'pd-image-ph'])
+                        @endif
                     </div>
-                    @endif
+
                     <div class="pd-head-info">
-                        <div class="pd-meta">
-                            <span class="badge-auto">自动发货</span>
-                            <span class="pd-stock">库存 <strong>{{ $stockCount }}</strong> 件</span>
-                        </div>
-                        <h2 class="pd-title">{{ $product->name }}</h2>
-                        <div class="pd-price-row">
+                        {{-- 商品名是这一页的主语，排在最前且是最大的字。改之前它是 16px，
+                             而价格是 26px —— 标题比它的下级还小，而且徽章和库存那一行
+                             还排在它上面。 --}}
+                        <h2 class="dp-title">{{ $product->name }}</h2>
+
+                        {{-- 发货方式、库存、起购量拆成独立的状态项，不再挤在一行里。 --}}
+                        <ul class="dp-facts">
+                            <li class="dp-fact dp-fact-ok">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M4 12.5l5 5L20 6.5"/>
+                                </svg>
+                                自动发货
+                            </li>
+                            <li class="dp-fact {{ $stockCount > 0 ? '' : 'dp-fact-out' }}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M4 7.5l8-4 8 4v9l-8 4-8-4z"/><path d="M4 7.5l8 4 8-4"/><path d="M12 11.5v9"/>
+                                </svg>
+                                {{ $stockCount > 0 ? '库存 ' . $stockCount . ' 件' : '暂时缺货' }}
+                            </li>
+                            @if($product->min_quantity > 1)
+                            <li class="dp-fact">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M4 6h16M4 12h16M4 18h10"/>
+                                </svg>
+                                {{ $product->min_quantity }} 件起购
+                            </li>
+                            @endif
+                        </ul>
+
+                        <div class="dp-price-block">
+                            <span class="dp-price-label">单价</span>
                             <span class="pd-price">¥{{ number_format($product->price, 2) }}</span>
+                            @if($product->wholesalePrices->count() > 0)
+                            <span class="dp-price-note">买得多更便宜，阶梯价见下方</span>
+                            @endif
                         </div>
                     </div>
                 </div>
