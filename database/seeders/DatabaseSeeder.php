@@ -134,6 +134,11 @@ class DatabaseSeeder extends Seeder
                 'contact_text' => '',
                 'contact_url' => '',
                 'contact_qr_image' => '',
+                // 页脚的 "Powered by" 品牌行。默认声明成一个常见的开源发卡程序，
+                // 让按页脚字样判断程序的自动化扫描器落空（见
+                // resources/views/shared/footer-brand.blade.php 里对能力边界的说明）。
+                // 清空则整行不显示。
+                'footer_powered_by' => '独角数卡',
             ],
 
             // Payment settings

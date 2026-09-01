@@ -241,6 +241,12 @@ export default function Settings() {
           />
           <ProFormText name="contact_text" label="联系方式文字" />
           <ProFormText name="contact_url" label="联系方式链接" />
+          <ProFormText
+            name="footer_powered_by"
+            label="页脚品牌"
+            tooltip="显示为页脚的 Powered by 一行。声明成常见的开源发卡程序，可以让按页脚字样判断程序的自动化扫描器落空；清空则不显示这一行。注意它只挡得住粗筛——看 HTML 结构、静态资源路径、cookie 名仍然能分辨，不能替代真正的安全加固。"
+            placeholder="独角数卡"
+          />
           <ProForm.Item name="site_logo" label="站点 Logo" extra="显示在页面左上角，高度自动缩放到 30px。">
             <ImageUploader />
           </ProForm.Item>

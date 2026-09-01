@@ -2089,3 +2089,11 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .mb-1 { margin-bottom: 8px; }
 .mb-2 { margin-bottom: 15px; }
 .mb-3 { margin-bottom: var(--section-gap); }
+
+/* 页脚的 Powered by 行。指纹混淆用，说明见
+   resources/views/shared/footer-brand.blade.php。 */
+.footer-powered {
+    margin-top: 6px;
+    font-size: 12px;
+    opacity: .75;
+}

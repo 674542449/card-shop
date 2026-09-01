@@ -73,6 +73,7 @@
     <footer class="site-footer">
         <div class="container">
             &copy; {{ date('Y') }} {{ setting('site_name', 'CardShop') }}. All rights reserved.
+            @include('shared.footer-brand')
         </div>
     </footer>
 
