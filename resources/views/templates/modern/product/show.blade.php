@@ -27,15 +27,18 @@
         <div class="pd-main-col">
             <div class="pd-main-card">
 
-                {{-- 没有商品图就整块不渲染。这个槽位是 180px 的深色横幅，空着比没有更难看，
-                     也不传达任何信息。有图时用 front.css 的 .pd-image：它是 contain
-                     letterbox，上传的图不管是横幅还是竖图都不会被裁掉主体或撑破槽位。 --}}
-                @if($product->image)
+                {{-- 槽位固定 180px 且**始终渲染**，没有图就放占位图——和列表卡是同一套
+                     处理。之前是无图就整块不渲染，结果有图的商品和没图的商品长得像两个
+                     不同的页面；而这块横幅正是这套版式一眼能认出来的地方。
+                     图用 cover 填满同一个槽，横幅图和竖图都不会把这块撑成不同高度。 --}}
                 <div class="pd-hero-showcase">
+                    @if($product->image)
                     <img src="{{ $product->image }}" alt="{{ $product->name }} 商品图"
-                         class="pd-image" decoding="async" fetchpriority="high">
+                         decoding="async" fetchpriority="high">
+                    @else
+                    @themeInclude('partials.image-placeholder', ['class' => 'empty-state-glyph'])
+                    @endif
                 </div>
-                @endif
 
                 <h1 class="pd-title">{{ $product->name }}</h1>
 
@@ -162,28 +165,6 @@
                 </div>
                 @endif
 
-                {{-- 这条查询没有控制器供数据，只有视图里这一处。删掉它「购买须知」整块就没了。 --}}
-                @php $sidebarArticles = \App\Models\Article::published()->recent()->limit(5)->get(); @endphp
-                @if($sidebarArticles->isNotEmpty())
-                <div class="pd-section-box">
-                    <h2 class="pd-section-heading">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <path d="M4 4h11l5 5v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"></path>
-                            <path d="M14 4v6h6M8 14h8M8 17h5"></path>
-                        </svg>
-                        购买须知
-                    </h2>
-                    {{-- 用 .widget-list：全局 `a { color: inherit; text-decoration: none }` 之下，
-                         裸的 <a> 和正文长得一模一样，没人知道那是能点的。 --}}
-                    <ul class="widget-list">
-                        @foreach($sidebarArticles as $art)
-                        <li><a href="/articles/{{ $art->slug }}">{{ $art->title }}</a></li>
-                        @endforeach
-                    </ul>
-                </div>
-                @endif
-
                 <div class="notice-callout">
                     <h2 class="notice-callout-header">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -241,14 +222,15 @@
 
                     <div class="form-group">
                         <label class="form-label" for="quantity">购买数量</label>
-                        {{-- 模板的 .quantity-stepper 本来左右各有一个 +/- 按钮，靠它自带的 app.js
-                             驱动；本站没有那段脚本，所以只留输入框——type=number 自带的上下箭头
-                             就是同一件事，加两个点了没反应的按钮才是真问题。 --}}
+                        {{-- 加减键由本文件末尾的内联脚本驱动。它必须派发 input 和 change：
+                             front.js 是靠这两个事件重算「实际应付」的，直接改 .value 不会触发。 --}}
                         <div class="quantity-stepper">
+                            <button type="button" class="stepper-btn" data-qty-step="-1" aria-label="减少数量">&minus;</button>
                             <input type="number" name="quantity" id="quantity"
                                    class="stepper-input @error('quantity') is-invalid @enderror"
                                    value="{{ old('quantity', $min) }}"
                                    min="{{ $min }}" max="{{ min((int) $product->max_quantity, $stockCount) }}" required>
+                            <button type="button" class="stepper-btn" data-qty-step="1" aria-label="增加数量">+</button>
                         </div>
                         @error('quantity')
                         <div class="field-error">
@@ -411,4 +393,48 @@
     </div>
     @endif
 
+@endsection
+
+@section('scripts')
+<script>
+    // 数量加减键。
+    // 直接改 input.value 是不会触发事件的，而 front.js 正是靠 input/change 重算
+    // 「实际应付」（含阶梯价）。少派发这两个事件，按钮看着能用，金额却不动。
+    (function () {
+        var input = document.getElementById('quantity');
+        if (!input) return;
+
+        var min = parseInt(input.min, 10);
+        var max = parseInt(input.max, 10);
+        if (isNaN(min)) min = 1;
+
+        var sync = function () {
+            var v = parseInt(input.value, 10);
+            if (isNaN(v)) v = min;
+            document.querySelectorAll('[data-qty-step]').forEach(function (b) {
+                var step = parseInt(b.getAttribute('data-qty-step'), 10);
+                b.disabled = step < 0 ? v <= min : (!isNaN(max) && v >= max);
+            });
+        };
+
+        document.querySelectorAll('[data-qty-step]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var step = parseInt(btn.getAttribute('data-qty-step'), 10);
+                var v = parseInt(input.value, 10);
+                if (isNaN(v)) v = min;
+                v += step;
+                if (v < min) v = min;
+                if (!isNaN(max) && v > max) v = max;
+                input.value = v;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                sync();
+            });
+        });
+
+        // 手动输入之后按钮的可用状态也要跟上。
+        input.addEventListener('input', sync);
+        sync();
+    })();
+</script>
 @endsection
