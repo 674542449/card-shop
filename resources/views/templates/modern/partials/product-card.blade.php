@@ -22,73 +22,73 @@
     $desc = trim(strip_tags((string) $product->description));
 @endphp
 
-{{--
-    商品卡片。整卡可点：.mcard-title::after 铺满卡片做点击区，购买按钮用 z-index
-    浮在它上面。这样一张卡片只有两个键盘停靠点，而不是每张卡片停三次。
---}}
-<article class="mcard {{ $buyable ? '' : 'is-out' }}">
-    {{-- 商品图。这一套模板此前是三套里唯一完全不显示商品图的——列表卡没有、详情页
-         没有，运营在后台传的图等于白传。
+<article class="product-card">
+    {{-- 封面槽位固定高度并且**始终渲染**（没有图就放占位图）：运营上传的图尺寸各不
+         相同，让它自然撑开会让整排卡片参差。.product-card-poster 已经把槽位定成
+         138px + overflow:hidden，图自己再补 object-fit:cover 就能把任意比例填满同一
+         个槽——不管传的是 1200x400 的横幅还是 400x900 的竖图，卡片骨架都一样。
 
-         槽位固定 4:3 并且**始终渲染**（没有图就放占位图）：上传的图尺寸各不相同，
-         让它自然撑开就会每张卡高度不一，整排参差。object-fit:cover 把任意比例填满
-         同一个槽，所以不管传的是 1200x400 的横幅还是 400x900 的竖图，卡片骨架都
-         一样。
-         这里用 cover 而不是详情页那样的 contain：列表要的是整齐，详情页要的是不裁
-         掉信息，两者取舍不同。 --}}
-    <div class="mcard-media">
-        @if($product->image)
-        <img src="{{ $product->image }}" alt="" class="mcard-img"
-             loading="lazy" decoding="async">
-        @else
-        @themeInclude('partials.image-placeholder', ['class' => 'mcard-img-ph'])
-        @endif
+         这三条为什么写在行内：样式表只给 .product-card-poster 里的 <svg> 定了尺寸
+         （模板的封面原本是内联 SVG 海报，没有 <img> 这种情况），本次改动不许动
+         style.css，所以这是整个文件里唯一没有类可用的地方。 --}}
+    @if($product->image)
+    <div class="product-card-poster">
+        <img src="{{ $product->image }}" alt="" loading="lazy" decoding="async"
+             style="width:100%;height:100%;object-fit:cover;">
     </div>
-
-    <div class="mcard-eyebrow">分类 · {{ $product->category->name ?? '未分类' }}</div>
-
-    <a href="/product/{{ $product->slug }}" class="mcard-title">{{ $product->name }}</a>
-
-    <div class="mcard-badges">
-        <span class="badge badge-info">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
-                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"></path>
-            </svg>
-            自动交付
-        </span>
-        <span class="badge badge-{{ $stockTone }}">{{ $stockLabel }}</span>
-    </div>
-
-    @if($desc !== '')
-    <p class="mcard-desc">{{ $desc }}</p>
+    @else
+    {{-- 占位图这里让 image-placeholder 自己**就是**封面槽（两个类一起给它），而不是
+         再套一层 .product-card-poster：套起来的话占位 <div> 是个收缩到内容宽度的
+         flex 项，而 .product-card-poster svg 又要求 svg 撑满 100%，两者互相求解，
+         实测会得到一个被裁掉上下的 300px 大图标。 --}}
+    @themeInclude('partials.image-placeholder', ['class' => 'product-card-poster empty-state-glyph'])
     @endif
 
-    <div class="mcard-foot">
-        <div>
-            <span class="mcard-price-label">价格</span>
-            {{-- 数字等宽：一排卡片的价格要竖着对齐，比例数字下 1 比 8 窄就会参差。 --}}
-            <span class="mcard-price">{{ number_format($product->price, 2) }}<span class="cur">CNY</span></span>
+    {{-- 分类角标是封面的兄弟节点而不是子节点：image-placeholder 渲染出来是个闭合
+         元素，没法往里塞东西。反正 .product-card 自己是 position:relative，角标的
+         定位基准两种分支下都是同一个盒子，落点完全一致。 --}}
+    <span class="product-poster-badge">{{ $product->category->name ?? '未分类' }}</span>
+
+    <div class="product-card-body">
+        <a href="/product/{{ $product->slug }}" class="product-title"
+           title="{{ $product->name }}">{{ $product->name }}</a>
+
+        @if($desc !== '')
+        <p class="product-summary-text">{{ $desc }}</p>
+        @endif
+
+        <div class="product-meta-row">
+            <span class="badge-auto">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                自动发货
+            </span>
+
+            @if($stockTone === 'danger')
+            <span class="badge-stock out-of-stock">{{ $stockLabel }}</span>
+            @else
+            <span class="badge-stock">{{ $stockLabel }}</span>
+            @endif
+        </div>
+    </div>
+
+    <div class="product-card-footer">
+        <div class="product-price-block">
+            <span class="product-price-label">售价</span>
+            <div class="product-price"><small>¥</small>{{ number_format($product->price, 2) }}</div>
         </div>
 
         @if($buyable)
-        <a href="/product/{{ $product->slug }}" class="mcard-buy" aria-label="购买 {{ $product->name }}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L21 8H6"></path>
-                <circle cx="10" cy="20" r="1.2"></circle><circle cx="18" cy="20" r="1.2"></circle>
-            </svg>
-        </a>
+        {{-- 一排卡片上「购买」两个字重复出现，读屏器听下来分不清是哪一张，
+             补一个带商品名的可访问名称。 --}}
+        <a href="/product/{{ $product->slug }}" class="btn-buy"
+           aria-label="购买 {{ $product->name }}">购买</a>
         @else
         {{-- 同尺寸的禁用态而不是直接隐藏：一行里卡片的底边要齐，隐藏会让售罄的卡片
              比旁边的矮一截。 --}}
-        <span class="mcard-buy is-disabled" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                 stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 4h2l2.4 11.2a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 2-1.6L21 8H6"></path>
-                <circle cx="10" cy="20" r="1.2"></circle><circle cx="18" cy="20" r="1.2"></circle>
-            </svg>
-        </span>
+        <button type="button" class="btn-buy disabled" disabled>售罄</button>
         @endif
     </div>
 </article>

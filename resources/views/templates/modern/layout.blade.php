@@ -3,13 +3,14 @@
 <head>
     @include('shared.head')
 
-    {{-- 顺序不能反：front.css 在前，本模板在后。front.css 通体变量驱动，本模板覆盖
-         它的 token 就能把没有单独实现的页面（订单查询、订单详情、文章页）一起带过来。 --}}
+    {{-- 顺序不能反：front.css 在前，本主题在后。front.css 通体变量驱动，本主题重指
+         它的 token，那些没有单独实现的共享组件（alert、分页、订单状态、回顶按钮、
+         公告弹窗）就一起换了皮。反过来加载的话，front.css 会盖掉整套外观。 --}}
     <link href="{{ asset_versioned('css/front.css') }}" rel="stylesheet">
     <link href="{{ theme_asset('style.css') }}" rel="stylesheet">
 
     {{-- 深色模式的初始化必须**内联且在样式表之后、渲染之前**执行。
-         放到 front.js 里（defer、在 body 末尾）的话，页面会先按浅色画一帧再跳成深色，
+         放到 front.js 里（在 body 末尾）的话，页面会先按浅色画一帧再跳成深色，
          也就是所谓的白闪；对一个默认深色的用户来说这一下非常刺眼。
          try/catch 包住是因为无痕模式和禁用了站点数据的浏览器读 localStorage 会抛。 --}}
     <script>
@@ -33,55 +34,52 @@
 
     <h1 class="seo-h1">{{ setting('site_name', 'CardShop') }} - {{ setting('site_description', '自动发卡平台') }}</h1>
 
+    @php
+        // 顶部导航和移动端抽屉是同一份数据的两种排版。以前两处各写一遍 request()->is()，
+        // 改一个链接得记得改两处；合并成一个数组之后，两边不可能再对不上。
+        $siteLogo = setting('site_logo');
+        $siteName = setting('site_name', 'CardShop');
+        $navItems = [
+            ['url' => '/', 'label' => '首页', 'active' => request()->is('/')],
+            ['url' => '/order/query', 'label' => '查询订单', 'active' => request()->is('order/query*')],
+            ['url' => '/articles', 'label' => '公告', 'active' => request()->is('articles*')],
+        ];
+    @endphp
+
     <header class="site-header">
         <div class="container">
-            @php $siteLogo = setting('site_logo'); @endphp
-            <a class="site-logo" href="/">
+            <a class="site-brand" href="/">
                 @if($siteLogo)
-                <img src="{{ $siteLogo }}" alt="{{ setting('site_name', 'CardShop') }}" class="site-logo-img">
+                {{-- 外面这层 .site-logo 只为拿 front.css 的 `.site-logo img`
+                     （高 30px、宽自适应、最大 180px）。运营上传的 logo 尺寸不可控，
+                     本主题的样式表里没有任何规则管它，不套这一层的话一张 1600px 的
+                     横幅会把导航整条挤出屏幕。
+                     .site-logo 不能加在 <a> 上：front.css 还带一条
+                     `.site-logo:hover { color: #fff }`，那是给深色页头写的，在本主题
+                     的白色页头上会让品牌名一 hover 就消失。套在图片外层就避开了。 --}}
+                <span class="site-logo"><img src="{{ $siteLogo }}" alt="{{ $siteName }}"></span>
                 @else
-                <span class="logo-icon">{{ mb_substr(setting('site_name', 'C'), 0, 1) }}</span>
+                {{-- 首字牌是装饰：紧跟其后的 <span> 已经把站名读出来了，
+                     读屏再读一遍单个字没有意义。 --}}
+                <span class="brand-icon" aria-hidden="true">{{ mb_substr($siteName, 0, 1) }}</span>
                 @endif
-                {{ setting('site_name', 'CardShop') }}
+                <span>{{ $siteName }}</span>
             </a>
 
-            <nav>
+            <nav aria-label="主导航">
                 <ul class="site-nav">
+                    @foreach($navItems as $item)
                     <li>
-                        <a href="/" class="{{ request()->is('/') ? 'active' : '' }}">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M3 10.5 12 3l9 7.5"></path><path d="M5 9.5V21h14V9.5"></path>
-                            </svg>
-                            首页
-                        </a>
+                        <a href="{{ $item['url'] }}" class="nav-link{{ $item['active'] ? ' active' : '' }}"
+                           @if($item['active']) aria-current="page" @endif>{{ $item['label'] }}</a>
                     </li>
-                    <li>
-                        <a href="/order/query" class="{{ request()->is('order/query*') ? 'active' : '' }}">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <rect x="4" y="3" width="16" height="18" rx="2"></rect>
-                                <path d="M8 8h8M8 12h8M8 16h5"></path>
-                            </svg>
-                            查询订单
-                        </a>
-                    </li>
-                    <li>
-                        <a href="/articles" class="{{ request()->is('articles*') ? 'active' : '' }}">
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-                                 stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M12 3a6 6 0 0 0-6 6v4l-2 3h16l-2-3V9a6 6 0 0 0-6-6z"></path>
-                                <path d="M10 19a2 2 0 0 0 4 0"></path>
-                            </svg>
-                            公告
-                        </a>
-                    </li>
+                    @endforeach
                 </ul>
             </nav>
 
-            <div class="hdr-actions">
-                {{-- 深色开关。aria-pressed 由脚本同步，因为它表达的是「当前是否深色」，
-                     而那个状态在 <html> 上，不在按钮自己身上。 --}}
+            <div class="header-actions">
+                {{-- 深色开关。aria-pressed 由页面末尾的脚本同步，因为它表达的是
+                     「当前是否深色」，而那个状态在 <html> 上，不在按钮自己身上。 --}}
                 <button type="button" class="hdr-action" id="ui-theme-toggle"
                         aria-label="切换深色模式" title="切换深色模式" aria-pressed="false">
                     <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
@@ -96,32 +94,50 @@
                 </button>
 
                 @if(setting('contact_url'))
-                <a href="{{ setting('contact_url') }}" class="hdr-action" target="_blank" rel="noopener" title="联系客服">
+                {{-- 只留图标不留「客服」二字：窄屏上导航被折进抽屉后，页头右边同时站着
+                     深色开关、客服、汉堡三个控件，再加两个汉字实测会把站名挤到换行，
+                     而页头是定高的，换行就被切掉。title + aria-label 已经把名字说清楚。 --}}
+                <a href="{{ setting('contact_url') }}" class="hdr-action" target="_blank" rel="noopener"
+                   title="联系客服" aria-label="联系客服">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
                          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.9 8.9 0 0 1-3.8-.9L3 21l1.9-5a8.4 8.4 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.4-9 8.4 8.4 0 0 1 8.6 8.3z"></path>
                     </svg>
-                    <span>客服</span>
                 </a>
                 @endif
-            </div>
 
-            <button class="menu-toggle" id="menu-toggle" aria-label="菜单">&#9776;</button>
+                {{-- id 必须是 menu-toggle：front.js 按 id 取它。
+                     里面的 svg 不能吃点击，否则汉堡键会「点了没反应」——原因和对应的
+                     pointer-events 规则写在样式表的 .menu-toggle-btn svg 那一条。 --}}
+                <button type="button" class="menu-toggle-btn" id="menu-toggle"
+                        aria-label="菜单" aria-controls="mobile-nav" aria-expanded="false">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
         </div>
     </header>
 
-    <div class="mobile-nav" id="mobile-nav">
-        <ul>
-            <li><a href="/" class="{{ request()->is('/') ? 'active' : '' }}">首页</a></li>
-            <li><a href="/order/query" class="{{ request()->is('order/query*') ? 'active' : '' }}">查询订单</a></li>
-            <li><a href="/articles" class="{{ request()->is('articles*') ? 'active' : '' }}">公告</a></li>
-        </ul>
+    {{-- id 是 front.js 的接口（它按 id 取元素并切 .open），类名用本主题的 .mobile-drawer。
+         **不能**再挂 front.css 的 .mobile-nav：那套规则自带一份定位和深色背景，
+         两套定位叠在一起，抽屉要么悬在页头下方，要么整个钻进吸顶页头背后。 --}}
+    <div class="mobile-drawer" id="mobile-nav">
+        <div class="mobile-drawer-content">
+            @foreach($navItems as $item)
+            <a href="{{ $item['url'] }}" class="nav-link{{ $item['active'] ? ' active' : '' }}"
+               @if($item['active']) aria-current="page" @endif>{{ $item['label'] }}</a>
+            @endforeach
+        </div>
     </div>
 
     <main class="main-container">
         <div class="container">
             @if($errors->any())
-            <div class="alert alert-danger">
+            <div class="alert alert-danger" role="alert">
                 @foreach($errors->all() as $error)
                     <div>{{ $error }}</div>
                 @endforeach
@@ -129,11 +145,11 @@
             @endif
 
             @if(session('success'))
-            <div class="alert alert-success">{{ session('success') }}</div>
+            <div class="alert alert-success" role="status">{{ session('success') }}</div>
             @endif
 
             @if(session('error'))
-            <div class="alert alert-danger">{{ session('error') }}</div>
+            <div class="alert alert-danger" role="alert">{{ session('error') }}</div>
             @endif
 
             @yield('content')
@@ -142,11 +158,33 @@
 
     <footer class="site-footer">
         <div class="container">
-            &copy; {{ date('Y') }} {{ setting('site_name', 'CardShop') }}. All rights reserved.
-            @include('shared.footer-brand')
+            <div class="footer-inner">
+                <div class="footer-left">
+                    {{-- .site-brand 在这里只借它的字重和字号；页脚没有第二个能把站名
+                         排成品牌行的类。 --}}
+                    <div class="site-brand">{{ $siteName }}</div>
+                    <div>付款后自动发货，卡密直接显示在页面上，并发送到你填写的邮箱。</div>
+                    {{-- 版权和 Powered by 放进 .footer-left 这一列，而不是另起一条带分隔线的
+                         底栏——模板那条底栏是纯行内样式堆出来的，样式表里没有对应的类，
+                         照抄就得写一串 style=。 --}}
+                    <span class="footer-copyright">&copy; {{ date('Y') }} {{ $siteName }}. All rights reserved.</span>
+                    @include('shared.footer-brand')
+                </div>
+                <div class="footer-links">
+                    @foreach($navItems as $item)
+                    <a href="{{ $item['url'] }}">{{ $item['label'] }}</a>
+                    @endforeach
+                    @if(setting('contact_url'))
+                    <a href="{{ setting('contact_url') }}" target="_blank" rel="noopener">联系客服</a>
+                    @endif
+                </div>
+            </div>
         </div>
     </footer>
 
+    {{-- .fab-group 和 .fab-top 都是必需的：front.js 只切 .is-visible，而唯一让按钮可见的
+         规则是 `.fab-top.is-visible`；.fab-group 那层则负责 pointer-events，少了它，
+         两个按钮之间的空隙照样拦截点击。 --}}
     <div class="fab-group">
         <button class="fab-btn fab-top" id="back-to-top" title="回到顶部" aria-label="回到顶部">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -183,6 +221,47 @@
                 sync();
             });
         })();
+
+        // 抽屉的两处补丁。front.js 负责开合本身（它切 .open），这里只补它管不到的两件事：
+        //
+        // 1) 点遮罩关闭。本主题的抽屉是整屏遮罩，而 front.js 的「点到外面就收起」判断是
+        //    `!drawer.contains(e.target)` —— 点在遮罩上时 e.target 就是抽屉元素自己，
+        //    contains 对自身返回 true，于是遮罩怎么点都不关，用户只能回头去找汉堡键。
+        //    （旧版抽屉是页头下的一小块面板，点页面任何地方都在它外面，所以没这个问题。）
+        // 2) aria-expanded。汉堡键是个展开控件，读屏用户需要知道当前是开是合。
+        //
+        // 包一层 DOMContentLoaded 是为了**监听器的注册顺序**：front.js 的 click 监听是在它
+        // 自己的 DOMContentLoaded 回调里注册的，而本脚本是内联执行的，直接注册会排在它
+        // 前面，读到的还是切换前的旧状态。同样等 DOMContentLoaded，本回调排在 front.js
+        // 之后，读到的就是切换后的结果。
+        document.addEventListener('DOMContentLoaded', function () {
+            var drawer = document.getElementById('mobile-nav');
+            var toggle = document.getElementById('menu-toggle');
+            if (!drawer) return;
+
+            var syncExpanded = function () {
+                if (toggle) {
+                    toggle.setAttribute('aria-expanded', drawer.classList.contains('open') ? 'true' : 'false');
+                }
+            };
+
+            if (toggle) { toggle.addEventListener('click', syncExpanded); }
+
+            drawer.addEventListener('click', function (e) {
+                if (e.target === drawer) {
+                    drawer.classList.remove('open');
+                    syncExpanded();
+                }
+            });
+
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape' && drawer.classList.contains('open')) {
+                    drawer.classList.remove('open');
+                    syncExpanded();
+                    if (toggle) { toggle.focus(); }
+                }
+            });
+        });
     </script>
     @yield('scripts')
 </body>
