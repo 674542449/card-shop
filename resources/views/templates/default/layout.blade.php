@@ -23,7 +23,7 @@
                 {{-- Height is capped in CSS, so any upload lands at the header's scale. --}}
                 <img src="{{ $siteLogo }}" alt="{{ setting('site_name', 'CardShop') }}" class="site-logo-img">
                 @else
-                <span class="logo-icon">{{ mb_substr(setting('site_name', 'C'), 0, 1) }}</span>
+                <span class="logo-icon" aria-hidden="true">{{ mb_substr(setting('site_name', 'C'), 0, 1) }}</span>
                 @endif
                 {{ setting('site_name', 'CardShop') }}
             </a>
@@ -36,7 +36,7 @@
                 </ul>
             </nav>
 
-            <button class="menu-toggle" id="menu-toggle" aria-label="菜单">&#9776;</button>
+            <button class="menu-toggle" id="menu-toggle" aria-label="菜单" aria-expanded="false" aria-controls="mobile-nav">&#9776;</button>
         </div>
     </header>
 
@@ -51,7 +51,7 @@
     <main class="main-container">
         <div class="container">
             @if($errors->any())
-            <div class="alert alert-danger">
+            <div class="alert alert-danger" role="alert">
                 @foreach($errors->all() as $error)
                     <div>{{ $error }}</div>
                 @endforeach
@@ -59,11 +59,11 @@
             @endif
 
             @if(session('success'))
-            <div class="alert alert-success">{{ session('success') }}</div>
+            <div class="alert alert-success" role="status">{{ session('success') }}</div>
             @endif
 
             @if(session('error'))
-            <div class="alert alert-danger">{{ session('error') }}</div>
+            <div class="alert alert-danger" role="alert">{{ session('error') }}</div>
             @endif
 
             @yield('content')
@@ -79,9 +79,9 @@
 
     <div class="fab-group">
         @if(setting('contact_url'))
-        <a href="{{ setting('contact_url') }}" class="fab-btn fab-contact" title="联系客服" target="_blank" rel="noopener">&#128172;</a>
+        <a href="{{ setting('contact_url') }}" class="fab-btn fab-contact" title="联系客服" aria-label="联系客服" target="_blank" rel="noopener">&#128172;</a>
         @endif
-        <button class="fab-btn fab-top" id="back-to-top" title="回到顶部">&#8593;</button>
+        <button class="fab-btn fab-top" id="back-to-top" title="回到顶部" aria-label="回到顶部">&#8593;</button>
     </div>
 
     {{-- Announcement dialog, on the two pages a visitor actually arrives on. Not

@@ -71,7 +71,7 @@
                  stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>
             </svg>
-            <h2 class="success-title">这里还没有文章</h2>
+            <p class="success-title">这里还没有文章</p>
             <p class="success-subtitle">{{ $currentCategory ? '这个分类下暂时没有内容，看看其他分类。' : '公告和教程发布后会出现在这里。' }}</p>
             <a href="/" class="btn-buy">返回首页</a>
         </div>

@@ -60,10 +60,10 @@
                                 {{ $category->name }}
                             </span>
                         </th>
-                        <th role="columnheader" class="col-mode" style="width:100px">发货模式</th>
-                        <th role="columnheader" class="col-stock" style="width:80px">库存</th>
-                        <th role="columnheader" class="col-price" style="width:100px">单价</th>
-                        <th role="columnheader" class="col-action" style="width:100px">操作</th>
+                        <th role="columnheader" class="col-mode">发货模式</th>
+                        <th role="columnheader" class="col-stock">库存</th>
+                        <th role="columnheader" class="col-price">单价</th>
+                        <th role="columnheader" class="col-action">操作</th>
                     </tr>
                 </thead>
                 <tbody role="rowgroup">

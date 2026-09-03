@@ -48,14 +48,14 @@
         <div class="page-card-header">订单信息</div>
         <div class="page-card-body">
             <table class="order-info-table">
-                <tr><th>订单编号</th><td style="font-family:monospace;">{{ $order->order_no }}</td></tr>
+                <tr><th>订单编号</th><td class="op-mono">{{ $order->order_no }}</td></tr>
                 <tr><th>商品名称</th><td>{{ $order->product->name ?? '—' }}</td></tr>
                 <tr><th>购买数量</th><td>{{ $order->quantity }} 件</td></tr>
                 <tr><th>单价</th><td>¥{{ number_format($order->unit_price, 2) }}</td></tr>
                 @if($order->discount_amount > 0)
-                <tr><th>优惠金额</th><td style="color:var(--teal);">-¥{{ number_format($order->discount_amount, 2) }}</td></tr>
+                <tr><th>优惠金额</th><td class="op-discount">-¥{{ number_format($order->discount_amount, 2) }}</td></tr>
                 @endif
-                <tr><th>支付金额</th><td style="color:var(--price-color);font-weight:700;">¥{{ number_format($order->total_amount, 2) }}</td></tr>
+                <tr><th>支付金额</th><td class="op-total-amount">¥{{ number_format($order->total_amount, 2) }}</td></tr>
                 <tr>
                     <th>支付方式</th>
                     <td>
@@ -102,7 +102,7 @@
                 <li>{{ $card->content }}</li>
                 @endforeach
             </ul>
-            <textarea id="card-content-text" style="position:absolute;left:-9999px;">@foreach($cards as $card){{ $card->content }}
+            <textarea id="card-content-text" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;">@foreach($cards as $card){{ $card->content }}
 @endforeach</textarea>
         </div>
     </div>

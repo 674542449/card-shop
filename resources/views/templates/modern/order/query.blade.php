@@ -64,6 +64,15 @@
             <div class="form-group">
                 <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}"></div>
             </div>
+            @error('turnstile')
+            <p class="field-error">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><path d="M12 16h.01"/>
+                </svg>
+                {{ $message }}
+            </p>
+            @enderror
             @endif
 
             {{-- 必须是 button[type=submit]：front.js 的防重复提交靠

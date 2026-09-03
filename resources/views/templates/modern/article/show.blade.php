@@ -52,7 +52,7 @@
         </nav>
 
         {{-- 标题是这一页的主语，所以它是最大的字。 --}}
-        <h1 class="pd-title">{{ $article->title }}</h1>
+        <h2 class="pd-title">{{ $article->title }}</h2>
 
         <div class="pd-facts-wrap">
             @if($article->articleCategory)

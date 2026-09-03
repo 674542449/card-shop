@@ -141,12 +141,12 @@
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td>1 件起</td>
+                        <tr data-min-qty="{{ $product->min_quantity }}">
+                            <td>{{ max(1, (int) $product->min_quantity) }} 件起</td>
                             <td>¥{{ number_format($product->price, 2) }}</td>
                         </tr>
                         @foreach($product->wholesalePrices as $wp)
-                        <tr>
+                        <tr data-min-qty="{{ $wp->min_quantity }}">
                             <td>{{ $wp->min_quantity }} 件起</td>
                             <td>¥{{ number_format($wp->price, 2) }}</td>
                         </tr>
@@ -163,20 +163,20 @@
                     <input type="hidden" id="wholesale-prices-data" value="{{ $product->wholesalePrices->toJson() }}">
 
                     <div class="form-group">
-                        <label class="form-label">数量</label>
-                        <input type="number" name="quantity" id="quantity" class="form-input"
+                        <label class="form-label" for="quantity">数量</label>
+                        <input type="number" name="quantity" id="quantity" class="form-input @error('quantity') is-invalid @enderror"
                                value="{{ old('quantity', $product->min_quantity) }}"
                                min="{{ $product->min_quantity }}"
-                               {{-- max_quantity is nullable; min(null, 5) is null in PHP,
-                                    which rendered max="" and left the box uncapped. --}}
                                max="{{ $product->max_quantity ? min((int) $product->max_quantity, $stockCount) : $stockCount }}">
                     </div>
+                    @error('quantity') <div class="form-error">{{ $message }}</div> @enderror
 
                     <div class="form-group">
-                        <label class="form-label">邮箱</label>
-                        <input type="email" name="email" id="email" class="form-input"
+                        <label class="form-label" for="email">邮箱</label>
+                        <input type="email" name="email" id="email" class="form-input @error('email') is-invalid @enderror"
                                value="{{ old('email') }}" required placeholder="接收卡密信息">
                     </div>
+                    @error('email') <div class="form-error">{{ $message }}</div> @enderror
 
                     {{--
                         No .form-input-wrap here. .pd-form .form-group is a flex row and
@@ -192,16 +192,18 @@
                         rules are gone.
                     --}}
                     <div class="form-group">
-                        <label class="form-label">查询密码</label>
-                        <input type="password" name="query_password" id="query_password" class="form-input"
+                        <label class="form-label" for="query_password">查询密码</label>
+                        <input type="password" name="query_password" id="query_password" class="form-input @error('query_password') is-invalid @enderror"
                                minlength="6" required placeholder="至少6位，用于查询订单">
                     </div>
+                    @error('query_password') <div class="form-error">{{ $message }}</div> @enderror
 
                     <div class="form-group">
-                        <label class="form-label">优惠码</label>
-                        <input type="text" name="coupon_code" id="coupon_code" class="form-input"
+                        <label class="form-label" for="coupon_code">优惠码</label>
+                        <input type="text" name="coupon_code" id="coupon_code" class="form-input @error('coupon_code') is-invalid @enderror"
                                value="{{ old('coupon_code') }}" placeholder="可选">
                     </div>
+                    @error('coupon_code') <div class="form-error">{{ $message }}</div> @enderror
 
                     @php
                         // CreateOrderRequest requires payment_method, so this field is not
@@ -234,8 +236,10 @@
                          that hides the choices behind an extra interaction. The radio is the
                          real control; .pay-option-inner is the tile it draws, styled from the
                          adjacent-sibling checked state so no :has() support is required. --}}
+                    @error('payment_method') <div class="form-error">{{ $message }}</div> @enderror
+
                     <div class="form-group form-group-block">
-                        <label class="form-label">支付方式</label>
+                        <label class="form-label" id="pay-method-label">支付方式</label>
                         <div class="pay-options" role="radiogroup" aria-label="支付方式">
                             @foreach($payMethods as $value => $label)
                             <label class="pay-option">
@@ -253,13 +257,11 @@
                     </div>
 
                     @if(setting('turnstile_site_key'))
-                    {{-- Same wrapper class as the one on front/order/query.blade.php so a
-                         single rule indents the widget to the form's 80px label column on
-                         both pages instead of two different inline margins. --}}
                     <div class="form-turnstile">
                         <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}"></div>
                     </div>
                     @endif
+                    @error('turnstile') <div class="form-error">{{ $message }}</div> @enderror
 
                     {{-- Left inline: this row appears on no other page, so pulling it into
                          front.css would buy nothing but would put the buy form's headline

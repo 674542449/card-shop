@@ -11,8 +11,8 @@
 
                 <div class="pd-form">
                     <div class="form-group">
-                        <label class="form-label">邮箱</label>
-                        <input type="email" name="email" class="form-input @error('email') is-invalid @enderror"
+                        <label class="form-label" for="email">邮箱</label>
+                        <input type="email" name="email" id="email" class="form-input @error('email') is-invalid @enderror"
                                value="{{ old('email') }}" required placeholder="购买时使用的邮箱">
                     </div>
                     @error('email')
@@ -20,8 +20,8 @@
                     @enderror
 
                     <div class="form-group">
-                        <label class="form-label">查询密码</label>
-                        <input type="password" name="query_password" class="form-input @error('query_password') is-invalid @enderror"
+                        <label class="form-label" for="query_password">查询密码</label>
+                        <input type="password" name="query_password" id="query_password" class="form-input @error('query_password') is-invalid @enderror"
                                required placeholder="购买时设置的查询密码">
                     </div>
                     @error('query_password')

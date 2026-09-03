@@ -43,7 +43,7 @@
         {{-- Main: Article Content --}}
         <div class="pd-main">
             <article class="article-detail">
-                <h1>{{ $article->title }}</h1>
+                <h2 class="article-title">{{ $article->title }}</h2>
                 <div class="meta">
                     <span>{{ $article->created_at->format('Y-m-d') }}</span>
                     @if($article->articleCategory)

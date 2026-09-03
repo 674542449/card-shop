@@ -5,11 +5,13 @@ document.addEventListener('DOMContentLoaded', function () {
     var mobileNav = document.getElementById('mobile-nav');
     if (menuToggle && mobileNav) {
         menuToggle.addEventListener('click', function () {
-            mobileNav.classList.toggle('open');
+            var isOpen = mobileNav.classList.toggle('open');
+            menuToggle.setAttribute('aria-expanded', String(isOpen));
         });
         document.addEventListener('click', function (e) {
             if (!mobileNav.contains(e.target) && e.target !== menuToggle) {
                 mobileNav.classList.remove('open');
+                menuToggle.setAttribute('aria-expanded', 'false');
             }
         });
     }
@@ -38,20 +40,29 @@ document.addEventListener('DOMContentLoaded', function () {
 
     var basePrice = parseFloat((document.getElementById('product-base-price') || {}).value || 0);
     var wholesalePrices = [];
-    var appliedDiscount = 0;
 
     var wholesaleDataEl = document.getElementById('wholesale-prices-data');
     if (wholesaleDataEl) {
         try { wholesalePrices = JSON.parse(wholesaleDataEl.value); } catch (e) { wholesalePrices = []; }
     }
 
+    var wholesaleRows = document.querySelectorAll('.wholesale-table tbody tr[data-min-qty]');
+
     function getEffectivePrice(qty) {
         var price = basePrice;
+        var matchedIdx = -1;
         for (var i = wholesalePrices.length - 1; i >= 0; i--) {
             if (qty >= wholesalePrices[i].min_quantity) {
                 price = parseFloat(wholesalePrices[i].price);
+                matchedIdx = i;
                 break;
             }
+        }
+        wholesaleRows.forEach(function (row, idx) {
+            row.classList.toggle('active-tier', idx === matchedIdx + 1);
+        });
+        if (matchedIdx === -1 && wholesaleRows.length > 0) {
+            wholesaleRows[0].classList.add('active-tier');
         }
         return price;
     }
@@ -61,9 +72,6 @@ document.addEventListener('DOMContentLoaded', function () {
         var qty = parseInt(quantityInput.value) || 1;
         var unitPrice = getEffectivePrice(qty);
         var total = unitPrice * qty;
-        if (appliedDiscount > 0) {
-            total = Math.max(0.01, total - appliedDiscount);
-        }
         totalPriceEl.textContent = '¥' + total.toFixed(2);
     }
 
@@ -172,20 +180,22 @@ document.addEventListener('DOMContentLoaded', function () {
     var countdownEl = document.getElementById('countdown-timer');
     if (countdownEl) {
         var expiresAt = new Date(countdownEl.dataset.expires).getTime();
+        var countdownTimer = null;
         function updateCountdown() {
             var diff = expiresAt - Date.now();
             var timeEl = countdownEl.querySelector('.time');
             if (diff <= 0) {
                 if (timeEl) timeEl.textContent = '00:00';
+                if (countdownTimer) clearInterval(countdownTimer);
                 setTimeout(function () { window.location.reload(); }, 2000);
                 return;
             }
             var minutes = Math.floor(diff / 60000);
             var seconds = Math.floor((diff % 60000) / 1000);
             if (timeEl) timeEl.textContent = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
-            requestAnimationFrame(updateCountdown);
         }
         updateCountdown();
+        countdownTimer = setInterval(updateCountdown, 1000);
     }
 
     // Form submission guard

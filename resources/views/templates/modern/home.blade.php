@@ -17,7 +17,7 @@
         'description' => setting('seo_default_description', ''),
     ];
 @endphp
-<script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) !!}</script>
+<script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
 
 @section('content')
@@ -57,7 +57,7 @@
                 </svg>
             </div>
             <div class="trust-pillar-info">
-                <h4>付款后自动发货</h4>
+                <strong class="trust-pillar-title">付款后自动发货</strong>
                 <p>支付成功即刻发卡，不用等人工处理，也不用留言催单</p>
             </div>
         </div>
@@ -71,7 +71,7 @@
                 </svg>
             </div>
             <div class="trust-pillar-info">
-                <h4>卡密当场可见</h4>
+                <strong class="trust-pillar-title">卡密当场可见</strong>
                 <p>订单页直接展示卡密内容，同一份也会发到你填写的邮箱</p>
             </div>
         </div>
@@ -85,7 +85,7 @@
                 </svg>
             </div>
             <div class="trust-pillar-info">
-                <h4>订单随时找回</h4>
+                <strong class="trust-pillar-title">订单随时找回</strong>
                 <p>下单时自己设一个查询密码，之后凭邮箱加密码就能取回订单</p>
             </div>
         </div>

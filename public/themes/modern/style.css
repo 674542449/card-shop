@@ -88,6 +88,7 @@
     --teal-dark: var(--color-brand-hover);
     --warm-btn: var(--color-brand);
     --warm-btn-hover: var(--color-brand-hover);
+    --warm-btn-text: var(--text-white);
     --price-color: var(--color-danger);
     --text-color: var(--text-main);
     --text-light: var(--text-subtle);
@@ -510,7 +511,9 @@ ul, ol {
   flex-shrink: 0;
 }
 
-.trust-pillar-info h4 {
+.trust-pillar-info h4,
+.trust-pillar-info .trust-pillar-title {
+  display: block;
   font-size: 0.95rem;
   font-weight: 700;
   color: var(--text-main);
@@ -2057,6 +2060,14 @@ ul, ol {
   .pd-buy-box {
     position: static;
   }
+
+  .mobile-bottom-bar {
+    display: block;
+  }
+
+  .product-detail-layout {
+    margin-bottom: 90px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -2097,14 +2108,6 @@ ul, ol {
   .steps-flow-grid {
     grid-template-columns: 1fr;
     gap: 10px;
-  }
-
-  .mobile-bottom-bar {
-    display: block;
-  }
-
-  .product-detail-layout {
-    margin-bottom: 90px;
   }
 
   .footer-inner {
@@ -2340,6 +2343,21 @@ ul, ol {
 :root[data-ui-theme="dark"] .notice-callout ul,
 :root[data-ui-theme="dark"] .notice-callout li { color: var(--text-muted); }
 
+:root[data-ui-theme="dark"] .pagination-wrap .pg-current { color: var(--text-white); }
+
+:root[data-ui-theme="dark"] .order-status.pending { background: var(--color-warning-bg); color: var(--color-warning); }
+:root[data-ui-theme="dark"] .order-status.paid { background: var(--color-success-bg); color: var(--color-success); }
+:root[data-ui-theme="dark"] .order-status.expired { background: var(--bg-subtle); color: var(--text-muted); }
+:root[data-ui-theme="dark"] .order-status.closed { background: var(--color-danger-bg); color: var(--color-danger); }
+
+:root[data-ui-theme="dark"] .alert-success { background: var(--color-success-bg); color: var(--color-success); border-color: var(--color-success-border); }
+:root[data-ui-theme="dark"] .alert-danger { background: var(--color-danger-bg); color: var(--color-danger); border-color: var(--color-danger-border); }
+:root[data-ui-theme="dark"] .alert-warning { background: var(--color-warning-bg); color: var(--color-warning); border-color: var(--color-warning-border); }
+:root[data-ui-theme="dark"] .alert-info { background: var(--color-brand-subtle); color: var(--color-brand); border-color: var(--border-color); }
+
+:root[data-ui-theme="dark"] .order-table tbody td { border-bottom-color: var(--border-color); }
+:root[data-ui-theme="dark"] .order-table tbody tr:hover { background: var(--bg-subtle); }
+
 @media (prefers-color-scheme: dark) {
     :root:not([data-ui-theme="light"]) .site-header { background: rgba(15, 23, 42, .88); }
     :root:not([data-ui-theme="light"]) .trust-pillar-card:hover,
@@ -2354,6 +2372,21 @@ ul, ol {
     :root:not([data-ui-theme="light"]) .notice-callout-header { color: var(--color-warning); }
     :root:not([data-ui-theme="light"]) .notice-callout ul,
     :root:not([data-ui-theme="light"]) .notice-callout li { color: var(--text-muted); }
+
+    :root:not([data-ui-theme="light"]) .pagination-wrap .pg-current { color: var(--text-white); }
+
+    :root:not([data-ui-theme="light"]) .order-status.pending { background: var(--color-warning-bg); color: var(--color-warning); }
+    :root:not([data-ui-theme="light"]) .order-status.paid { background: var(--color-success-bg); color: var(--color-success); }
+    :root:not([data-ui-theme="light"]) .order-status.expired { background: var(--bg-subtle); color: var(--text-muted); }
+    :root:not([data-ui-theme="light"]) .order-status.closed { background: var(--color-danger-bg); color: var(--color-danger); }
+
+    :root:not([data-ui-theme="light"]) .alert-success { background: var(--color-success-bg); color: var(--color-success); border-color: var(--color-success-border); }
+    :root:not([data-ui-theme="light"]) .alert-danger { background: var(--color-danger-bg); color: var(--color-danger); border-color: var(--color-danger-border); }
+    :root:not([data-ui-theme="light"]) .alert-warning { background: var(--color-warning-bg); color: var(--color-warning); border-color: var(--color-warning-border); }
+    :root:not([data-ui-theme="light"]) .alert-info { background: var(--color-brand-subtle); color: var(--color-brand); border-color: var(--border-color); }
+
+    :root:not([data-ui-theme="light"]) .order-table tbody td { border-bottom-color: var(--border-color); }
+    :root:not([data-ui-theme="light"]) .order-table tbody tr:hover { background: var(--bg-subtle); }
 }
 
 

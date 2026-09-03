@@ -166,7 +166,7 @@
                 @endif
 
                 <div class="notice-callout">
-                    <h2 class="notice-callout-header">
+                    <div class="notice-callout-header">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                              stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -174,7 +174,7 @@
                             <line x1="12" y1="17" x2="12.01" y2="17"></line>
                         </svg>
                         下单前请先看这几条
-                    </h2>
+                    </div>
                     <ul>
                         <li>卡密是虚拟商品，页面显示出来即视为已交付。</li>
                         <li>查询密码由你自己设定，请连同下单邮箱一起记牢——之后在「查询订单」里要这两样同时正确才能取回卡密。</li>

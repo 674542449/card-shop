@@ -8,14 +8,15 @@
     --header-bg: #393d49;
     --header-height: 50px;
     --body-bg: #faf7f2;
-    --teal: #009688;
-    --teal-dark: #00796b;
+    --teal: #00796b;
+    --teal-dark: #00695c;
     --warm-btn: #ffb800;
     --warm-btn-hover: #e6a600;
-    --price-color: #ff4400;
+    --warm-btn-text: #3D2800;
+    --price-color: #D63600;
     --text-color: #333;
     --text-muted: #666;
-    --text-light: #888;
+    --text-light: #6B6B6B;
     --border-color: #e6e6e6;
     --table-header-bg: #f2f2f2;
     /* Image surfaces. The plate tint is pulled from --body-bg rather than a neutral
@@ -347,7 +348,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     border: none;
     border-radius: var(--radius);
     background: var(--warm-btn);
-    color: #fff;
+    color: var(--warm-btn-text);
     font-size: 14px;
     font-weight: 600;
     font-family: inherit;
@@ -414,6 +415,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
    的 ¥ 号、小数点、右边缘三者各散开 12.5px，只有一根看不见的中心轴是齐的。
    右对齐让它们共用同一条右基准线；因为价格恒定输出两位小数
    （number_format($price, 2)），右对齐即等于小数点对齐。 */
+.product-table thead th.col-mode { width: 100px; }
+.product-table thead th.col-stock { width: 80px; }
+.product-table thead th.col-price { width: 100px; }
+.product-table thead th.col-action { width: 100px; }
 .product-table thead th.col-price,
 .product-table tbody td.prod-price { text-align: right; }
 .product-table tbody td {
@@ -503,7 +508,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .btn-buy-sm {
     display: inline-block;
     background: var(--warm-btn);
-    color: #fff;
+    color: var(--warm-btn-text);
     padding: 5px 20px;
     border-radius: var(--radius);
     font-size: 14px;
@@ -512,7 +517,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     transition: background .2s;
     white-space: nowrap;
 }
-.btn-buy-sm:hover { background: var(--warm-btn-hover); color: #fff; }
+.btn-buy-sm:hover { background: var(--warm-btn-hover); color: var(--warm-btn-text); }
 
 /* 「缺货」必须和「购买」占同一个盒子。
    按钮有 padding:5px 20px，缺货原来是裸文本 —— 实测同一列两种内容的文字左边缘
@@ -659,7 +664,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     margin: var(--block-gap) auto;
     text-align: center;
     background: var(--warm-btn);
-    color: #fff;
+    color: var(--warm-btn-text);
     padding: 8px 30px;
     border-radius: var(--radius);
     font-size: 14px;
@@ -667,7 +672,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     cursor: pointer;
     transition: background .2s;
 }
-.btn-all-articles:hover { background: var(--warm-btn-hover); color: #fff; }
+.btn-all-articles:hover { background: var(--warm-btn-hover); color: var(--warm-btn-text); }
 
 /* ----- Tag Cloud ----- */
 /* Sits between two major bands, so it takes the section step at the top. That
@@ -878,7 +883,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     line-height: 1.4;
 }
 .dp-fact svg { width: 14px; height: 14px; flex-shrink: 0; }
-.dp-fact-ok { color: var(--teal); border-color: transparent; background: rgba(0, 150, 136, .1); }
+.dp-fact-ok { color: var(--teal); border-color: transparent; background: rgba(0, 121, 107, .1); }
 .dp-fact-out { color: #c0392b; border-color: transparent; background: rgba(192, 57, 43, .1); }
 
 /* 价格区。单独成块并给一条分隔线，让它从状态项里脱出来。 */
@@ -1040,6 +1045,10 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     transition: border-color .2s;
 }
 .pd-form .form-input:focus { border-color: var(--teal); }
+.pd-form .form-input:focus-visible {
+    outline: 2px solid var(--teal);
+    outline-offset: 2px;
+}
 .pd-form .form-input.is-invalid { border-color: var(--price-color); }
 
 /* Validation message and the Turnstile widget both sit in the control column, so
@@ -1213,7 +1222,7 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .pay-option:hover .pay-option-inner { border-color: var(--teal); }
 .pay-radio:checked + .pay-option-inner {
     border-color: var(--teal);
-    background: #f0fdfa;
+    background: rgba(0, 121, 107, .08);
     box-shadow: inset 0 0 0 1px var(--teal);
 }
 /* The input is invisible, so the focus ring has to be drawn on the tile or the
@@ -1578,7 +1587,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     padding: 30px;
     margin-bottom: var(--block-gap);
 }
-.article-detail h1 {
+.article-detail h1,
+.article-detail .article-title {
     font-size: 22px;
     margin-bottom: 10px;
     overflow-wrap: break-word;
@@ -1852,6 +1862,24 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .empty-state p { margin: 0 0 16px; }
 
 /* ============================================================
+   Order / Pay page
+   ============================================================ */
+.op-mono { font-family: monospace; }
+.op-discount { color: var(--teal); }
+.op-total-amount { font-size: 18px; font-weight: 700; color: var(--price-color); }
+.op-countdown-hint { color: var(--text-light); font-size: 13px; }
+.op-countdown .time { font-size: 32px; font-weight: 700; color: var(--price-color); }
+.op-countdown-sub { color: var(--text-light); font-size: 12px; }
+.op-status-glyph { font-size: 48px; margin-bottom: 10px; }
+.op-status-title { font-size: 18px; margin-bottom: 8px; }
+.op-status-desc { color: var(--text-light); margin-bottom: 15px; }
+.op-pay-btn { display: inline-block; width: auto; padding: 10px 50px; font-size: 16px; }
+.op-pay-hint { color: var(--text-light); font-size: 13px; margin-top: 10px; }
+.op-polling { color: var(--text-light); font-size: 13px; }
+.op-unavailable-title { font-size: 16px; margin-bottom: 8px; }
+.op-unavailable-desc { color: var(--text-light); font-size: 13px; line-height: 1.7; }
+
+/* ============================================================
    Alerts
    ============================================================ */
 .alert {
@@ -2047,7 +2075,8 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
     .pd-info { padding: 15px; }
     .pd-price { font-size: 22px; }
     .article-detail { padding: 20px; }
-    .article-detail h1 { font-size: 18px; }
+    .article-detail h1,
+    .article-detail .article-title { font-size: 18px; }
     .pd-head { gap: 14px; margin-bottom: 16px; }
     .pd-image-wrap { max-width: 220px; padding: 8px; }
     .dp-title { font-size: 19px; }
@@ -2108,6 +2137,35 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
    That page is now one table that reflows, so nothing referenced them and they
    are gone; .order-table below is what replaced them. */
 
+/* ----- JS state hooks -----
+   front.js adds these classes but front.css never styled them — the disabled
+   state alone makes a grayed button, but doesn't say "processing" vs "unavailable",
+   and a failed copy looks identical to success. */
+.is-loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+}
+.is-loading::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(0,0,0,.2);
+    border-top-color: var(--text-color);
+    border-radius: 50%;
+    animation: front-spin .6s linear infinite;
+}
+@keyframes front-spin { to { transform: rotate(360deg); } }
+
+.is-copy-failed {
+    border-color: var(--price-color) !important;
+    color: var(--price-color) !important;
+    background: #fff1f0 !important;
+}
+
 /* ----- Utility ----- */
 .text-center { text-align: center; }
 .text-muted { color: var(--text-light); }
@@ -2125,7 +2183,6 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 .footer-powered {
     margin-top: 6px;
     font-size: 12px;
-    opacity: .75;
 }
 
 /* 悬浮按钮组会压住内容。两种情况要分开看：

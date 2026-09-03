@@ -165,7 +165,7 @@
         </section>
 
         <div class="notice-callout">
-            <h2 class="notice-callout-header">
+            <div class="notice-callout-header">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                      stroke-width="2.5" aria-hidden="true">
                     <circle cx="12" cy="12" r="10"></circle>
@@ -173,7 +173,7 @@
                     <line x1="12" y1="8" x2="12.01" y2="8"></line>
                 </svg>
                 付款之后会发生什么
-            </h2>
+            </div>
             <ul>
                 @if($paymentUrl)
                 <li>「前往支付」会在新标签页打开收银台，付完之后回到这一页即可。</li>

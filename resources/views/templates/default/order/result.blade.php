@@ -28,13 +28,13 @@
         <table class="order-table">
             <thead>
                 <tr>
-                    <th class="oc-no">订单编号</th>
-                    <th class="oc-name">商品</th>
-                    <th class="oc-qty">数量</th>
-                    <th class="oc-amount">金额</th>
-                    <th class="oc-status">状态</th>
-                    <th class="oc-time">时间</th>
-                    <th class="oc-action">操作</th>
+                    <th scope="col" class="oc-no">订单编号</th>
+                    <th scope="col" class="oc-name">商品</th>
+                    <th scope="col" class="oc-qty">数量</th>
+                    <th scope="col" class="oc-amount">金额</th>
+                    <th scope="col" class="oc-status">状态</th>
+                    <th scope="col" class="oc-time">时间</th>
+                    <th scope="col" class="oc-action">操作</th>
                 </tr>
             </thead>
             <tbody>
