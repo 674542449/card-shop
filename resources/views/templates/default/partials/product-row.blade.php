@@ -25,7 +25,7 @@
     product names stay on one vertical line down the list instead of jagging left
     and right depending on which rows happen to have an image.
 --}}
-<tr role="row">
+<tr role="row" @class(['row-sold-out' => !$buyable])>
     <td role="cell" class="cell-name">
         <div class="prod-name-cell">
             {{-- alt="" on purpose: the product name follows immediately in the same

@@ -46,9 +46,15 @@
        image becomes the dominant element of the row. */
 
     --font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Microsoft YaHei", Tahoma, Arial, sans-serif;
-    --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
+    /* 卡片阴影。原来是 0 1px 2px/.06 —— 几乎贴在背景上，页面看着很"平"。给它一点
+       扩散和深度，卡片、商品表、订单面板就浮起来了。这只影响 default：minimal 和
+       modern 各自在自己的 style.css 里覆盖了 --shadow-sm。 */
+    --shadow-sm: 0 2px 8px rgba(0,0,0,.07);
     --shadow: 0 1px 6px rgba(0,0,0,.08);
-    --radius: 2px;
+    /* 圆角。原来 2px 近乎直角，是"老发卡站"最明显的一个信号；7px 让按钮、卡片、
+       输入框、表格容器一眼变新。同样只影响 default：minimal(10px) 和 modern 都覆盖了
+       --radius，改这里碰不到它们。 */
+    --radius: 7px;
 }
 
 /* ----- Reset & Base ----- */
@@ -430,6 +436,13 @@ h1, h2, h3, h4, h5, h6 { margin: 0 0 .5em; font-weight: 600; color: var(--text-c
 }
 .product-table tbody tr:last-child td { border-bottom: none; }
 .product-table tbody tr:hover { background: #fafafa; }
+/* 缺货整行弱化。原来缺货商品只有按钮变成灰色的"缺货"，整行的分量和在售商品一样，
+   买家得逐行看按钮才知道哪些能买。把缺货行整体降到 60% 透明度，"能买的"自然跳出来。
+   hover 时回到 88%：万一买家想点进去看详情或等补货，仍然清楚可读。
+   .row-sold-out 只由 default 的 product-row 分区渲染，所以这条规则写在共用的 front.css
+   里也只作用于 default——minimal / modern 用的是各自的商品卡，DOM 里没有这个类。 */
+.product-table tbody tr.row-sold-out { opacity: .6; transition: opacity .15s ease; }
+.product-table tbody tr.row-sold-out:hover { opacity: .88; }
 
 .product-table .prod-name-cell {
     display: flex;
