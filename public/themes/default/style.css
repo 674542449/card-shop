@@ -1,0 +1,234 @@
+/* ==========================================================================
+   default 主题层
+   ==========================================================================
+   这份样式表只由 default 模板的 layout 加载（在 front.css 之后），所以这里的一切
+   只影响 default 一套 —— minimal / modern 各自加载自己的 style.css，不受牵连。
+
+   它做两件事：
+     1. 配色统一：front.css 原本是「页头青绿 logo + 明黄按钮 + 橙红价格」三个不相关
+        的色相凑在一起。这里把它收敛成一套「暖大地色」系统：品牌青、琥珀金 CTA、
+        砖红价格，都调到相近的饱和度/明度，坐在暖纸背景上像一整套设计。
+     2. 深色模式：front.css 通体变量驱动，只要在深色下翻一遍 token，绝大多数 UI 自动
+        变深；剩下十几处在 front.css 里写死了浅色（alert、订单状态、青底白字组件、
+        几处 #fafafa 表头/悬浮、代码块），下面用 token 重新表达一次，深色就只翻 token。
+
+   front.css 已经用 :root 定义了这些 token，本文件的 :root 在其后加载，同名即接管。
+   ========================================================================== */
+
+:root {
+    /* ---- 页面与容器 ---- */
+    --header-bg: #38332D;        /* 暖炭/浓咖页头，比原来的冷灰 #393d49 更贴暖色系 */
+    --body-bg: #FAF7F2;          /* 暖纸 */
+    --card-bg: #FFFFFF;
+    --footer-bg: #F1EBE1;
+    --quote-bg: #FFFFFF;
+    --table-header-bg: #F1EBE1;
+    --thumb-bg: #F2EDE4;
+    --thumb-icon: #C9BFAE;
+    --border-color: #EAE3D8;
+    --input-bg: #FFFFFF;         /* 表单输入框底色 */
+
+    /* ---- 文字（暖中性）---- */
+    --text-color: #2F2A24;
+    --text-muted: #6E655A;       /* 白底 5:1+ */
+    --text-light: #7A7062;       /* 白底 4.6:1+ */
+
+    /* ---- 品牌青（链接 / logo 文字 / 焦点）---- */
+    --teal: #0B7263;
+    --teal-dark: #094F46;        /* 正文里的青链接，更深，过 4.5 */
+
+    /* 青底 + 白字 的组件专用（logo 牌、自动发货徽章、分页当前页、提交按钮、客服悬浮、
+       文章序号）。浅色下和 --teal 同深浅；深色下 --teal 会为了正文链接而提亮，白字
+       压在提亮的青上会看不清，所以这一档在深色里刻意保持够深，让白字始终可读。 */
+    --teal-solid: #0B7263;
+    --teal-solid-hover: #094F46;
+
+    /* ---- CTA 琥珀金（购买按钮）---- */
+    --warm-btn: #D6871C;         /* 比原来的荧光黄 #ffb800 更深、更"金"，不再刺眼 */
+    --warm-btn-hover: #BE7414;
+    --warm-btn-text: #35280A;    /* 金底上的深棕字，高对比 */
+
+    /* ---- 价格 砖红 ---- */
+    --price-color: #C63A17;
+
+    /* ---- 卡片阴影（深色下加深）---- */
+    --shadow-sm: 0 2px 8px rgba(0,0,0,.07);
+
+    /* ---- front.css 里写死浅色的共享组件，改用 token 表达，深色只翻这些 ---- */
+    --row-hover: #FAF6F0;        /* 商品表 / 订单表 行悬浮 */
+    --subtle-header: #F5F0E8;    /* article-block / sidebar-card / page-card 的头部条 */
+    --code-bg: #F3EEE6;          /* 文章正文里的 code / pre */
+
+    --alert-su-bg: #DCEFE4; --alert-su-fg: #14603F; --alert-su-bd: #B7DEC8;
+    --alert-da-bg: #FBE3E1; --alert-da-fg: #8A2820; --alert-da-bd: #F3C6C1;
+    --alert-wa-bg: #FBEFD3; --alert-wa-fg: #6A4E12; --alert-wa-bd: #F0DCA6;
+    --alert-in-bg: #DCF0F4; --alert-in-fg: #0F5563; --alert-in-bd: #B7E2EA;
+
+    --st-pending-bg: #FBEFD3; --st-pending-fg: #6A4E12;
+    --st-paid-bg: #DCEFE4;    --st-paid-fg: #14603F;
+    --st-expired-bg: #E9E4DC; --st-expired-fg: #4A443B;
+    --st-closed-bg: #FBE3E1;  --st-closed-fg: #8A2820;
+}
+
+/* ---- 把 front.css 里写死颜色的组件重新指到 token（浅深两色共用这一份规则）---- */
+
+/* 青底白字的六处：改用 --teal-solid，深色下白字才不会糊。 */
+.site-logo .logo-icon,
+.badge-auto,
+.fab-contact,
+.article-list li:nth-child(-n+3)::before,
+.pagination-wrap .pg-current { background: var(--teal-solid); }
+.pagination-wrap .pg-current { border-color: var(--teal-solid); }
+.btn-submit { background: var(--teal-solid); }
+.btn-submit:hover { background: var(--teal-solid-hover); }
+
+/* 几处写死的浅底 */
+.product-table tbody tr:hover,
+.order-table tbody tr:hover { background: var(--row-hover); }
+.article-block-header,
+.sidebar-card-header,
+.page-card-header { background: var(--subtle-header); }
+.article-detail .content code,
+.article-detail .content pre { background: var(--code-bg); }
+
+/* Bootstrap 风格的写死 alert 配色 */
+.alert-success { background: var(--alert-su-bg); color: var(--alert-su-fg); border-color: var(--alert-su-bd); }
+.alert-danger  { background: var(--alert-da-bg); color: var(--alert-da-fg); border-color: var(--alert-da-bd); }
+.alert-warning { background: var(--alert-wa-bg); color: var(--alert-wa-fg); border-color: var(--alert-wa-bd); }
+.alert-info    { background: var(--alert-in-bg); color: var(--alert-in-fg); border-color: var(--alert-in-bd); }
+
+/* 订单状态药丸 */
+.order-status.pending { background: var(--st-pending-bg); color: var(--st-pending-fg); }
+.order-status.paid    { background: var(--st-paid-bg);    color: var(--st-paid-fg); }
+.order-status.expired { background: var(--st-expired-bg); color: var(--st-expired-fg); }
+.order-status.closed  { background: var(--st-closed-bg);  color: var(--st-closed-fg); }
+
+/* front.css 的 .pd-form .form-input 只设了边框，没设背景和文字色，靠的是浏览器默认
+   （白底黑字）。浅色下没问题，深色下就成了黑字贴在深色输入框上——完全看不见。
+   这里给所有 .form-input 补上背景和文字色（用 token，深浅都对）和占位符弱色。 */
+.form-input {
+    background-color: var(--input-bg);
+    color: var(--text-color);
+}
+.form-input::placeholder { color: var(--text-light); opacity: 1; }
+
+/* ---- 页头的深色开关按钮 ---- */
+.hdr-right { display: flex; align-items: center; gap: 4px; }
+.theme-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: rgba(255,255,255,.72);       /* 页头一直是深色，图标常亮浅色 */
+    padding: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius);
+    transition: color .2s, background .2s;
+}
+.theme-toggle:hover { color: #fff; background: rgba(255,255,255,.10); }
+.theme-toggle:focus-visible { outline: 2px solid rgba(255,255,255,.6); outline-offset: 2px; }
+.theme-toggle svg { width: 20px; height: 20px; display: block; }
+/* 浅色（或未选）显示月亮=去深色；深色显示太阳=回浅色 */
+.theme-toggle .icon-sun { display: none; }
+.theme-toggle .icon-moon { display: block; }
+
+/* ==========================================================================
+   深色模式
+   data-ui-theme 由页头开关写在 <html> 上，优先于系统偏好。两处必须写同一套值：
+   显式选择走 [data-ui-theme="dark"]，没选过的走 prefers-color-scheme。
+   ========================================================================== */
+:root[data-ui-theme="dark"] {
+    --header-bg: #26221D;
+    --body-bg: #1A1714;
+    --card-bg: #23201B;
+    --footer-bg: #201C17;
+    --quote-bg: #23201B;
+    --table-header-bg: #2A251F;
+    --thumb-bg: #2A251F;
+    --thumb-icon: #4A4238;
+    --border-color: #3A342C;
+    --input-bg: #201C17;
+
+    --text-color: #ECE6DC;
+    --text-muted: #B3A896;
+    --text-light: #9C917E;
+
+    --teal: #37B7A1;             /* 提亮，深底上的链接才看得清 */
+    --teal-dark: #5FCCB7;
+    --teal-solid: #127A6A;       /* 保持够深，白字可读 */
+    --teal-solid-hover: #0E6656;
+
+    --warm-btn: #E2A445;
+    --warm-btn-hover: #EEB65B;
+    --warm-btn-text: #241A08;
+
+    --price-color: #FF7B4D;
+
+    --shadow-sm: 0 2px 10px rgba(0,0,0,.45);
+
+    --row-hover: #2A251F;
+    --subtle-header: #2A251F;
+    --code-bg: #14110E;
+
+    --alert-su-bg: rgba(52,180,140,.15);  --alert-su-fg: #5FD3A8; --alert-su-bd: rgba(52,180,140,.35);
+    --alert-da-bg: rgba(255,110,90,.15);  --alert-da-fg: #FF9B85; --alert-da-bd: rgba(255,110,90,.35);
+    --alert-wa-bg: rgba(230,170,40,.15);  --alert-wa-fg: #F0C040; --alert-wa-bd: rgba(230,170,40,.35);
+    --alert-in-bg: rgba(60,180,200,.15);  --alert-in-fg: #6FD0E0; --alert-in-bd: rgba(60,180,200,.35);
+
+    --st-pending-bg: rgba(230,170,40,.15); --st-pending-fg: #F0C040;
+    --st-paid-bg: rgba(52,180,140,.15);    --st-paid-fg: #5FD3A8;
+    --st-expired-bg: #2E2A24;              --st-expired-fg: #B3A896;
+    --st-closed-bg: rgba(255,110,90,.15);  --st-closed-fg: #FF9B85;
+}
+
+:root[data-ui-theme="dark"] .theme-toggle .icon-moon { display: none; }
+:root[data-ui-theme="dark"] .theme-toggle .icon-sun { display: block; }
+
+@media (prefers-color-scheme: dark) {
+    :root:not([data-ui-theme="light"]) {
+        --header-bg: #26221D;
+        --body-bg: #1A1714;
+        --card-bg: #23201B;
+        --footer-bg: #201C17;
+        --quote-bg: #23201B;
+        --table-header-bg: #2A251F;
+        --thumb-bg: #2A251F;
+        --thumb-icon: #4A4238;
+        --border-color: #3A342C;
+        --input-bg: #201C17;
+
+        --text-color: #ECE6DC;
+        --text-muted: #B3A896;
+        --text-light: #9C917E;
+
+        --teal: #37B7A1;
+        --teal-dark: #5FCCB7;
+        --teal-solid: #127A6A;
+        --teal-solid-hover: #0E6656;
+
+        --warm-btn: #E2A445;
+        --warm-btn-hover: #EEB65B;
+        --warm-btn-text: #241A08;
+
+        --price-color: #FF7B4D;
+
+        --shadow-sm: 0 2px 10px rgba(0,0,0,.45);
+
+        --row-hover: #2A251F;
+        --subtle-header: #2A251F;
+        --code-bg: #14110E;
+
+        --alert-su-bg: rgba(52,180,140,.15);  --alert-su-fg: #5FD3A8; --alert-su-bd: rgba(52,180,140,.35);
+        --alert-da-bg: rgba(255,110,90,.15);  --alert-da-fg: #FF9B85; --alert-da-bd: rgba(255,110,90,.35);
+        --alert-wa-bg: rgba(230,170,40,.15);  --alert-wa-fg: #F0C040; --alert-wa-bd: rgba(230,170,40,.35);
+        --alert-in-bg: rgba(60,180,200,.15);  --alert-in-fg: #6FD0E0; --alert-in-bd: rgba(60,180,200,.35);
+
+        --st-pending-bg: rgba(230,170,40,.15); --st-pending-fg: #F0C040;
+        --st-paid-bg: rgba(52,180,140,.15);    --st-paid-fg: #5FD3A8;
+        --st-expired-bg: #2E2A24;              --st-expired-fg: #B3A896;
+        --st-closed-bg: rgba(255,110,90,.15);  --st-closed-fg: #FF9B85;
+    }
+    :root:not([data-ui-theme="light"]) .theme-toggle .icon-moon { display: none; }
+    :root:not([data-ui-theme="light"]) .theme-toggle .icon-sun { display: block; }
+}
