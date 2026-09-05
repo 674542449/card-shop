@@ -105,6 +105,18 @@ class SettingController extends Controller
                     $value = $value ? '1' : '0';
                 }
 
+                // 支付时限是买家付款窗口，直接决定订单存活多久。消费方读它是
+                // (int) setting('order_expire_minutes', 30)：存进 0、负数或非数字时
+                // (int) 会得到 0 或负值，now()->addMinutes() 得到一个「已经过去」的
+                // 到期时间，于是每一笔订单一建好就是过期状态、锁定的卡立刻被释放，
+                // 而迟到的网关回调仍可能发货——整条下单链路被一个手滑的设置搞瘫。
+                // 后台是可信的，但可信不等于不会填错，所以在写库前夹到合理区间：
+                // 最短 5 分钟（够走完一次支付），最长 7 天。非数字回落到默认 30。
+                if ($key === 'order_expire_minutes') {
+                    $minutes = is_numeric($value) ? (int) $value : 30;
+                    $value = (string) max(5, min(10080, $minutes));
+                }
+
                 Setting::set($key, $value, $group);
             }
         }

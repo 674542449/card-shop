@@ -62,25 +62,34 @@ class PaymentController extends Controller
      * Handle EPay sync return callback — the buyer's own browser coming back from the
      * gateway.
      *
-     * This endpoint is DISPLAY ONLY and must stay that way. The signature the site
-     * mints for the outbound submit URL covers exactly the same field set this method
-     * would verify, so the buyer already holds a valid signature for their own order:
-     * it is handed to them in the redirect and rendered as the 前往支付 link. When this
-     * method also marked orders paid, replaying that URL was enough to receive the card
-     * secrets without paying. The server-to-server notify is the only authority, and it
-     * is protected by a trade_status field the buyer cannot forge into the signature.
+     * DISPLAY ONLY. It grants no access to anything and never writes to the session.
+     *
+     * 为什么绝不能在这里授权看卡密：本方法的验签算法，和 OrderController::pay() 为
+     * 「前往支付」按钮渲染的那条出站 submit URL 用的是同一套（同字段集、同 md5+密钥），
+     * 而 pay() 对任何知道订单号的人公开——订单号是 YmdHis+随机数，可猜也常经分享
+     * 链接/referer 泄露。也就是说「持有该订单的合法签名」根本不等于「是下单本人」。
+     * 之前这里凭 isPaid()+验签就把 order->id 写进 session 的 order_verified_ids，
+     * 于是任何人 GET /order/pay/{订单号} 抓下签名 URL、等真实买家付款后把这串参数原样
+     * 重放到 /payment/epay/return，就能绕过邮箱+查询密码拿到别人已支付订单的卡密。
+     *
+     * 卡密的授权入口只有两个：①/order/query（邮箱+查询密码，真正的所有权证明）；
+     * ②下单那个浏览器自己的会话——OrderController::create() 下单成功后已把订单记到
+     * 本会话名下，所以合法买家从网关跳回来落到 pay() 时会被直接放行看卡密，UX 不变。
+     * 这个同步返回页因此只负责把买家送回订单支付页，其余交给上面两条。
      */
     public function epayReturn(Request $request)
     {
         $params = $request->all();
 
+        // 仍然验签：out_trade_no 会被拼进重定向路径，验签能挡掉伪造/畸形的订单号，
+        // 避免把用户导到一个任意构造的地址。但验签**只**用于这个用途，不授予任何权限。
         if (!$this->verifyEpaySignature($params)) {
             return redirect('/')->withErrors(['error' => '支付验证失败']);
         }
 
         $orderNo = $params['out_trade_no'] ?? '';
 
-        if (!$orderNo) {
+        if (!is_string($orderNo) || $orderNo === '') {
             return redirect('/');
         }
 
@@ -90,19 +99,9 @@ class PaymentController extends Controller
             return redirect('/')->withErrors(['error' => '订单不存在']);
         }
 
-        // Read-only. Access is granted only for an order the server-to-server notify
-        // has ALREADY marked paid, which is what makes this safe: a replayed return URL
-        // for an unpaid order grants nothing, and a buyer can only ever hold a valid
-        // signature for an order they created themselves.
-        if ($order->isPaid()) {
-            $verified = session('order_verified_ids', []);
-            $verified[] = $order->id;
-            session(['order_verified_ids' => array_values(array_unique($verified))]);
-
-            return redirect('/order/detail/' . $order->order_no);
-        }
-
-        // Not paid yet — the notify may still be in flight. The payment page polls.
+        // 一律送回订单支付页，不写 session、不按 isPaid 分支授权。
+        // pay() 会自行决定：已支付且本会话确实拥有该订单 -> 显示卡密；已支付但当前会话
+        // 无凭证 -> 引导去 /order/query 用邮箱+查询密码验证；仍待支付 -> 继续轮询。
         return redirect('/order/pay/' . $order->order_no);
     }
 

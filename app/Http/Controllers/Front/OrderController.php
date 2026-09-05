@@ -163,6 +163,20 @@ class OrderController extends Controller
                 return $order;
             });
 
+            // 把这一单记到「本浏览器已验证」名下。
+            //
+            // 是这个会话亲手填了邮箱和查询密码并提交的，它当然拥有这一单——付款从网关
+            // 跳回来（epayReturn 只做展示、送回 /order/pay/{no}）后就能直接看到卡密，
+            // 不必再输一遍密码，合法买家的体验和以前一样。
+            //
+            // 这刻意取代了以前 epayReturn 依据「出站 submit URL 的签名」来授权的做法：
+            // 那个签名同时被 pay() 公开渲染给任何知道订单号的人，等于谁都能拿它去
+            // /payment/epay/return 换取别人已支付订单的卡密。所有权只认「亲手下的这一单」
+            // 和 /order/query 的邮箱+密码，不认可被公开的签名。
+            $verified = session('order_verified_ids', []);
+            $verified[] = $order->id;
+            session(['order_verified_ids' => array_values(array_unique($verified))]);
+
             // Initiate payment
             $paymentUrl = $this->initiatePayment($order);
 
