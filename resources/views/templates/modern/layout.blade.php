@@ -3,6 +3,12 @@
 <head>
     @include('shared.head')
 
+    {{-- 移动端地址栏着色，跟随页头 --bg-surface：浅色 #FFFFFF、深色 #0F172A。
+         meta theme-color 只能按系统偏好（prefers-color-scheme）切换，跟不了本主题
+         右上角那个手动深色开关（data-ui-theme），但覆盖了绝大多数默认场景已经够用。 --}}
+    <meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#0F172A" media="(prefers-color-scheme: dark)">
+
     {{-- 顺序不能反：front.css 在前，本主题在后。front.css 通体变量驱动，本主题重指
          它的 token，那些没有单独实现的共享组件（alert、分页、订单状态、回顶按钮、
          公告弹窗）就一起换了皮。反过来加载的话，front.css 会盖掉整套外观。 --}}
@@ -57,7 +63,7 @@
                      .site-logo 不能加在 <a> 上：front.css 还带一条
                      `.site-logo:hover { color: #fff }`，那是给深色页头写的，在本主题
                      的白色页头上会让品牌名一 hover 就消失。套在图片外层就避开了。 --}}
-                <span class="site-logo"><img src="{{ $siteLogo }}" alt="{{ $siteName }}"></span>
+                <span class="site-logo"><img src="{{ $siteLogo }}" alt="{{ $siteName }}" decoding="async"></span>
                 @else
                 {{-- 首字牌是装饰：紧跟其后的 <span> 已经把站名读出来了，
                      读屏再读一遍单个字没有意义。 --}}

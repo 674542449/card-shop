@@ -3,6 +3,10 @@
 <head>
     @include('shared.head')
 
+    {{-- 移动端浏览器地址栏/状态栏的着色，与页头 --header-bg(#393d49) 同色，
+         滚动时地址栏和页头连成一体，不会露出一条突兀的白边。 --}}
+    <meta name="theme-color" content="#393d49">
+
     <link href="{{ asset_versioned('css/front.css') }}" rel="stylesheet">
 
     @if(setting('turnstile_site_key'))
@@ -21,7 +25,7 @@
             <a class="site-logo" href="/">
                 @if($siteLogo)
                 {{-- Height is capped in CSS, so any upload lands at the header's scale. --}}
-                <img src="{{ $siteLogo }}" alt="{{ setting('site_name', 'CardShop') }}" class="site-logo-img">
+                <img src="{{ $siteLogo }}" alt="{{ setting('site_name', 'CardShop') }}" class="site-logo-img" decoding="async">
                 @else
                 <span class="logo-icon" aria-hidden="true">{{ mb_substr(setting('site_name', 'C'), 0, 1) }}</span>
                 @endif

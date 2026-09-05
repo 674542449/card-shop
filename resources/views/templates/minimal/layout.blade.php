@@ -3,6 +3,9 @@
 <head>
     @include('shared.head')
 
+    {{-- 移动端地址栏着色，与本主题页头 .site-header 的 --card-bg(#FFFFFF) 同色。 --}}
+    <meta name="theme-color" content="#FFFFFF">
+
     {{--
         先 front.css 再 style.css，顺序不能反。
 
@@ -31,7 +34,7 @@
             @php $siteLogo = setting('site_logo'); @endphp
             <a class="site-logo" href="/">
                 @if($siteLogo)
-                <img src="{{ $siteLogo }}" alt="{{ setting('site_name', 'CardShop') }}" class="site-logo-img">
+                <img src="{{ $siteLogo }}" alt="{{ setting('site_name', 'CardShop') }}" class="site-logo-img" decoding="async">
                 @else
                 <span class="logo-icon">{{ mb_substr(setting('site_name', 'C'), 0, 1) }}</span>
                 @endif
