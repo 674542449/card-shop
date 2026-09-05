@@ -64,7 +64,9 @@ class CheckBlacklist
 
     private function lookup(string $type, string $value): bool
     {
-        $query = \App\Models\Blacklist::where('type', $type);
+        // active(): a lapsed honeypot ban must stop blocking on its own — nothing
+        // sweeps the table, so an expired row would otherwise keep a real visitor out.
+        $query = \App\Models\Blacklist::active()->where('type', $type);
 
         return $type === 'email'
             ? $query->whereRaw('lower(value) = ?', [$value])->exists()

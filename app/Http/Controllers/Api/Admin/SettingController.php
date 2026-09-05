@@ -78,6 +78,9 @@ class SettingController extends Controller
             ],
             'security' => [
                 'turnstile_site_key', 'turnstile_secret_key', 'order_expire_minutes',
+                // 扫描器蜜罐（TrapScanners 中间件读取）。都有代码级默认值，不配也能跑。
+                'honeypot_enabled', 'honeypot_ban_minutes',
+                'honeypot_whitelist', 'honeypot_skip_reserved_ips',
             ],
         ];
 
