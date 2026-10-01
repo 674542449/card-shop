@@ -59,9 +59,9 @@ class ArticleController extends Controller
             'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:articles,slug',
             // articles.article_category_id is NOT NULL in the schema, so accepting null
             // here turns a missing category into a Postgres violation and a 500.
-            'article_category_id' => 'required|exists:article_categories,id',
+            'article_category_id' => 'required|integer|min:1|exists:article_categories,id',
             'summary' => 'nullable|string|max:500',
-            'content' => 'required|string',
+            'content' => 'required|string|max:1000000',
             'cover_image' => 'nullable|string|max:500',
             'is_published' => 'boolean',
             'seo_title' => 'nullable|string|max:200',
@@ -92,9 +92,9 @@ class ArticleController extends Controller
             'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:articles,slug,' . $article->id,
             // articles.article_category_id is NOT NULL in the schema, so accepting null
             // here turns a missing category into a Postgres violation and a 500.
-            'article_category_id' => 'required|exists:article_categories,id',
+            'article_category_id' => 'required|integer|min:1|exists:article_categories,id',
             'summary' => 'nullable|string|max:500',
-            'content' => 'required|string',
+            'content' => 'required|string|max:1000000',
             'cover_image' => 'nullable|string|max:500',
             'is_published' => 'boolean',
             'seo_title' => 'nullable|string|max:200',

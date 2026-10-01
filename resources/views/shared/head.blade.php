@@ -40,7 +40,7 @@
 
     @yield('structured_data')
 
-    @php $siteFavicon = setting('site_favicon'); @endphp
+    @php $siteFavicon = \App\Support\SafeUrl::asset(setting('site_favicon')); @endphp
     @if($siteFavicon)
     {{-- Operator-supplied icon. type is omitted deliberately: the uploader accepts
          .ico and .png and the browser sniffs it correctly either way. --}}

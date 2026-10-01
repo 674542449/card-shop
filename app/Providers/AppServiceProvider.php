@@ -54,6 +54,9 @@ class AppServiceProvider extends ServiceProvider
             });
             $model::deleted(fn ($record) => app(\App\Services\SeoQueue::class)->enqueue($prefix.$record->slug, 'deleted:'.now()->toISOString()));
         }
+        // A client-supplied Host must not become a signed payment callback URL.
+        // APP_URL is the operator's canonical origin for links and notifications.
+        URL::forceRootUrl(rtrim(config('app.url'), '/'));
         if (str_starts_with(config('app.url'), 'https://')) {
             URL::forceScheme('https');
         }

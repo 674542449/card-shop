@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Models\OperationLog;
 use App\Services\NotificationService;
+use App\Support\SafeUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -99,7 +100,28 @@ class SettingController extends Controller
             }
         }
         $rules['mail_port'] = ['nullable', 'integer', 'min:1', 'max:65535'];
-        $rules['site_url'] = ['nullable', 'url:http,https', 'max:255'];
+        foreach (['site_url', 'epay_api_url', 'epusdt_api_url'] as $key) {
+            $rules[$key] = ['nullable', 'string', 'max:'.($key === 'site_url' ? 255 : 2048), function (string $attribute, mixed $value, \Closure $fail) {
+                if (SafeUrl::http($value) === null) {
+                    $fail('地址必须是有效的 HTTP 或 HTTPS URL，不能包含登录凭据。');
+                }
+            }];
+        }
+        foreach (['site_logo', 'site_favicon', 'contact_qr_image'] as $key) {
+            $rules[$key] = ['nullable', 'string', 'max:2048', function (string $attribute, mixed $value, \Closure $fail) {
+                if (SafeUrl::asset($value) === null) {
+                    $fail('图片地址必须是站内路径或 HTTP/HTTPS URL。');
+                }
+            }];
+        }
+        $rules['contact_url'] = ['nullable', 'string', 'max:2048', function (string $attribute, mixed $value, \Closure $fail) {
+            if (SafeUrl::contact($value) === null) {
+                $fail('联系链接仅支持站内路径、HTTP/HTTPS、mailto 或 tel。');
+            }
+        }];
+        foreach (['site_announcement', 'popup_announcement', 'email_template_body'] as $key) {
+            $rules[$key] = ['nullable', 'string', 'max:1000000'];
+        }
         $rules['bing_indexnow_key'] = ['nullable', 'regex:/^[A-Za-z0-9-]{8,128}$/D'];
         $rules['payment_reconciliation_enabled'] = ['nullable', 'boolean'];
         $rules['mail_encryption'] = ['nullable', 'in:ssl,tls,none'];

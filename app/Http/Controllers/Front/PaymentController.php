@@ -25,7 +25,7 @@ class PaymentController extends Controller
         // Verify signature
         if (!$this->verifyEpaySignature($params)) {
             Log::warning('EPay notify: invalid signature', $this->logContext($params, [
-                'out_trade_no', 'trade_no', 'pid', 'trade_status', 'money', 'sign',
+                'out_trade_no', 'trade_no', 'pid', 'trade_status', 'money',
             ]));
             return 'fail';
         }
@@ -123,7 +123,7 @@ class PaymentController extends Controller
             // asking for a retry would just repeat a rejected callback ten times. The
             // log line is the alert — a genuine one here means a misconfigured token.
             Log::warning('EPUSDT notify: invalid signature', $this->logContext($params, [
-                'order_id', 'trade_id', 'status', 'amount', 'actual_amount', 'signature',
+                'order_id', 'trade_id', 'status', 'amount', 'actual_amount',
             ]));
 
             return response('invalid signature', 200)->header('Content-Type', 'text/plain');

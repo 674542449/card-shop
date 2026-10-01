@@ -205,9 +205,9 @@ class OperationalSafetyTest extends TestCase
 
     public function test_api_query_uses_body_only_and_never_replays_legacy_url_credentials(): void
     {
-        $order = $this->order($this->product());
+        $token = $this->token();
+        $order = app(OrderService::class)->createOrder($this->data($this->product()) + ['api_token_id' => $token->id]);
         app(OrderFulfilmentService::class)->fulfilManually($order);
-        $this->token();
         $url = '/api/v1/orders/'.$order->order_no;
         $this->withToken('audit-only-token')->getJson($url.'?email=audit@example.test&query_password=audit-password')->assertStatus(405)->assertDontSee('audit-dummy');
         $this->postJson($url.'/query?query_password=audit-password', ['email' => $order->email])->assertUnprocessable();

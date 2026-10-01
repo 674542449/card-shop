@@ -33,7 +33,8 @@ class UploadController extends Controller
         $validator = Validator::make($request->all(), [
             // `mimetypes` reads the real type out of the file's bytes with finfo, which is a
             // stronger check than the `image` rule's extension-and-header guess, and it keeps
-            // SVG out. `mimes` is kept alongside it so a mismatched extension is also rejected.
+            // SVG out. `mimes` constrains the extension guessed from those same bytes;
+            // the client filename and its extension are deliberately not trusted.
             'file' => [
                 'required',
                 'file',
@@ -60,7 +61,7 @@ class UploadController extends Controller
         // one part of the upload an attacker fully controls. extension() derives it from
         // the sniffed MIME type, which the `mimes` rule above has already constrained.
         // Falling back to the client extension is safe here and only here: `mimes` has
-        // already constrained it to the allowlist and `mimetypes` has confirmed the bytes
+        // already constrained the sniffed type and `mimetypes` has confirmed the bytes
         // agree, so it cannot be used to smuggle an extension past the map. The fallback
         // exists because guessExtension() has no entry for some icon MIME spellings.
         $extension = self::EXTENSIONS[strtolower((string) $file->extension())]

@@ -71,7 +71,9 @@ class AssetMaintenanceService
         if ($disk->lastModified($path) > time() - 7 * 86400) {
             throw new RuntimeException('上传未满 7 天，暂不归档，以免影响未保存的编辑。');
         }
-        Storage::disk('local')->put('asset-quarantine/'.$path, $disk->get($path));
+        if (! Storage::disk('local')->put('asset-quarantine/'.$path, $disk->get($path))) {
+            throw new RuntimeException('素材归档失败，原文件已保留。');
+        }
         $disk->delete($path);
     }
 
@@ -82,7 +84,9 @@ class AssetMaintenanceService
         if (! $local->exists('asset-quarantine/'.$path)) {
             throw new RuntimeException('归档素材不存在。');
         }
-        Storage::disk('public')->put($path, $local->get('asset-quarantine/'.$path));
+        if (! Storage::disk('public')->put($path, $local->get('asset-quarantine/'.$path))) {
+            throw new RuntimeException('素材恢复失败，归档文件已保留。');
+        }
         $local->delete('asset-quarantine/'.$path);
     }
 }

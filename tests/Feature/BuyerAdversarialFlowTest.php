@@ -307,7 +307,8 @@ class BuyerAdversarialFlowTest extends TestCase
     public function test_payment_polling_quotes_and_api_lookup_do_not_spend_browser_checkout_quota(): void
     {
         $p = $this->product();
-        $order = app(OrderService::class)->createOrder($this->data($p));
+        $token = ApiToken::where('token', hash('sha256', 'buyer-test-token'))->firstOrFail();
+        $order = app(OrderService::class)->createOrder($this->data($p, ['api_token_id' => $token->id]));
         for ($i = 0; $i < 6; $i++) { $this->getJson('/order/pay/'.$order->order_no)->assertOk()->assertJsonPath('status', 'pending'); }
         $this->postJson('/order/quote', ['product_id' => $p->id, 'quantity' => 1])->assertOk();
         $this->withToken('buyer-test-token')->postJson('/api/v1/orders/'.$order->order_no.'/query', ['email' => $order->email, 'query_password' => 'public-buyer-password'])->assertOk();

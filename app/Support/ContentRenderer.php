@@ -66,9 +66,9 @@ class ContentRenderer
             return '';
         }
 
-        $html = self::looksLikeHtml($raw)
-            ? self::purifier()->purify($raw)
-            : self::markdown($raw);
+        // Markdown is parsed safely, then uses the same HTML allowlist as rich
+        // text. A parser regression must not be enough to publish executable HTML.
+        $html = self::purifier()->purify(self::looksLikeHtml($raw) ? $raw : self::markdown($raw));
         if (!$allowProducts) { return $html; }
         $pattern = '/<p(?:\s[^>]*)?>\s*\[\[product:(\d{1,18})\]\]\s*<\/p>/i';
         preg_match_all($pattern, $html, $matches);
@@ -94,6 +94,8 @@ class ContentRenderer
         $converter = new CommonMarkConverter([
             'html_input' => 'strip',
             'allow_unsafe_links' => false,
+            'max_nesting_level' => 64,
+            'max_delimiters_per_line' => 1000,
         ]);
 
         return $converter->convert($raw)->getContent();

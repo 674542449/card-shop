@@ -41,7 +41,7 @@ class ArticleCategoryController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:100',
             'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:article_categories,slug',
-            'sort_order' => 'nullable|integer',
+            'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
         ]);
 
         if (empty($data['slug'])) {
@@ -62,7 +62,7 @@ class ArticleCategoryController extends Controller
         $data = $request->validate([
             'name' => 'required|string|max:100',
             'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:article_categories,slug,' . $articleCategory->id,
-            'sort_order' => 'nullable|integer',
+            'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
         ]);
 
         if (empty($data['slug'])) {

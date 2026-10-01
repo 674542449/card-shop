@@ -18,7 +18,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 
 class OrderController extends Controller
@@ -253,11 +252,22 @@ class OrderController extends Controller
         //   - USDT（EPUSDT）：createPayment 会真的去网关建一笔交易，反复调用可能
         //     产生重复交易，所以结果放服务端缓存里，缓存在就直接用，不再打网关。
         $cacheKey = 'payment_url:' . $order->order_no;
-        $paymentUrl = session('payment_url_' . $order->order_no);
+        $sessionKey = 'payment_url_' . $order->order_no;
+        $rawSessionUrl = session($sessionKey);
+        $paymentUrl = \App\Support\SafeUrl::http($rawSessionUrl);
+        if ($rawSessionUrl !== null && $paymentUrl === null) {
+            session()->forget($sessionKey);
+        }
 
         if (!$paymentUrl) {
             try {
-                $paymentUrl = Cache::get($cacheKey);
+                // Upgrade-time cache entries must meet the same URL rules as
+                // newly returned gateway data before becoming clickable links.
+                $rawCachedUrl = Cache::get($cacheKey);
+                $paymentUrl = \App\Support\SafeUrl::http($rawCachedUrl);
+                if ($rawCachedUrl !== null && $paymentUrl === null) {
+                    Cache::forget($cacheKey);
+                }
             } catch (\Throwable) {
                 $paymentUrl = null;
             }
@@ -464,25 +474,8 @@ class OrderController extends Controller
      */
     private function tooManyAttempts(Request $request, string $email): bool
     {
-        $emailHash = sha1(mb_strtolower($email));
-
-        $pairKey = 'order-auth-pair|' . $emailHash . '|' . $request->ip();
-        $emailKey = 'order-auth-email|' . $emailHash;
-        $ipKey = 'order-auth-ip|' . $request->ip();
-
-        foreach ([$pairKey => 5, $emailKey => 50, $ipKey => 20] as $key => $max) {
-            if (RateLimiter::tooManyAttempts($key, $max)) {
-                return true;
-            }
-        }
-
-        // Hit before checking the password, and never cleared on success: a success
-        // must not reset a bucket an attacker can manufacture successes in.
-        RateLimiter::hit($pairKey, 900);
-        RateLimiter::hit($emailKey, 900);
-        RateLimiter::hit($ipKey, 900);
-
-        return false;
+        return app(\App\Services\OrderCredentialRateLimiter::class)
+            ->attempt($email, (string) $request->ip()) !== null;
     }
 
     /**
@@ -580,7 +573,7 @@ class OrderController extends Controller
         $request->validate([
             'email' => ['required', 'email', 'max:200'],
             'order_no' => ['nullable', 'string', 'max:30'],
-            'query_password' => ['required', 'string', 'max:50'],
+            'query_password' => ['bail', 'required', 'string', 'max:50', new \App\Rules\QueryPasswordBytes],
         ]);
 
         // This endpoint is not behind the turnstile that protects /order/query, so
@@ -633,40 +626,16 @@ class OrderController extends Controller
      */
     private function initiateEpayPayment(Order $order): ?string
     {
-        $apiUrl = setting('epay_api_url');
-        $merchantId = setting('epay_merchant_id');
-        $merchantKey = setting('epay_merchant_key');
-
-        if (!$apiUrl || !$merchantId || !$merchantKey) {
-            Log::error('EPay not configured');
+        try {
+            // Use the same server-only signing and gateway URL validation as the
+            // API checkout, rather than maintaining a second construction path.
+            $paymentUrl = app(\App\Services\EpayService::class)->createPayment(
+                $order, $order->payment_method === 'alipay' ? 'alipay' : 'wxpay',
+            );
+        } catch (\RuntimeException $e) {
+            Log::error('EPay payment unavailable', ['order_no' => $order->order_no, 'reason' => $e->getMessage()]);
             return null;
         }
-
-        $payType = $order->payment_method === 'alipay' ? 'alipay' : 'wxpay';
-
-        $params = [
-            'pid' => $merchantId,
-            'type' => $payType,
-            'out_trade_no' => $order->order_no,
-            'notify_url' => url('/payment/epay/notify'),
-            'return_url' => url('/payment/epay/return'),
-            'name' => $order->displayName(),
-            'money' => $order->total_amount,
-        ];
-
-        // Generate signature
-        ksort($params);
-        $signStr = '';
-        foreach ($params as $k => $v) {
-            if ($v !== '' && $k !== 'sign' && $k !== 'sign_type') {
-                $signStr .= $k . '=' . $v . '&';
-            }
-        }
-        $signStr = rtrim($signStr, '&') . $merchantKey;
-        $params['sign'] = md5($signStr);
-        $params['sign_type'] = 'MD5';
-
-        $paymentUrl = rtrim($apiUrl, '/') . '/submit.php?' . http_build_query($params);
 
         session(['payment_url_' . $order->order_no => $paymentUrl]);
 
@@ -692,14 +661,15 @@ class OrderController extends Controller
             return null;
         }
 
-        if (empty($result['payment_url'])) {
+        $paymentUrl = \App\Support\SafeUrl::http($result['payment_url'] ?? null);
+        if ($paymentUrl === null) {
             Log::error('EPUSDT returned no payment_url', ['order_no' => $order->order_no]);
 
             return null;
         }
 
-        session(['payment_url_' . $order->order_no => $result['payment_url']]);
+        session(['payment_url_' . $order->order_no => $paymentUrl]);
 
-        return $result['payment_url'];
+        return $paymentUrl;
     }
 }

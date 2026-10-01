@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Services\CardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class ProductController extends Controller
 {
@@ -52,10 +53,13 @@ class ProductController extends Controller
     /**
      * Return a single product with wholesale prices and stock count.
      */
-    public function show(int $id): JsonResponse
+    public function show(string $id): JsonResponse
     {
+        // whereNumber rejects nonnumeric paths; validate the integer range before
+        // any PHP coercion or database query so huge digit strings cannot throw.
+        Validator::make(['id' => $id], ['id' => 'required|integer|min:1|max:'.PHP_INT_MAX])->validate();
         $product = Product::active()->withStock()->with(['category', 'wholesalePrices'])
-            ->where('id', $id)
+            ->where('id', (int) $id)
             ->first();
 
         if (!$product) {

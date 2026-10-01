@@ -18,7 +18,7 @@ class AdminController extends Controller
 
     private function rules(?Admin $admin = null): array
     {
-        return ['username' => ['required', 'string', 'max:100', Rule::unique('admins')->ignore($admin?->id)],
+        return ['username' => ['required', 'string', 'max:50', Rule::unique('admins')->ignore($admin?->id)],
             'password' => ['bail', $admin ? 'nullable' : 'required', 'string', 'min:12', 'max:72', function ($attribute, $value, $fail) {
                 if (strlen($value) > 72) { $fail('密码最多 72 字节，请缩短密码。'); }
             }],

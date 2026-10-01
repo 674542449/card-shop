@@ -46,7 +46,7 @@
     @endphp
 
     @foreach($cssFiles as $css)
-    <link rel="stylesheet" href="{{ asset('admin-assets/' . $css) }}">
+    <link rel="stylesheet" href="/admin-assets/{{ $css }}">
     @endforeach
 </head>
 <body>
@@ -54,7 +54,7 @@
 
     @if($built)
         @foreach($jsFiles as $js)
-        <script type="module" src="{{ asset('admin-assets/' . $js) }}"></script>
+        <script type="module" src="/admin-assets/{{ $js }}"></script>
         @endforeach
     @else
     <div style="max-width:640px;margin:80px auto;padding:0 20px;font-family:system-ui,sans-serif;color:#444;">

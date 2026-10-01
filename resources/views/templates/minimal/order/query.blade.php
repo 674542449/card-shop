@@ -15,6 +15,6 @@
         </form>
         <p class="n-query-security"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>验证通过后展示订单与卡密。</p>
     </div>
-    <p class="n-query-bottom"><a href="/">← 返回商品目录</a>@if(setting('contact_url'))<a href="{{ setting('contact_url') }}" target="_blank" rel="noopener">需要帮助？ ↗</a>@endif</p>
+    <p class="n-query-bottom"><a href="/">← 返回商品目录</a>@if(\App\Support\SafeUrl::contact(setting('contact_url')))<a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">需要帮助？ ↗</a>@endif</p>
 </section>
 @endsection

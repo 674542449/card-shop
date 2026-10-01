@@ -18,7 +18,7 @@ class QueryOrderRequest extends FormRequest
     {
         return [
             'email' => ['required', 'email', 'max:200'],
-            'query_password' => ['required', 'string', 'max:50'],
+            'query_password' => ['bail', 'required', 'string', 'max:50', new \App\Rules\QueryPasswordBytes],
             'order_no' => ['nullable', 'string', 'max:30'],
         ];
     }

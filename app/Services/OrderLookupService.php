@@ -10,6 +10,12 @@ class OrderLookupService
 {
     public function search(string $email, string $password, ?string $orderNo = null, int $beforeId = PHP_INT_MAX): array
     {
+        // Keep the service safe for callers outside the HTTP validators too.
+        // Otherwise bcrypt accepts a suffix after byte 72, and an exact lookup
+        // overwrites the indexed HMAC with credentials the buyer never chose.
+        if (strlen($password) > 72) {
+            return ['orders' => new Collection, 'has_more' => false, 'cursor' => null];
+        }
         $key = Order::passwordKey($email, $password);
         $query = Order::whereRaw('lower(email) = ?', [mb_strtolower($email)]);
         if ($orderNo) {

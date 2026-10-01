@@ -68,7 +68,7 @@ class CouponController extends Controller
                     }
                 },
             ],
-            'product_id' => 'nullable|exists:products,id',
+            'product_id' => 'nullable|integer|min:1|exists:products,id',
             // 0 is the unlimited sentinel and the column default, so min:1 made every
             // coupon created with the default impossible to save again.
             'max_uses' => 'nullable|integer|min:0|max:2147483647',
@@ -110,7 +110,7 @@ class CouponController extends Controller
                     }
                 },
             ],
-            'product_id' => 'nullable|exists:products,id',
+            'product_id' => 'nullable|integer|min:1|exists:products,id',
             // 0 is the unlimited sentinel and the column default, so min:1 made every
             // coupon created with the default impossible to save again.
             'max_uses' => 'nullable|integer|min:0|max:2147483647',

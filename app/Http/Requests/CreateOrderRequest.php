@@ -19,11 +19,7 @@ class CreateOrderRequest extends FormRequest
         return [
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'email' => ['required', 'email', 'max:200'],
-            'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', function ($attribute, $value, $fail) {
-                if (strlen($value) > 72) {
-                    $fail('查询密码不能超过72字节，中文等字符会占用多个字节');
-                }
-            }],
+            'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', new \App\Rules\QueryPasswordBytes],
             'quantity' => ['required', 'integer', 'min:1'],
             'coupon_code' => ['nullable', 'string', 'max:50'],
             'payment_method' => ['required', \Illuminate\Validation\Rule::in(\App\Support\PaymentMethods::supported())],

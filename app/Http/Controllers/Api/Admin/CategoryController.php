@@ -50,7 +50,7 @@ class CategoryController extends Controller
             'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:categories,slug',
             'description' => 'nullable|string|max:500',
             'image' => 'nullable|string|max:500',
-            'sort_order' => 'nullable|integer',
+            'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
             'is_active' => 'boolean',
         ]);
 
@@ -74,7 +74,7 @@ class CategoryController extends Controller
             'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:categories,slug,' . $category->id,
             'description' => 'nullable|string|max:500',
             'image' => 'nullable|string|max:500',
-            'sort_order' => 'nullable|integer',
+            'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
             'is_active' => 'boolean',
         ]);
 

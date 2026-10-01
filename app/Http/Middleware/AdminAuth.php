@@ -51,13 +51,25 @@ class AdminAuth
         }
 
         $request->attributes->set('admin', $admin);
-        $segment = explode('/', trim(substr($request->path(), strlen('api/'.admin_path())), '/'))[0];
+        // Authorize the route Laravel matched, never the caller's raw path. The
+        // router decodes percent-encoded segments, while Request::path() does not:
+        // /%61dmins used to reach AdminController without matching the owner gate.
+        $routeUri = $request->route()?->uri() ?? '';
+        $prefix = 'api/'.admin_path().'/';
+        $segment = str_starts_with($routeUri, $prefix)
+            ? explode('/', substr($routeUri, strlen($prefix)))[0]
+            : '';
         $areas = ['dashboard' => 'overview', 'categories' => 'catalog', 'products' => 'catalog', 'cards' => 'catalog',
             'orders' => 'orders', 'refunds' => 'refunds', 'articles' => 'content', 'article-categories' => 'content',
             'coupons' => 'coupons', 'blacklists' => 'blacklists', 'logs' => 'logs', 'settings' => 'settings',
             'api-tokens' => 'tokens', 'notifications' => 'notifications', 'maintenance' => 'maintenance', 'seo-deliveries' => 'content'];
+        // Self-service routes are available to every authenticated administrator.
+        // New areas require an explicit policy before any staff account can use them.
+        if (!isset($areas[$segment]) && !in_array($segment, ['admins', 'upload', 'me', 'logout', 'password'], true)) {
+            return response()->json(['message' => '此后台接口尚未配置访问权限。'], 403);
+        }
         if ($segment === 'admins' && $admin->role !== 'owner') { return response()->json(['message' => '仅店主管理员可以管理账户。'], 403); }
-        if (isset($areas[$segment]) && !$admin->allows($areas[$segment], $request->isMethod('GET') ? 'read' : 'write')) {
+        if (isset($areas[$segment]) && !$admin->allows($areas[$segment], $request->isMethodSafe() ? 'read' : 'write')) {
             return response()->json(['message' => '当前账户没有此操作权限。'], 403);
         }
         if ($segment === 'upload' && !$admin->allows('catalog', 'write') && !$admin->allows('content', 'write') && !$admin->allows('settings', 'write')) {

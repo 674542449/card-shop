@@ -71,12 +71,12 @@
         </div>
     </section>
     @endif
-    @if(setting('contact_qr_image') || setting('contact_text'))
+    @if(\App\Support\SafeUrl::asset(setting('contact_qr_image')) || setting('contact_text'))
     <section class="m-home-contact">
         <div><span class="m-eyebrow">需要一点帮助？</span><h2 class="m-section-title">我们在这里。</h2>@if(setting('contact_text'))<p>{{ setting('contact_text') }}</p>@endif
-            @if(setting('contact_url'))<a class="m-text-link" href="{{ setting('contact_url') }}" target="_blank" rel="noopener">联系客服 ↗</a>@endif
+            @if(\App\Support\SafeUrl::contact(setting('contact_url')))<a class="m-text-link" href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系客服 ↗</a>@endif
         </div>
-        @if(setting('contact_qr_image'))<img src="{{ setting('contact_qr_image') }}" alt="客服联系二维码" width="100" height="100" loading="lazy" decoding="async">@endif
+        @if(\App\Support\SafeUrl::asset(setting('contact_qr_image')))<img src="{{ \App\Support\SafeUrl::asset(setting('contact_qr_image')) }}" alt="客服联系二维码" width="100" height="100" loading="lazy" decoding="async">@endif
     </section>
     @endif
 @endsection

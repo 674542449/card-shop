@@ -135,13 +135,13 @@
     @endif
 
     {{-- Contact Section --}}
-    @if(setting('contact_qr_image') || setting('contact_text'))
+    @if(\App\Support\SafeUrl::asset(setting('contact_qr_image')) || setting('contact_text'))
     <section class="contact-section">
         {{-- .qr-img is a fixed 96px square in front.css, so the intrinsic size is known
              and can be reserved up front; the section is at the very bottom of the page,
              hence lazy. object-fit is left to the stylesheet. --}}
-        @if(setting('contact_qr_image'))
-        <img src="{{ setting('contact_qr_image') }}" alt="客服联系二维码" class="qr-img"
+        @if(\App\Support\SafeUrl::asset(setting('contact_qr_image')))
+        <img src="{{ \App\Support\SafeUrl::asset(setting('contact_qr_image')) }}" alt="客服联系二维码" class="qr-img"
              width="96" height="96" loading="lazy" decoding="async">
         @endif
         <div class="contact-text">

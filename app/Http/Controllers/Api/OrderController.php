@@ -27,7 +27,7 @@ class OrderController extends Controller
         $validator = Validator::make($request->all(), [
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'email' => ['required', 'email', 'max:200'],
-            'query_password' => ['required', 'string', 'min:6', 'max:50'],
+            'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', new \App\Rules\QueryPasswordBytes],
             'quantity' => ['required', 'integer', 'min:1'],
             'coupon_code' => ['nullable', 'string', 'max:50'],
             'payment_method' => ['required', \Illuminate\Validation\Rule::in(\App\Support\PaymentMethods::supported())],
@@ -74,6 +74,14 @@ class OrderController extends Controller
                 $request->input('payment_method')
             );
 
+            // This exact order was just created from these accepted credentials.
+            // Recording its proof only after payment initiation succeeds lets a
+            // legitimate batch buyer query each order without spending guesses.
+            app(\App\Services\ApiOrderCredentialProof::class)->remember(
+                $order, $request->attributes->get('api_token')->id,
+                $request->input('email'), $request->input('query_password'),
+            );
+
             return response()->json([
                 'message' => '订单创建成功',
                 'data' => [
@@ -106,12 +114,19 @@ class OrderController extends Controller
 
     public function cancel(Request $request, string $orderNo): JsonResponse
     {
+        if ($request->query->has('email') || $request->query->has('query_password')) {
+            return response()->json(['message' => '请通过 POST 请求正文传递邮箱和查询密码，不要放在 URL 中。'], 422)->header('Cache-Control', 'no-store');
+        }
         $input = $request->isJson() ? $request->json()->all() : $request->request->all();
         $data = Validator::make($input, [
-            'email' => 'required|email|max:200', 'query_password' => 'required|string|max:50',
+            'email' => 'required|email|max:200',
+            'query_password' => ['bail', 'required', 'string', 'max:50', new \App\Rules\QueryPasswordBytes],
         ])->validate();
-        $order = app(\App\Services\OrderLookupService::class)->search($data['email'], $data['query_password'], $orderNo)['orders']->first();
-        if (!$order || $order->api_token_id !== $request->attributes->get('api_token')->id) {
+        $order = $this->authenticate($request, $data['email'], $data['query_password'], $orderNo);
+        if ($order instanceof JsonResponse) {
+            return $order;
+        }
+        if ($order->api_token_id !== $request->attributes->get('api_token')->id) {
             return response()->json(['message' => '订单不存在或查询密码错误'], 404)->header('Cache-Control', 'no-store');
         }
         try {
@@ -150,7 +165,7 @@ class OrderController extends Controller
         $input = $request->isJson() ? $request->json()->all() : $request->request->all();
         $validator = Validator::make($input, [
             'email' => ['required', 'email', 'max:200'],
-            'query_password' => ['required', 'string', 'max:50'],
+            'query_password' => ['bail', 'required', 'string', 'max:50', new \App\Rules\QueryPasswordBytes],
         ], [
             'email.required' => '请提供邮箱地址',
             'email.email' => '邮箱格式不正确',
@@ -164,23 +179,11 @@ class OrderController extends Controller
             ], 422);
         }
 
-        $order = Order::with(['product', 'cards'])
-            ->where('order_no', $orderNo)
-            // Case-insensitive, matching the buyer-facing lookup. A buyer who typed
-            // Buyer@Example.com at checkout is the same person as buyer@example.com.
-            ->whereRaw('lower(email) = ?', [mb_strtolower($input['email'])])
-            ->first();
-
-        // ONE response for "no such (order, email) pair" and for "wrong password".
-        // Two distinct answers — 404 versus 403 — told a caller which pairs are real,
-        // and this endpoint emits card secrets on success. The buyer-facing path
-        // merges these two cases deliberately; this one had not.
-        $authenticated = app(\App\Services\OrderLookupService::class)->search($input['email'], $input['query_password'], $orderNo)['orders']->isNotEmpty();
-        if (!$order || !$authenticated) {
-            return response()->json([
-                'message' => '订单不存在或查询密码错误',
-            ], 404);
+        $order = $this->authenticate($request, $input['email'], $input['query_password'], $orderNo);
+        if ($order instanceof JsonResponse) {
+            return $order;
         }
+        $order->load(['product', 'cards']);
 
         $response = [
             'data' => [
@@ -217,5 +220,37 @@ class OrderController extends Controller
         }
 
         return response()->json($response)->header('Cache-Control', 'no-store');
+    }
+
+    private function authenticate(Request $request, string $email, string $password, string $orderNo): Order|JsonResponse
+    {
+        $tokenId = $request->attributes->get('api_token')->id;
+        $proof = app(\App\Services\ApiOrderCredentialProof::class);
+        $candidate = Order::where('order_no', $orderNo)
+            ->whereRaw('lower(email) = ?', [mb_strtolower($email)])->first();
+        if ($candidate && $proof->has($candidate, $tokenId, $email, $password)) {
+            // Correct, previously verified owner polling still uses the route/IP
+            // and token request limits, but does not consume the guessing budget.
+            return $candidate;
+        }
+        if ($limited = $this->credentialLimit($request, $email)) {
+            return $limited;
+        }
+        $order = app(\App\Services\OrderLookupService::class)->search($email, $password, $orderNo)['orders']->first();
+        if (! $order || $order->api_token_id !== $tokenId) {
+            // Missing credentials and another tenant's order share one response.
+            // Only the creating token may read or cancel this API order.
+            return response()->json(['message' => '订单不存在或查询密码错误'], 404)->header('Cache-Control', 'no-store');
+        }
+        $proof->remember($order, $tokenId, $email, $password);
+        return $order;
+    }
+
+    private function credentialLimit(Request $request, string $email): ?JsonResponse
+    {
+        $retryAfter = app(\App\Services\OrderCredentialRateLimiter::class)
+            ->attempt($email, (string) $request->ip());
+        return $retryAfter === null ? null : response()->json(['message' => '尝试次数过多，请稍后再试'], 429)
+            ->header('Retry-After', (string) $retryAfter)->header('Cache-Control', 'no-store');
     }
 }

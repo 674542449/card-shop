@@ -18,7 +18,7 @@
 </head>
 <body class="modern-store">
     @php
-        $siteLogo = setting('site_logo');
+        $siteLogo = \App\Support\SafeUrl::asset(setting('site_logo'));
         $siteName = setting('site_name', 'CardShop');
         $navItems = [
             ['url' => '/', 'label' => '商品目录', 'active' => request()->is('/') || request()->is('category/*') || request()->is('product/*')],
@@ -47,8 +47,8 @@
                 @endforeach
             </nav>
             <div class="m-header-actions">
-                @if(setting('contact_url'))
-                <a class="m-contact-link" href="{{ setting('contact_url') }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
+                @if(\App\Support\SafeUrl::contact(setting('contact_url')))
+                <a class="m-contact-link" href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
                 @endif
                 <button type="button" class="m-icon-button" id="ui-theme-toggle" aria-label="切换深色模式" title="切换深色模式" aria-pressed="false">
                     <svg class="m-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 13a8.8 8.8 0 1 1-9.8-9.8A7.2 7.2 0 0 0 20.8 13z"/></svg>
@@ -63,8 +63,8 @@
             @foreach($navItems as $item)
             <a href="{{ $item['url'] }}" @class(['m-nav-link', 'is-active' => $item['active']]) @if($item['active']) aria-current="page" @endif>{{ $item['label'] }} <span aria-hidden="true">↗</span></a>
             @endforeach
-            @if(setting('contact_url'))
-            <a class="m-nav-link" href="{{ setting('contact_url') }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
+            @if(\App\Support\SafeUrl::contact(setting('contact_url')))
+            <a class="m-nav-link" href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
             @endif
         </nav>
     </header>
@@ -87,7 +87,7 @@
             </div>
             <div class="m-footer-links">
                 @foreach($navItems as $item)<a href="{{ $item['url'] }}">{{ $item['label'] }}</a>@endforeach
-                @if(setting('contact_url'))<a href="{{ setting('contact_url') }}" target="_blank" rel="noopener">联系客服 ↗</a>@endif
+                @if(\App\Support\SafeUrl::contact(setting('contact_url')))<a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系客服 ↗</a>@endif
             </div>
         </div>
         <div class="m-container m-footer-bottom"><span>&copy; {{ date('Y') }} {{ $siteName }}</span>@include('shared.footer-brand')<span>简单购买 · 自动交付</span></div>

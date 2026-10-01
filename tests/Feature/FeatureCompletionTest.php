@@ -86,7 +86,8 @@ class FeatureCompletionTest extends TestCase
         $this->post('/order/create', $data)->assertSessionHasErrors('query_password');
         $this->token();
         $this->withToken('complete-token')->postJson('/api/v1/orders', $data)
-            ->assertUnprocessable()->assertJsonPath('message', '查询密码不能超过72字节，中文等字符会占用多个字节');
+            ->assertUnprocessable()->assertJsonValidationErrors('query_password')
+            ->assertJsonPath('errors.query_password.0', '查询密码不能超过72字节，中文等字符会占用多个字节');
         $this->assertSame(0, Order::count());
         $this->assertSame(2, $p->stockCount());
         try {
@@ -167,7 +168,8 @@ class FeatureCompletionTest extends TestCase
     public function test_snapshot_and_api_review_survive_rename_and_duplicate_receipts_are_deduplicated(): void
     {
         $p = $this->product();
-        $o = $this->order($p);
+        $token = $this->token();
+        $o = $this->order($p, ['api_token_id' => $token->id]);
         $p->update(['name' => '新的商品名称']);
         $fulfil = app(OrderFulfilmentService::class);
         $this->assertTrue($fulfil->fulfilFromGateway($o->order_no, 'complete-trade-1', '10.00', 'epay')->wasFulfilled());
@@ -177,7 +179,6 @@ class FeatureCompletionTest extends TestCase
         $this->assertSame(1, NotificationDelivery::where('type', 'payment_review')->count());
         $this->assertSame('complete-trade-1', $o->fresh()->payment_no);
         $this->assertSame(1, $o->cards()->where('status', 'sold')->count());
-        $this->token();
         $this->withToken('complete-token')->postJson('/api/v1/orders/'.$o->order_no.'/query', ['email' => $o->email, 'query_password' => 'buyer-password'])
             ->assertOk()->assertJsonPath('data.product.name', '原商品名称')->assertJsonPath('data.payment_review', true)->assertJsonPath('data.payment_received_currency', 'CNY');
         $receipt = $o->paymentReceipts()->where('trade_no', 'complete-trade-2')->first();

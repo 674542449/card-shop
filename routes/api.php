@@ -8,7 +8,7 @@ use App\Http\Controllers\Api;
 // only ones these routes get.
 Route::middleware(\App\Http\Middleware\ApiTokenAuth::class)->group(function () {
     Route::get('/products', [Api\ProductController::class, 'index']);
-    Route::get('/products/{id}', [Api\ProductController::class, 'show']);
+    Route::get('/products/{id}', [Api\ProductController::class, 'show'])->whereNumber('id');
     // Per-IP throttle supplements the per-token rate and reservation quotas.
     Route::post('/orders', [Api\OrderController::class, 'create'])
         ->middleware('throttle:20,1,api-order-create');
@@ -20,5 +20,5 @@ Route::middleware(\App\Http\Middleware\ApiTokenAuth::class)->group(function () {
     Route::post('/orders/{orderNo}/cancel', [Api\OrderController::class, 'cancel'])->middleware('throttle:10,1,api-order-cancel');
     Route::get('/orders/{order_no}', fn () => response()->json([
         'message' => '查单接口已改为 POST /api/v1/orders/{order_no}/query，请在请求正文传递 email 和 query_password。',
-    ], 405)->header('Allow', 'POST')->header('Cache-Control', 'no-store'));
+    ], 405)->header('Allow', 'POST')->header('Cache-Control', 'no-store'))->name('api.orders.legacy-query');
 });

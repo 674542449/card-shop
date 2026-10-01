@@ -38,17 +38,36 @@ class ApiTokenAuth
             ], 401);
         }
 
-        $scope = str_contains($request->path(), '/products') ? 'products:read' : ($request->path() === 'api/v1/orders' ? 'orders:create' : 'orders:query');
-        if (str_ends_with($request->path(), '/cancel')) {
-            $scope = 'orders:cancel';
-        }
-        if (($apiToken->scopes !== null && !in_array($scope, $apiToken->scopes, true))
+        // Dynamic order/product identifiers belong to the caller. Determine the
+        // permission from the matched action, never a substring of their URL.
+        $route = $request->route();
+        $controller = $route?->getControllerClass();
+        $action = $route?->getActionMethod();
+        // Laravel registers HEAD alongside GET; both use the same read scope.
+        $reading = in_array($request->method(), ['GET', 'HEAD'], true);
+        $creatingOrder = $controller === \App\Http\Controllers\Api\OrderController::class
+            && $action === 'create' && $request->isMethod('POST');
+        $scope = match (true) {
+            $controller === \App\Http\Controllers\Api\ProductController::class
+                && in_array($action, ['index', 'show'], true) && $reading => 'products:read',
+            $creatingOrder => 'orders:create',
+            $controller === \App\Http\Controllers\Api\OrderController::class
+                && $action === 'cancel' && $request->isMethod('POST') => 'orders:cancel',
+            $controller === \App\Http\Controllers\Api\OrderController::class
+                && $action === 'show' && $request->isMethod('POST') => 'orders:query',
+            $controller === null && $route?->getName() === 'api.orders.legacy-query'
+                && $reading => 'orders:query',
+            default => null,
+        };
+        // New actions receive no permission until deliberately mapped above,
+        // including legacy all-scope tokens. An unknown route must fail closed.
+        if ($scope === null || ($apiToken->scopes !== null && !in_array($scope, $apiToken->scopes, true))
             || ($apiToken->allowed_ips && !\Symfony\Component\HttpFoundation\IpUtils::checkIp($request->ip(), $apiToken->allowed_ips))) {
             return response()->json(['message' => 'API 令牌没有此访问权限或来源 IP 不允许。'], 403)->header('Cache-Control', 'no-store');
         }
 
         $limits = ['api-token:'.$apiToken->id => $apiToken->requests_per_minute];
-        if ($request->isMethod('POST') && $request->path() === 'api/v1/orders') {
+        if ($creatingOrder) {
             $limits['api-token-orders:'.$apiToken->id] = $apiToken->orders_per_minute;
         }
         foreach ($limits as $key => $limit) {

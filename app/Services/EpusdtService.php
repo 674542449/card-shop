@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Order;
+use App\Support\SafeUrl;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -53,7 +54,12 @@ class EpusdtService
         $key = 'epusdt_payment:' . $order->order_no;
         return Cache::lock('epusdt_create:' . $order->order_no, 30)->block(5, function () use ($key, $order, $chain) {
             if ($cached = Cache::get($key)) {
-                return $cached;
+                if (is_array($cached) && SafeUrl::http($cached['payment_url'] ?? null) !== null) {
+                    return $cached;
+                }
+                // An older release may already have cached an unsafe gateway URL.
+                Cache::forget($key);
+                Cache::forget('payment_url:' . $order->order_no);
             }
             $result = $this->createTransaction($order, $chain);
             if (empty($result['payment_url'])) {
@@ -71,6 +77,9 @@ class EpusdtService
 
     private function createTransaction(Order $order, string $chain): array
     {
+        if (SafeUrl::http($this->apiUrl) === null) {
+            throw new RuntimeException('USDT支付网关地址无效');
+        }
         if (!isset(self::TRADE_TYPES[$chain]) || ($this->flavour !== 'bepusdt' && $chain !== 'trc20')) {
             throw new RuntimeException('当前 USDT 网关不支持所选网络，请使用默认 USDT 入口。');
         }
@@ -97,7 +106,7 @@ class EpusdtService
 
         $params['signature'] = $this->generateSign($params, $this->apiToken);
 
-        $response = Http::timeout(15)
+        $response = Http::timeout(15)->withoutRedirecting()
             ->post("{$this->apiUrl}/api/v1/order/create-transaction", $params);
 
         if (!$response->successful()) {
@@ -116,11 +125,17 @@ class EpusdtService
                 'response' => $data,
                 'order_no' => $order->order_no,
             ]);
-            throw new RuntimeException($data['message'] ?? 'USDT支付创建失败');
+            $message = $data['message'] ?? null;
+            throw new RuntimeException(is_string($message) && mb_strlen($message) <= 200 ? $message : 'USDT支付创建失败');
+        }
+
+        $paymentUrl = SafeUrl::http($data['data']['payment_url'] ?? null);
+        if ($paymentUrl === null) {
+            throw new RuntimeException('USDT支付接口返回的支付链接无效');
         }
 
         return [
-            'payment_url' => $data['data']['payment_url'] ?? '',
+            'payment_url' => $paymentUrl,
             'trade_id' => $data['data']['trade_id'] ?? '',
         ];
     }

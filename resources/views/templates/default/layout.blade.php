@@ -40,7 +40,7 @@
 
     <header class="site-header">
         <div class="container">
-            @php $siteLogo = setting('site_logo'); @endphp
+            @php $siteLogo = \App\Support\SafeUrl::asset(setting('site_logo')); @endphp
             <a class="site-logo" href="/">
                 @if($siteLogo)
                 {{-- Height is capped in CSS, so any upload lands at the header's scale. --}}
@@ -120,8 +120,8 @@
     </footer>
 
     <div class="fab-group">
-        @if(setting('contact_url'))
-        <a href="{{ setting('contact_url') }}" class="fab-btn fab-contact" title="联系客服" aria-label="联系客服" target="_blank" rel="noopener">&#128172;</a>
+        @if(\App\Support\SafeUrl::contact(setting('contact_url')))
+        <a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" class="fab-btn fab-contact" title="联系客服" aria-label="联系客服" target="_blank" rel="noopener">&#128172;</a>
         @endif
         <button class="fab-btn fab-top" id="back-to-top" title="回到顶部" aria-label="回到顶部">&#8593;</button>
     </div>

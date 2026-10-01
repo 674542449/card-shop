@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Order;
+use App\Support\SafeUrl;
 
 class EpayService
 {
@@ -28,6 +29,9 @@ class EpayService
     {
         if ($this->apiUrl === '' || $this->merchantId === '' || $this->merchantKey === '') {
             throw new \RuntimeException('支付宝/微信支付尚未配置');
+        }
+        if (SafeUrl::http($this->apiUrl) === null) {
+            throw new \RuntimeException('支付宝/微信支付网关地址无效');
         }
         $params = [
             'pid' => $this->merchantId,
