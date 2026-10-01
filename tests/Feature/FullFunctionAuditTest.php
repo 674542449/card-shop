@@ -63,7 +63,7 @@ class FullFunctionAuditTest extends TestCase
         $coupon = Coupon::create(['code' => 'AUDITQUOTE', 'type' => 'fixed', 'value' => '5.00', 'max_uses' => 1, 'is_active' => true]);
         $this->postJson('/order/quote', ['product_id' => $p->id, 'quantity' => 2, 'coupon_code' => $coupon->code, 'total_amount' => '0.00'])
             ->assertOk()->assertJsonPath('data.unit_price', '8.00')->assertJsonPath('data.subtotal', '16.00')
-            ->assertJsonPath('data.discount_amount', '5.00')->assertJsonPath('data.total_amount', '11.00')->assertHeader('Cache-Control', 'no-store, private');
+            ->assertJsonPath('data.discount_amount', '5.00')->assertJsonPath('data.total_amount', '11.00')->assertHeader('Cache-Control', 'must-revalidate, no-cache, no-store, private');
         $this->assertSame(0, $coupon->fresh()->used_count);
         $this->assertSame(4, $p->stockCount());
         $this->assertSame(0, Order::count());
@@ -79,7 +79,7 @@ class FullFunctionAuditTest extends TestCase
         $c = Coupon::create(['code' => 'AUDITCANCEL', 'type' => 'fixed', 'value' => '2.00', 'max_uses' => 1, 'is_active' => true]);
         $o = $this->order($p, ['coupon_code' => $c->code]);
         $this->post('/order/cancel/'.$o->order_no)->assertForbidden();
-        $this->withSession(['order_verified_ids' => [$o->id]]);
+        $this->withBuyerSession($o);
         foreach (['default', 'modern', 'minimal'] as $theme) {
             Setting::set('site_theme', $theme);
             $this->get('/order/detail/'.$o->order_no)->assertOk()->assertSee('/order/cancel/'.$o->order_no);
@@ -98,14 +98,14 @@ class FullFunctionAuditTest extends TestCase
         $o = $this->order($p);
         $o->update(['payment_no' => 'audit-awaiting-review']);
         $this->receipt($o, 'audit-awaiting-review');
-        $this->withSession(['order_verified_ids' => [$o->id]])->post('/order/cancel/'.$o->order_no)->assertSessionHasErrors('error');
+        $this->withBuyerSession($o)->post('/order/cancel/'.$o->order_no)->assertSessionHasErrors('error');
         $this->admin();
         $this->postJson('/api/admin/orders/'.$o->id.'/close')->assertUnprocessable();
         $this->assertSame('pending', $o->fresh()->status);
         $this->assertSame(3, $p->stockCount());
         $paid = $this->order($p);
         app(OrderFulfilmentService::class)->fulfilFromGateway($paid->order_no, 'audit-paid', '10.00', 'epay');
-        $this->withSession(['order_verified_ids' => [$paid->id]])->post('/order/cancel/'.$paid->order_no)->assertSessionHasErrors('error');
+        $this->withBuyerSession($paid)->post('/order/cancel/'.$paid->order_no)->assertSessionHasErrors('error');
         $this->assertSame('paid', $paid->fresh()->status);
         $this->assertSame(1, $paid->cards()->where('status', 'sold')->count());
     }

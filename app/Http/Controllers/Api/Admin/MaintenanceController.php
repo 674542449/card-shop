@@ -71,7 +71,7 @@ class MaintenanceController extends Controller
         $this->owner();
         OperationLog::log('下载完整备份', 'backup', null, $name);
 
-        return response()->download($this->file($name, $service))->header('Cache-Control', 'no-store');
+        return response()->download($this->file($name, $service), null, ['Cache-Control' => 'no-store, private']);
     }
 
     public function validateBackup(string $name, ShopBackupService $service)

@@ -47,7 +47,9 @@ class PaymentController extends Controller
         $tradeNo = $params['trade_no'] ?? '';
 
         if (! $this->validReference($orderNo, 30) || ! $this->validReference($tradeNo, 100)
-            || ! $this->validAmountType($params['money'] ?? null)) {
+            || ! $this->validAmountType($params['money'] ?? null)
+            || (array_key_exists('fiat', $params) && $params['fiat'] !== 'CNY')
+            || (array_key_exists('type', $params) && !in_array($params['type'], ['alipay', 'wxpay'], true))) {
             return 'fail';
         }
 
@@ -55,7 +57,8 @@ class PaymentController extends Controller
         // for this payment. If fulfilment threw — a deadlock, a lost connection — the
         // buyer has paid, the order is still pending, and the gateway's retry is the
         // only thing that would recover it. Do not switch that off with a false ack.
-        return $this->processPayment($orderNo, $tradeNo, (string) ($params['money'] ?? ''), 'epay')
+        return $this->processPayment($orderNo, $tradeNo, (string) ($params['money'] ?? ''), 'epay',
+            isset($params['type']) ? ['epay_type' => $params['type']] : [])
             ? 'success'
             : 'fail';
     }
@@ -91,7 +94,7 @@ class PaymentController extends Controller
 
         $orderNo = $params['out_trade_no'] ?? '';
 
-        if (!is_string($orderNo) || $orderNo === '') {
+        if (!$this->validReference($orderNo, 30)) {
             return redirect('/');
         }
 
@@ -146,7 +149,8 @@ class PaymentController extends Controller
         $tradeNo = $params['trade_id'] ?? '';
 
         if (! $this->validReference($orderNo, 30) || ! $this->validReference($tradeNo, 100)
-            || ! $this->validAmountType($params['amount'] ?? null)) {
+            || ! $this->validAmountType($params['amount'] ?? null)
+            || (array_key_exists('fiat', $params) && $params['fiat'] !== 'CNY')) {
             Log::warning('EPUSDT notify: missing order_id', $this->logContext($params, [
                 'trade_id', 'status', 'amount',
             ]));
@@ -204,7 +208,8 @@ class PaymentController extends Controller
     private function validReference(mixed $value, int $maximum): bool
     {
         return (is_string($value) || is_int($value))
-            && strlen((string) $value) > 0 && strlen((string) $value) <= $maximum;
+            && strlen((string) $value) > 0 && strlen((string) $value) <= $maximum
+            && !preg_match('/[\x00-\x20\x7f]/', (string) $value);
     }
 
     private function validAmountType(mixed $value): bool
@@ -239,6 +244,9 @@ class PaymentController extends Controller
         foreach ($params as $k => $v) {
             // Same reason: a nested array here would raise "Array to string conversion"
             // and silently sign the literal "Array".
+            if (!is_scalar($v) && $v !== null) {
+                return false;
+            }
             if (is_scalar($v) && $v !== '' && $v !== null) {
                 $signStr .= $k . '=' . $v . '&';
             }
@@ -271,6 +279,9 @@ class PaymentController extends Controller
         ksort($params);
         $signStr = '';
         foreach ($params as $k => $v) {
+            if (!is_scalar($v) && $v !== null) {
+                return false;
+            }
             if (is_scalar($v) && $v !== '' && $v !== null) {
                 $signStr .= $k . '=' . $v . '&';
             }

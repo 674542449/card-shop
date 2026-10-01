@@ -59,7 +59,13 @@ class AdminAuth
         $segment = str_starts_with($routeUri, $prefix)
             ? explode('/', substr($routeUri, strlen($prefix)))[0]
             : '';
-        $areas = ['dashboard' => 'overview', 'categories' => 'catalog', 'products' => 'catalog', 'cards' => 'catalog',
+        // Card routes nested under /products are still secret-inventory actions.
+        // Catalog readers and product editors must not inherit permission to
+        // extract every unsold card just because the URI starts with products.
+        if (str_starts_with($request->route()?->getActionName() ?? '', \App\Http\Controllers\Api\Admin\CardController::class.'@')) {
+            $segment = 'cards';
+        }
+        $areas = ['dashboard' => 'overview', 'categories' => 'catalog', 'products' => 'catalog', 'cards' => 'cards',
             'orders' => 'orders', 'refunds' => 'refunds', 'articles' => 'content', 'article-categories' => 'content',
             'coupons' => 'coupons', 'blacklists' => 'blacklists', 'logs' => 'logs', 'settings' => 'settings',
             'api-tokens' => 'tokens', 'notifications' => 'notifications', 'maintenance' => 'maintenance', 'seo-deliveries' => 'content'];

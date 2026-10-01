@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Order;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 
 class OrderLookupService
@@ -36,14 +37,15 @@ class OrderLookupService
             ->where('id', '<', $beforeId)->orderByDesc('id')->limit(61)->get();
         $hasMore = $candidates->count() > 60;
         $batch = $candidates->take(60);
-        $keyAuthenticated = null;
-        $matches = $batch->filter(function (Order $order) use ($password, $key, &$keyAuthenticated) {
-            if ($order->query_password_key === $key) {
-                $keyAuthenticated ??= $this->matches($password, $order->query_password);
-                if (! $keyAuthenticated) {
-                    return false;
-                }
-            } elseif (! $this->matches($password, $order->query_password)) {
+        $authenticatedHashes = [];
+        $matches = $batch->filter(function (Order $order) use ($password, $key, &$authenticatedHashes) {
+            // The indexed HMAC selects candidates; it is not an authorization
+            // result. A password can have changed while a legacy index remains.
+            // Checking one order and trusting all others with that index grants
+            // the old password access to the order whose hash was revoked.
+            $hash = (string) $order->query_password;
+            $authenticatedHashes[$hash] ??= $this->matches($password, $order->query_password);
+            if (! $authenticatedHashes[$hash]) {
                 return false;
             }
             if (! $order->query_password_key) {
@@ -67,7 +69,32 @@ class OrderLookupService
             return false;
         }
 
-        return Hash::check($password, $hash);
+        // A proof is bound to this exact bcrypt hash and this exact submitted
+        // password. It never lets one order's successful hash stand in for another
+        // order, and password changes select a different cache key immediately.
+        // Cache only success: wrong guesses still pay the ordinary bcrypt cost.
+        $proofKey = 'order-bcrypt-proof:'.hash_hmac('sha256', $hash."\0".$password, (string) config('app.key'));
+        try {
+            if (Cache::get($proofKey) === true) {
+                return true;
+            }
+        } catch (\Throwable) {
+            // Cache is an optional optimization, never a substitute for checking.
+        }
+        try {
+            $matches = Hash::check($password, $hash);
+        } catch (\Throwable) {
+            $this->pad($password);
+            return false;
+        }
+        if ($matches) {
+            try {
+                Cache::put($proofKey, true, 600);
+            } catch (\Throwable) {
+                // The real bcrypt verification already succeeded.
+            }
+        }
+        return $matches;
     }
 
     private function pad(string $password): void

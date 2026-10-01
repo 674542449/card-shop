@@ -34,6 +34,17 @@ class SettingController extends Controller
     /** Sent in place of a stored secret, and refused as an incoming value. */
     private const MASK = '********';
 
+    /** Delivery destinations, payment trust, and anti-abuse controls require the owner. */
+    private const OWNER_ONLY_KEYS = [
+        'epay_api_url', 'epay_merchant_id', 'epay_merchant_key',
+        'epusdt_api_url', 'epusdt_api_token', 'usdt_gateway', 'payment_reconciliation_enabled',
+        'email_template_subject', 'email_template_body',
+        'mail_host', 'mail_port', 'mail_username', 'mail_password', 'mail_encryption', 'mail_from_address', 'mail_from_name',
+        'telegram_bot_token', 'telegram_chat_id', 'telegram_enabled',
+        'turnstile_site_key', 'turnstile_secret_key', 'order_expire_minutes',
+        'honeypot_enabled', 'honeypot_ban_minutes', 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
+    ];
+
     public function index()
     {
         $settings = [];
@@ -146,9 +157,43 @@ class SettingController extends Controller
         }];
         $request->validate($rules);
 
-        DB::transaction(function () use ($settingGroups, $request) {
+        $isOwner = $request->attributes->get('admin')->role === 'owner';
+        if (!$isOwner) {
+            $stored = Setting::whereIn('key', self::OWNER_ONLY_KEYS)->pluck('value', 'key');
+            foreach (self::OWNER_ONLY_KEYS as $key) {
+                if (!$request->has($key)) {
+                    continue;
+                }
+                $value = $request->input($key);
+                if (in_array($key, self::SECRET_KEYS, true) && $value === self::MASK) {
+                    continue;
+                }
+                $value = is_bool($value) ? ($value ? '1' : '0') : (string) $value;
+                if (in_array($key, self::SECRET_KEYS, true)) {
+                    // Never compare an untrusted cleartext guess with a saved
+                    // credential and expose whether it matched via 200/403. The
+                    // settings UI only echoes the mask, or an already-empty value.
+                    abort_unless($value === '' && (string) ($stored[$key] ?? '') === '', 403,
+                        '仅店主管理员可以修改支付、发货邮件、Telegram 与安全防护配置。');
+                    continue;
+                }
+                // Full-form submissions may echo values already displayed in the
+                // UI. Permit identical values, but reject the whole write before
+                // saving any ordinary setting when one protected value changed.
+                abort_unless(hash_equals((string) ($stored[$key] ?? ''), $value), 403,
+                    '仅店主管理员可以修改支付、发货邮件、Telegram 与安全防护配置。');
+            }
+        }
+
+        DB::transaction(function () use ($settingGroups, $request, $isOwner) {
             foreach ($settingGroups as $group => $keys) {
                 foreach ($keys as $key) {
+                    // An accepted unchanged echo is still not authority to write.
+                    // Skip protected keys so it cannot roll back an owner's
+                    // concurrent credential update or alter null/default semantics.
+                    if (!$isOwner && in_array($key, self::OWNER_ONLY_KEYS, true)) {
+                        continue;
+                    }
                     if (!$request->has($key)) {
                         continue;
                     }
@@ -193,6 +238,7 @@ class SettingController extends Controller
      */
     public function testEmail(Request $request, NotificationService $notifications)
     {
+        abort_unless($request->attributes->get('admin')->role === 'owner', 403, '仅店主管理员可以测试发货邮箱。');
         $data = $request->validate(
             ['email' => ['required', 'email']],
             ['email.required' => '请填写接收测试邮件的地址', 'email.email' => '邮箱格式不正确']

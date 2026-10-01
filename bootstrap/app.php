@@ -78,6 +78,7 @@ return Application::configure(basePath: dirname(__DIR__))
         // 而扫描器打的大多是没有对应路由的路径（会走到 404）——只有全局中间件才跑得到
         // 那些请求。命中即封禁来源 IP 并返回 404，之后由 CheckBlacklist 挡成 403。
         $middleware->prepend(\App\Http\Middleware\TrapScanners::class);
+        $middleware->prepend(\App\Http\Middleware\ProtectSensitiveResponses::class);
 
         $middleware->alias([
             'admin.auth' => \App\Http\Middleware\AdminAuth::class,
@@ -88,5 +89,6 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         $exceptions->dontFlash(['query_password', 'cf-turnstile-response']);
+        $exceptions->respond(fn ($response) => \App\Http\Middleware\ProtectSensitiveResponses::protect($response));
     })
     ->create();

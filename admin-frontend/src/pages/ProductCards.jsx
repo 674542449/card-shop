@@ -8,7 +8,7 @@ import { PlusOutlined, ArrowLeftOutlined, UploadOutlined, DeleteOutlined } from 
 import { getProductCards, importCards, deleteCard, batchDeleteCards, setCardStatus } from '../services/api';
 
 export default function ProductCards() {
-  const canWrite = useWritePermission('catalog');
+  const canWrite = useWritePermission('cards');
   const { productId } = useParams();
   const navigate = useNavigate();
   const actionRef = useRef();

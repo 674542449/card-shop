@@ -77,9 +77,9 @@ class NotificationService
      * The whole delivery path is failure-tolerant by design — a send that throws is
      * logged and swallowed so a dead mail server cannot break a sale. That is right,
      * but it leaves the operator no way to find out their settings are wrong except
-     * by a buyer complaining. This is that way: it reports the transport's own error
-     * message verbatim, because "Connection refused" and "535 authentication failed"
-     * need completely different fixes.
+     * by a buyer complaining. Report a safe error category: SMTP exception text can
+     * include AUTH credentials, a server URL with userinfo, or the delivery body.
+     * Returning it or writing it to a log can disclose passwords and card secrets.
      *
      * @return array{ok: bool, message: string}
      */
@@ -99,9 +99,10 @@ class NotificationService
 
             return ['ok' => true, 'message' => "测试邮件已发送至 {$to}，请查收（也看一下垃圾邮件箱）。"];
         } catch (\Throwable $e) {
-            Log::warning('SMTP test failed', ['to' => $to, 'error' => $e->getMessage()]);
+            $message = $this->safeMailFailure($e);
+            Log::warning('SMTP test failed', ['to' => $to, 'error_type' => get_class($e), 'error' => $message]);
 
-            return ['ok' => false, 'message' => '发送失败：' . $e->getMessage()];
+            return ['ok' => false, 'message' => $message];
         }
     }
 
@@ -181,7 +182,8 @@ class NotificationService
             Log::error('Failed to send order email', [
                 'order_no' => $order->order_no,
                 'email' => $order->email,
-                'error' => $e->getMessage(),
+                'error_type' => get_class($e),
+                'error' => $this->safeMailFailure($e),
             ]);
 
             return false;
@@ -223,7 +225,8 @@ class NotificationService
             if (!$response->successful()) {
                 Log::warning('Telegram notification failed', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
+                    // A remote response is untrusted and can echo the token or
+                    // notification text. Status is enough to diagnose a rejection.
                 ]);
             }
             return $response->successful() && $response->json('ok') === true;
@@ -288,5 +291,25 @@ class NotificationService
 <hr>
 <p>请妥善保管您的卡密信息。如有问题请联系客服。</p>
 HTML;
+    }
+
+    /** Classify failures without ever publishing transport-supplied text. */
+    private function safeMailFailure(\Throwable $exception): string
+    {
+        $message = strtolower($exception->getMessage());
+        if (str_contains($message, 'authentication') || preg_match('/\b(534|535)\b/', $message)) {
+            return '发送失败：SMTP 认证失败，请检查账户、密码或授权码。';
+        }
+        if (str_contains($message, 'timed out') || str_contains($message, 'timeout')) {
+            return '发送失败：SMTP 连接超时，请检查服务器地址、端口和网络。';
+        }
+        if (str_contains($message, 'connection refused') || str_contains($message, 'could not be established') || str_contains($message, 'getaddrinfo')) {
+            return '发送失败：无法连接 SMTP 服务器，请检查地址、端口和网络。';
+        }
+        if (str_contains($message, 'certificate') || str_contains($message, 'tls') || str_contains($message, 'ssl')) {
+            return '发送失败：SMTP 加密连接失败，请检查加密方式及证书。';
+        }
+
+        return '发送失败：邮件服务未能受理邮件，请检查 SMTP 配置和收件地址。';
     }
 }

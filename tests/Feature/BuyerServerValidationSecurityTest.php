@@ -426,7 +426,7 @@ class BuyerServerValidationSecurityTest extends TestCase
     {
         $order = $this->order($this->product());
         app(OrderFulfilmentService::class)->fulfilManually($order);
-        $this->withSession(['order_verified_ids' => [$order->id]])->post('/order/refund/'.$order->order_no, [
+        $this->withBuyerSession($order)->post('/order/refund/'.$order->order_no, [
             'amount' => '1.00', 'reason' => 'Customer test', 'source' => 'admin', 'status' => 'completed',
             'admin_id' => 9999, 'payment_receipt_id' => 9999, 'reference' => 'FORGED-TRANSFER',
         ])->assertRedirect()->assertSessionHasNoErrors();

@@ -3,7 +3,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ProForm, ProFormText, ProFormTextArea, ProFormDigit, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { Card, Tabs, Spin, message, Alert, Button, Input, Space, Typography } from 'antd';
 import { SendOutlined, CheckCircleFilled, LoadingOutlined, ExclamationCircleFilled } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { getSettings, updateSettings, sendTestEmail } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
@@ -25,6 +25,13 @@ const THEME_LABELS = {
  * 太长：用户改完就切走，改动还没发出去。800ms 大约是「停下来想一下」的间隔。
  */
 const AUTO_SAVE_DELAY = 800;
+const OWNER_SETTINGS = new Set([
+  'epay_api_url', 'epay_merchant_id', 'epay_merchant_key', 'epusdt_api_url', 'epusdt_api_token',
+  'usdt_gateway', 'payment_reconciliation_enabled', 'email_template_subject', 'email_template_body',
+  'mail_host', 'mail_port', 'mail_username', 'mail_password', 'mail_encryption', 'mail_from_address', 'mail_from_name',
+  'telegram_bot_token', 'telegram_chat_id', 'telegram_enabled', 'turnstile_site_key', 'turnstile_secret_key',
+  'order_expire_minutes', 'honeypot_enabled', 'honeypot_ban_minutes', 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
+]);
 const settingsSaver = createSerialSaveQueue(updateSettings, AUTO_SAVE_DELAY);
 // The queue outlives the settings route, so protect its in-flight saves there too.
 window.addEventListener('beforeunload', (event) => {
@@ -79,6 +86,7 @@ function AutoSaveStatus({ state, onRetry }) {
 
 export default function Settings() {
   const canWrite = useWritePermission('settings');
+  const canConfigurePrivate = canWrite && useOutletContext()?.role === 'owner';
   const [loading, setLoading] = useState(true);
   const [initialValues, setInitialValues] = useState({});
   const [testTo, setTestTo] = useState('');
@@ -129,9 +137,10 @@ export default function Settings() {
   /** ProForm 的 onValuesChange：只把改动的字段入队，然后防抖。 */
   const handleValuesChange = useCallback(
     (changed) => {
-      if (canWrite) settingsSaver.enqueue(changed);
+      if (canWrite) settingsSaver.enqueue(Object.fromEntries(Object.entries(changed)
+        .filter(([key]) => canConfigurePrivate || !OWNER_SETTINGS.has(key))));
     },
-    [canWrite]
+    [canWrite, canConfigurePrivate]
   );
 
   // 离开页面时把没发出去的改动补发一次，否则「改完立刻点别的菜单」会丢掉最后 800ms
@@ -146,7 +155,7 @@ export default function Settings() {
   // because the server reads them from the database. Saving first is therefore part
   // of the operation rather than a separate thing to remember, so the button does it.
   const handleTestEmail = async () => {
-    if (!canWrite) return;
+    if (!canConfigurePrivate) return;
     if (!testTo) {
       message.warning('请填写接收测试邮件的地址');
       return;
@@ -158,8 +167,7 @@ export default function Settings() {
       const res = await sendTestEmail(testTo);
       message.success(res.data?.message || '测试邮件已发送');
     } catch (err) {
-      // The transport's own message is the useful part: "Connection refused" and
-      // "535 authentication failed" need completely different fixes.
+      // The server returns a safe error category without transport credentials.
       message.error(err.response?.data?.message || '发送失败', 8);
     } finally {
       setTesting(false);
@@ -245,10 +253,10 @@ export default function Settings() {
       label: 'EPay 支付',
       children: (
         <>
-          <ProFormSwitch name="payment_reconciliation_enabled" label="每 5 分钟核对近期付款" extra="需要 HTTPS 网关。尚未确认付款的订单会自动核对，异常结果可在订单详情查看。" />
-          <ProFormText name="epay_api_url" label="EPay 网关地址" />
-          <ProFormText name="epay_merchant_id" label="EPay 商户ID" />
-          <ProFormText name="epay_merchant_key" label="EPay 商户密钥" />
+          <ProFormSwitch name="payment_reconciliation_enabled" disabled={!canConfigurePrivate} label="每 5 分钟核对近期付款" extra="需要 HTTPS 网关。尚未确认付款的订单会自动核对，异常结果可在订单详情查看。" />
+          <ProFormText name="epay_api_url" disabled={!canConfigurePrivate} label="EPay 网关地址" />
+          <ProFormText name="epay_merchant_id" disabled={!canConfigurePrivate} label="EPay 商户ID" />
+          <ProFormText name="epay_merchant_key" disabled={!canConfigurePrivate} label="EPay 商户密钥" />
         </>
       ),
     },
@@ -258,7 +266,7 @@ export default function Settings() {
       children: (
         <>
           <ProFormSelect
-            name="usdt_gateway"
+            name="usdt_gateway" disabled={!canConfigurePrivate}
             label="网关类型"
             options={[
               { label: 'epusdt（原版）', value: 'epusdt' },
@@ -266,8 +274,8 @@ export default function Settings() {
             ]}
             extra="两者接口地址和签名算法相同，但只有 BEpusdt 支持指定收款链。选错会导致签名校验失败、所有 USDT 支付无法创建，请按你实际部署的版本选择。"
           />
-          <ProFormText name="epusdt_api_url" label="网关地址" placeholder="如 https://pay.example.com" />
-          <ProFormText name="epusdt_api_token" label="接口 Token" />
+          <ProFormText name="epusdt_api_url" disabled={!canConfigurePrivate} label="网关地址" placeholder="如 https://pay.example.com" />
+          <ProFormText name="epusdt_api_token" disabled={!canConfigurePrivate} label="接口 Token" />
         </>
       ),
     },
@@ -276,12 +284,12 @@ export default function Settings() {
       label: '安全设置',
       children: (
         <>
-          <ProFormText name="turnstile_site_key" label="Turnstile Site Key" />
-          <ProFormText.Password name="turnstile_secret_key" label="Turnstile Secret Key" />
-          <ProFormSwitch name="honeypot_enabled" label="扫描防护" extra="探测敏感路径的来源会加入临时黑名单，可在黑名单页查看和解除。" />
-          <ProFormDigit name="honeypot_ban_minutes" label="自动封禁时间（分钟）" min={0} max={525600} fieldProps={{ precision: 0 }} extra="默认 10080 分钟（7 天）；0 表示永久封禁。" />
-          <ProFormTextArea name="honeypot_whitelist" label="扫描防护白名单" placeholder="例如 203.0.113.10, 2001:db8::1" extra="使用逗号分隔 IPv4 或 IPv6 地址。这里仅放行扫描防护，手动黑名单仍会生效。" />
-          <ProFormSwitch name="honeypot_skip_reserved_ips" label="跳过私网与保留地址" extra="本地开发、内网监测及健康检查建议保持开启。" />
+          <ProFormText name="turnstile_site_key" disabled={!canConfigurePrivate} label="Turnstile Site Key" />
+          <ProFormText.Password name="turnstile_secret_key" disabled={!canConfigurePrivate} label="Turnstile Secret Key" />
+          <ProFormSwitch name="honeypot_enabled" disabled={!canConfigurePrivate} label="扫描防护" extra="探测敏感路径的来源会加入临时黑名单，可在黑名单页查看和解除。" />
+          <ProFormDigit name="honeypot_ban_minutes" disabled={!canConfigurePrivate} label="自动封禁时间（分钟）" min={0} max={525600} fieldProps={{ precision: 0 }} extra="默认 10080 分钟（7 天）；0 表示永久封禁。" />
+          <ProFormTextArea name="honeypot_whitelist" disabled={!canConfigurePrivate} label="扫描防护白名单" placeholder="例如 203.0.113.10, 2001:db8::1" extra="使用逗号分隔 IPv4 或 IPv6 地址。这里仅放行扫描防护，手动黑名单仍会生效。" />
+          <ProFormSwitch name="honeypot_skip_reserved_ips" disabled={!canConfigurePrivate} label="跳过私网与保留地址" extra="本地开发、内网监测及健康检查建议保持开启。" />
         </>
       ),
     },
@@ -298,13 +306,13 @@ export default function Settings() {
             description="没配好的话，买家付款后收不到卡密邮件——他们仍可以在订单查询页自己取，但大部分人不会想到。配置后请务必用下面的测试按钮验证一次。"
           />
           <ProFormText
-            name="mail_host"
+            name="mail_host" disabled={!canConfigurePrivate}
             label="SMTP 服务器"
             placeholder="如 smtp.qq.com / smtp.gmail.com"
             extra="留空则使用服务器 .env 里的配置。"
           />
           <ProFormSelect
-            name="mail_encryption"
+            name="mail_encryption" disabled={!canConfigurePrivate}
             label="加密方式"
             options={[
               { label: 'SSL（端口 465，最常用）', value: 'ssl' },
@@ -314,7 +322,7 @@ export default function Settings() {
             extra="选错会连不上。国内邮箱服务商基本都用 SSL + 465。"
           />
           <ProFormDigit
-            name="mail_port"
+            name="mail_port" disabled={!canConfigurePrivate}
             label="端口"
             min={1}
             max={65535}
@@ -322,23 +330,23 @@ export default function Settings() {
             extra="SSL 填 465，TLS 填 587。"
           />
           <ProFormText
-            name="mail_username"
+            name="mail_username" disabled={!canConfigurePrivate}
             label="SMTP 用户名"
             placeholder="通常就是完整邮箱地址"
           />
           <ProFormText.Password
-            name="mail_password"
+            name="mail_password" disabled={!canConfigurePrivate}
             label="SMTP 密码"
             extra="QQ 邮箱、163 等要填「授权码」，不是登录密码。已保存的密码显示为 ******** ，不改就别动它。"
           />
           <ProFormText
-            name="mail_from_address"
+            name="mail_from_address" disabled={!canConfigurePrivate}
             label="发件人地址"
             placeholder="买家看到的发件邮箱"
             extra="多数服务商要求这里和 SMTP 用户名一致，否则会拒发。"
           />
           <ProFormText
-            name="mail_from_name"
+            name="mail_from_name" disabled={!canConfigurePrivate}
             label="发件人名称"
             placeholder="留空则用站点名称"
           />
@@ -351,7 +359,7 @@ export default function Settings() {
             <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
               <Input
                 type="email"
-                disabled={!canWrite}
+                disabled={!canConfigurePrivate}
                 value={testTo}
                 onChange={(e) => setTestTo(e.target.value)}
                 onPressEnter={handleTestEmail}
@@ -362,7 +370,7 @@ export default function Settings() {
                 type="primary"
                 icon={<SendOutlined />}
                 loading={testing}
-                disabled={!canWrite}
+                disabled={!canConfigurePrivate}
                 onClick={handleTestEmail}
               >
                 发送测试
@@ -385,12 +393,12 @@ export default function Settings() {
             description="{{cards}} 会替换成买家买到的全部卡密，一行一条。变量名写错不会报错，只会原样出现在邮件里。"
           />
           <ProFormText
-            name="email_template_subject"
+            name="email_template_subject" disabled={!canConfigurePrivate}
             label="邮件标题"
             placeholder="{{site_name}} - 订单 {{order_no}} 卡密信息"
           />
           <ProFormTextArea
-            name="email_template_body"
+            name="email_template_body" disabled={!canConfigurePrivate}
             label="邮件正文"
             fieldProps={{ rows: 14 }}
             extra="纯文本和 HTML 都支持。写纯文本时换行会自动保留，不用写 <br>。"
@@ -410,13 +418,13 @@ export default function Settings() {
             message="有新订单成交时给你发 Telegram 消息。"
             description="向 @BotFather 申请机器人拿到 Token，再向 @userinfobot 发一条消息拿到你的 Chat ID。不填不影响任何功能。"
           />
-          <ProFormSwitch name="telegram_enabled" label="启用通知" />
+          <ProFormSwitch name="telegram_enabled" disabled={!canConfigurePrivate} label="启用通知" />
           <ProFormText.Password
-            name="telegram_bot_token"
+            name="telegram_bot_token" disabled={!canConfigurePrivate}
             label="Bot Token"
             extra="已保存的 Token 显示为 ******** ，不改就别动它。"
           />
-          <ProFormText name="telegram_chat_id" label="Chat ID" />
+          <ProFormText name="telegram_chat_id" disabled={!canConfigurePrivate} label="Chat ID" />
         </>
       ),
     },
@@ -425,7 +433,7 @@ export default function Settings() {
       label: '订单设置',
       children: (
         <>
-          <ProFormDigit name="order_expire_minutes" label="订单过期时间（分钟）" min={5} max={10080} fieldProps={{ precision: 0 }} />
+          <ProFormDigit name="order_expire_minutes" disabled={!canConfigurePrivate} label="订单过期时间（分钟）" min={5} max={10080} fieldProps={{ precision: 0 }} />
         </>
       ),
     },
@@ -434,6 +442,7 @@ export default function Settings() {
   return (
     <>
     <Card title="系统设置" extra={<>{canWrite ? <AutoSaveStatus state={autoSave} onRetry={flush} /> : <Typography.Text type="secondary">只读权限</Typography.Text>}</>}>
+      {!canConfigurePrivate && <Alert type="info" showIcon message="支付、发货通知和安全配置仅店主可修改" style={{ marginBottom: 16 }} />}
       <ProForm
         name="system-settings"
         disabled={!canWrite}

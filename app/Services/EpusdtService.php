@@ -54,7 +54,9 @@ class EpusdtService
         $key = 'epusdt_payment:' . $order->order_no;
         return Cache::lock('epusdt_create:' . $order->order_no, 30)->block(5, function () use ($key, $order, $chain) {
             if ($cached = Cache::get($key)) {
-                if (is_array($cached) && SafeUrl::http($cached['payment_url'] ?? null) !== null) {
+                if (is_array($cached) && SafeUrl::http($cached['payment_url'] ?? null) !== null
+                    && $this->validTradeId($cached['trade_id'] ?? null)
+                    && (!$order->gateway_trade_no || $order->gateway_trade_no === $cached['trade_id'])) {
                     return $cached;
                 }
                 // An older release may already have cached an unsafe gateway URL.
@@ -80,6 +82,13 @@ class EpusdtService
         if (SafeUrl::http($this->apiUrl) === null) {
             throw new RuntimeException('USDT支付网关地址无效');
         }
+        // Create responses have no protocol signature. A plaintext intermediary
+        // could substitute the transaction/payment address before it is persisted.
+        $scheme = strtolower((string) parse_url($this->apiUrl, PHP_URL_SCHEME));
+        $host = strtolower(trim((string) parse_url($this->apiUrl, PHP_URL_HOST), '[]'));
+        if ($scheme !== 'https' && !in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
+            throw new RuntimeException('USDT支付须使用 HTTPS 网关，本地开发地址除外。');
+        }
         if (!isset(self::TRADE_TYPES[$chain]) || ($this->flavour !== 'bepusdt' && $chain !== 'trc20')) {
             throw new RuntimeException('当前 USDT 网关不支持所选网络，请使用默认 USDT 入口。');
         }
@@ -102,6 +111,7 @@ class EpusdtService
         // chain was never sent, so the gateway let the payer pick whatever they liked.
         if ($this->flavour === 'bepusdt' && isset(self::TRADE_TYPES[$chain])) {
             $params['trade_type'] = self::TRADE_TYPES[$chain];
+            $params['fiat'] = 'CNY';
         }
 
         $params['signature'] = $this->generateSign($params, $this->apiToken);
@@ -112,7 +122,6 @@ class EpusdtService
         if (!$response->successful()) {
             Log::error('EPUSDT API request failed', [
                 'status' => $response->status(),
-                'body' => $response->body(),
                 'order_no' => $order->order_no,
             ]);
             throw new RuntimeException('USDT支付接口请求失败');
@@ -120,34 +129,65 @@ class EpusdtService
 
         $data = $response->json();
 
-        if (!isset($data['status_code']) || (int) $data['status_code'] !== 200) {
+        if (!is_array($data) || !in_array($data['status_code'] ?? null, [200, '200'], true)) {
+            $statusCode = is_array($data) ? ($data['status_code'] ?? null) : null;
+            $safeStatusCode = (is_int($statusCode) && $statusCode >= 0 && $statusCode <= 999999)
+                || (is_string($statusCode) && preg_match('/^\d{1,6}$/D', $statusCode))
+                ? (int) $statusCode : null;
             Log::error('EPUSDT API returned error', [
-                'response' => $data,
+                'status' => $response->status(),
+                'status_code' => $safeStatusCode,
                 'order_no' => $order->order_no,
             ]);
-            $message = $data['message'] ?? null;
-            throw new RuntimeException(is_string($message) && mb_strlen($message) <= 200 ? $message : 'USDT支付创建失败');
+            // Gateway failures can echo request signatures, private tokens or
+            // internal details. Neither the buyer nor audit logs should receive them.
+            throw new RuntimeException('USDT支付创建失败，请稍后重试或联系客服。');
         }
 
-        $paymentUrl = SafeUrl::http($data['data']['payment_url'] ?? null);
+        $transaction = $data['data'] ?? null;
+        $paymentUrl = SafeUrl::http(is_array($transaction) ? ($transaction['payment_url'] ?? null) : null);
         if ($paymentUrl === null) {
             throw new RuntimeException('USDT支付接口返回的支付链接无效');
+        }
+        if (!$this->validTradeId($transaction['trade_id'] ?? null)) {
+            throw new RuntimeException('USDT支付接口未返回有效交易号');
+        }
+        // Old EPUSDT releases omit some fields. If the gateway does return them,
+        // none may contradict the signed creation request or the local order.
+        if ((array_key_exists('order_id', $transaction) && $transaction['order_id'] !== $order->order_no)
+            || (array_key_exists('fiat', $transaction) && $transaction['fiat'] !== 'CNY')
+            || (array_key_exists('amount', $transaction) && !$this->matchingAmount($transaction['amount'], (string) $order->total_amount))
+            || (array_key_exists('status', $transaction) && !in_array($transaction['status'], [1, 2, '1', '2'], true))) {
+            throw new RuntimeException('USDT支付接口返回的订单、金额或币种不匹配');
         }
 
         return [
             'payment_url' => $paymentUrl,
-            'trade_id' => $data['data']['trade_id'] ?? '',
+            'trade_id' => $transaction['trade_id'],
         ];
     }
 
+    private function validTradeId(mixed $value): bool
+    {
+        return is_string($value) && $value !== '' && strlen($value) <= 100
+            && !preg_match('/[\x00-\x20\x7f]/', $value);
+    }
+
+    private function matchingAmount(mixed $value, string $expected): bool
+    {
+        return (is_string($value) || is_int($value) || is_float($value))
+            && preg_match('/^\d{1,18}(?:\.\d{1,8})?$/D', (string) $value)
+            && bccomp((string) $value, $expected, 8) === 0;
+    }
+
     /**
-     * Generate HMAC-MD5 signature for EPUSDT API.
+     * Generate the gateway's MD5-with-token signature for EPUSDT API.
      *
      * Steps:
      * 1. Remove empty values and the signature key.
      * 2. Sort parameters alphabetically by key.
      * 3. Concatenate as key=value& pairs (no trailing &).
-     * 4. HMAC-MD5 with the API token.
+     * 4. Append the API token and take MD5 (the protocol is not HMAC).
      */
     private function generateSign(array $params, string $token): string
     {

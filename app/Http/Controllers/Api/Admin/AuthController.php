@@ -14,27 +14,33 @@ class AuthController extends Controller
 {
     public function login(Request $request)
     {
-        $key = 'admin-login|' . $request->ip();
-
-        if (RateLimiter::tooManyAttempts($key, 5)) {
-            return response()->json(['message' => '登录尝试过多，请稍后再试。'], 429);
-        }
-
         $request->validate([
-            'username' => 'required|string',
-            'password' => 'required|string',
+            'username' => 'required|string|max:50',
+            'password' => ['bail', 'required', 'string', 'max:72', function ($attribute, $value, $fail) {
+                if (strlen($value) > 72) { $fail('密码最多 72 字节。'); }
+            }],
         ]);
+
+        $keys = [
+            // The account budget is shared across IPs. IP-only throttling allows a
+            // proxy pool to try the same owner's password without any upper bound.
+            'admin-login-account|'.hash('sha256', mb_strtolower($request->input('username'))) => [10, 900],
+            'admin-login|'.$request->ip() => [5, 60],
+        ];
+        if (($retry = $this->reserveCredentialAttempt($keys)) !== null) {
+            return response()->json(['message' => '登录尝试过多，请稍后再试。'], 429)
+                ->header('Retry-After', (string) $retry);
+        }
 
         $admin = Admin::where('username', $request->input('username'))->first();
 
         if (!$admin || !$admin->is_active || !Hash::check($request->input('password'), $admin->password)) {
-            RateLimiter::hit($key, 60);
             return response()->json(['message' => '用户名或密码错误。'], 422);
         }
 
-        RateLimiter::clear($key);
+        foreach (array_keys($keys) as $key) { RateLimiter::clear($key); }
 
-        $request->session()->regenerate();
+        $request->session()->regenerate(true);
         $request->session()->put('admin_id', $admin->id);
         $request->session()->put('admin_username', $admin->username);
         // 见 AdminAuth：会话绑到当时的密码哈希上，密码一变所有旧会话立即失效。
@@ -61,7 +67,7 @@ class AuthController extends Controller
     {
         OperationLog::log('登出', null, null, '管理员登出');
 
-        $request->session()->flush();
+        $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         return response()->json([
@@ -79,7 +85,9 @@ class AuthController extends Controller
     public function changePassword(Request $request)
     {
         $request->validate([
-            'current_password' => ['required', 'string'],
+            'current_password' => ['bail', 'required', 'string', 'max:72', function ($attribute, $value, $fail) {
+                if (strlen($value) > 72) { $fail('当前密码最多 72 字节。'); }
+            }],
             'new_password' => ['bail', 'required', 'string', 'min:12', 'max:72', 'confirmed', function ($attribute, $value, $fail) {
                 if (strlen($value) > 72) { $fail('新密码最多 72 字节，请缩短密码。'); }
             }],
@@ -93,9 +101,19 @@ class AuthController extends Controller
         /** @var \App\Models\Admin $admin */
         $admin = $request->attributes->get('admin');
 
+        $keys = [
+            'admin-password-account|'.$admin->id => [5, 900],
+            'admin-password-ip|'.$request->ip() => [20, 900],
+        ];
+        if (($retry = $this->reserveCredentialAttempt($keys)) !== null) {
+            return response()->json(['message' => '当前密码验证尝试过多，请稍后再试。'], 429)
+                ->header('Retry-After', (string) $retry);
+        }
+
         if (!Hash::check($request->input('current_password'), $admin->password)) {
             return response()->json(['message' => '当前密码不正确。'], 422);
         }
+        foreach (array_keys($keys) as $key) { RateLimiter::clear($key); }
 
         $admin->update(['password' => Hash::make($request->input('new_password'))]);
         $admin->refresh();
@@ -107,7 +125,7 @@ class AuthController extends Controller
         // 一点作用都没有，而且那个 cookie 会被每次请求续期，攻击者只要保持活动就永不
         // 掉线。真正让旧会话失效的是 AdminAuth 里的密码指纹比对；这里换 session ID
         // 只是防会话固定，并顺带给 SPA 一枚新的 CSRF token。
-        $request->session()->regenerate();
+        $request->session()->regenerate(true);
         $request->session()->put('admin_id', $admin->id);
         $request->session()->put('admin_username', $admin->username);
         // 自己这条会话跟着新密码走，否则改完密码当场把自己也踢下线。
@@ -131,5 +149,17 @@ class AuthController extends Controller
             'last_login_ip' => $admin->last_login_ip,
             'role' => $admin->role, 'permissions' => $admin->permissions,
         ]);
+    }
+
+    /** Reserve before checking bcrypt so parallel guesses cannot race the limit. */
+    private function reserveCredentialAttempt(array $limits): ?int
+    {
+        foreach ($limits as $key => [$maximum, $seconds]) {
+            if (RateLimiter::hit($key, $seconds) > $maximum) {
+                return max(1, RateLimiter::availableIn($key));
+            }
+        }
+
+        return null;
     }
 }

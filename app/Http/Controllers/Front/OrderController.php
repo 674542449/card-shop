@@ -137,9 +137,7 @@ class OrderController extends Controller
             // 那个签名同时被 pay() 公开渲染给任何知道订单号的人，等于谁都能拿它去
             // /payment/epay/return 换取别人已支付订单的卡密。所有权只认「亲手下的这一单」
             // 和 /order/query 的邮箱+密码，不认可被公开的签名。
-            $verified = session('order_verified_ids', []);
-            $verified[] = $order->id;
-            session(['order_verified_ids' => array_values(array_unique($verified))]);
+            $this->grantAccess(collect([$order]));
 
             // Initiate payment
             $paymentUrl = $this->initiatePayment($order);
@@ -199,7 +197,7 @@ class OrderController extends Controller
 
             return theme_view('order.detail', [
                 'order' => $order,
-                'cards' => $order->cards,
+                'cards' => $order->cards()->sold()->get(),
                 'message' => '订单已支付成功',
                 'verified' => true,
             ]);
@@ -428,12 +426,12 @@ class OrderController extends Controller
      */
     private function grantAccess($orders): void
     {
-        session(['order_verified_ids' => array_values(array_unique(array_merge(session('order_verified_ids', []), $orders->pluck('id')->all())))]);
+        app(\App\Services\BrowserOrderCredentialProof::class)->grant($orders);
     }
 
     private function isVerified(Order $order): bool
     {
-        return in_array($order->id, session('order_verified_ids', []), true);
+        return app(\App\Services\BrowserOrderCredentialProof::class)->has($order);
     }
 
     public function requestRefund(Request $request, string $orderNo, \App\Services\RefundService $service)
@@ -484,7 +482,7 @@ class OrderController extends Controller
     public function detail(string $orderNo)
     {
         $order = Order::where('order_no', $orderNo)
-            ->with(['product', 'cards', 'refunds'])
+            ->with(['product', 'refunds'])
             ->firstOrFail();
 
         $verified = $this->isVerified($order);
@@ -504,7 +502,7 @@ class OrderController extends Controller
             $order->refresh();
         }
 
-        $cards = $order->isPaid() ? $order->cards : collect();
+        $cards = $order->isPaid() ? $order->cards()->sold()->get() : collect();
 
         return theme_view('order.detail', compact('order', 'cards', 'verified'));
     }
@@ -520,7 +518,7 @@ class OrderController extends Controller
     public function downloadCards(string $orderNo)
     {
         $order = Order::where('order_no', $orderNo)
-            ->with(['product', 'cards', 'refunds'])
+            ->with('product')
             ->firstOrFail();
 
         if (!$this->isVerified($order)) {
@@ -528,7 +526,8 @@ class OrderController extends Controller
                 ->withErrors(['error' => '请先验证身份后下载卡密']);
         }
 
-        if (!$order->isPaid() || $order->cards->isEmpty()) {
+        $cards = $order->isPaid() ? $order->cards()->sold()->get() : collect();
+        if ($cards->isEmpty()) {
             return redirect('/order/detail/' . $order->order_no)
                 ->withErrors(['error' => '该订单暂无可下载的卡密']);
         }
@@ -544,7 +543,7 @@ class OrderController extends Controller
             str_repeat('-', 40),
         ];
 
-        foreach ($order->cards as $card) {
+        foreach ($cards as $card) {
             $lines[] = $card->content;
         }
 

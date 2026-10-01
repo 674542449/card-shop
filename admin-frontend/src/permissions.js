@@ -11,6 +11,7 @@ export function canVisit(admin, path) {
   if (path === '/account') return true;
   if (path === '/admins') return admin?.role === 'owner';
   if (path === '/operations') return allows(admin, 'maintenance') || allows(admin, 'content');
+  if (/^\/products\/[^/]+\/cards\/?$/.test(path)) return allows(admin, 'cards');
   const key = Object.keys(areas).sort((a, b) => b.length - a.length)
     .find(p => path === p || (p !== '/' && path.startsWith(`${p}/`)));
   return !!key && allows(admin, areas[key]);

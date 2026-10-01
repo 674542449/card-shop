@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Order;
+use App\Support\SafeUrl;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -26,14 +27,15 @@ class PaymentReconciliationService
                         'act' => 'order', 'pid' => $pid, 'key' => $secret, 'out_trade_no' => $order->order_no,
                     ]);
                     $data = $response->json();
-                    if (! $response->successful() || ! is_array($data) || (int) ($data['code'] ?? 0) !== 1) {
+                    if (! $response->successful() || ! is_array($data) || !in_array($data['code'] ?? null, [1, '1'], true)) {
                         throw new \DomainException('网关订单查询失败。');
                     }
                     if (($data['out_trade_no'] ?? '') !== $order->order_no || (string) ($data['pid'] ?? '') !== $pid
-                        || ($data['type'] ?? '') !== ($order->payment_method === 'alipay' ? 'alipay' : 'wxpay')) {
+                        || ($data['type'] ?? '') !== ($order->payment_method === 'alipay' ? 'alipay' : 'wxpay')
+                        || (array_key_exists('fiat', $data) && $data['fiat'] !== 'CNY')) {
                         throw new \DomainException('网关返回订单或商户不匹配，未确认支付。');
                     }
-                    $paid = (string) ($data['status'] ?? '') === '1';
+                    $paid = in_array($data['status'] ?? null, [1, '1'], true);
                     $amount = $data['money'] ?? null;
                     $trade = $data['trade_no'] ?? null;
                     $channel = 'epay';
@@ -42,7 +44,7 @@ class PaymentReconciliationService
                     $base = $this->secureBase('epusdt_api_url');
                     $cached = Cache::get('epusdt_payment:'.$order->order_no, []);
                     $trade = $order->gateway_trade_no ?: $order->payment_no ?: ($cached['trade_id'] ?? null);
-                    if (! $trade) {
+                    if (!is_string($trade) || $trade === '' || strlen($trade) > 100 || preg_match('/[\x00-\x20\x7f]/', $trade)) {
                         throw new \DomainException('缺少网关交易号，请使用有效回调或人工核对。');
                     }
                     if (setting('usdt_gateway', 'epusdt') === 'bepusdt') {
@@ -53,20 +55,22 @@ class PaymentReconciliationService
                             || ($data['fiat'] ?? '') !== 'CNY') {
                             throw new \DomainException('USDT 查询订单、币种或商户订单号不匹配。');
                         }
-                        $paid = (string) ($data['status'] ?? '') === '2';
+                        $paid = in_array($data['status'] ?? null, [2, '2'], true);
                         $amount = $data['money'] ?? null;
                     } else {
                         $response = Http::timeout(15)->withoutRedirecting()->get($base.'/pay/check-status/'.rawurlencode($trade));
                         $info = Http::timeout(15)->withoutRedirecting()->get($base.'/pay/checkout-counter-resp/'.rawurlencode($trade));
                         $data = $info->json('data');
-                        if (! $response->successful() || ! $info->successful() || (int) $response->json('status_code') !== 200
-                            || (int) $info->json('status_code') !== 200 || ! is_array($data) || ($data['trade_id'] ?? '') !== $trade
-                            || ($response->json('data.trade_id') !== null && $response->json('data.trade_id') !== $trade)
-                            || (isset($data['order_id']) && $data['order_id'] !== $order->order_no)
-                            || (isset($data['fiat']) && $data['fiat'] !== 'CNY')) {
+                        $statusData = $response->json('data');
+                        if (! $response->successful() || ! $info->successful() || !in_array($response->json('status_code'), [200, '200'], true)
+                            || !in_array($info->json('status_code'), [200, '200'], true) || ! is_array($data) || !is_array($statusData)
+                            || ($data['trade_id'] ?? '') !== $trade
+                            || (array_key_exists('trade_id', $statusData) && $statusData['trade_id'] !== $trade)
+                            || (array_key_exists('order_id', $data) && $data['order_id'] !== $order->order_no)
+                            || (array_key_exists('fiat', $data) && $data['fiat'] !== 'CNY')) {
                             throw new \DomainException('当前 EPUSDT 版本不支持安全查询，请使用回调或人工核对。');
                         }
-                        $paid = (string) $response->json('data.status') === '2';
+                        $paid = in_array($statusData['status'] ?? null, [2, '2'], true);
                         $amount = $data['amount'] ?? null;
                     }
                     $channel = 'epusdt';
@@ -104,8 +108,9 @@ class PaymentReconciliationService
     private function secureBase(string $key): string
     {
         $url = rtrim((string) setting($key, ''), '/');
-        $host = parse_url($url, PHP_URL_HOST);
-        if (! $host || (parse_url($url, PHP_URL_SCHEME) !== 'https' && ! in_array($host, ['127.0.0.1', 'localhost', '::1'], true))) {
+        $host = strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]'));
+        if (SafeUrl::http($url) === null || !$host
+            || (strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'https' && ! in_array($host, ['127.0.0.1', 'localhost', '::1'], true))) {
             throw new \DomainException('自动对账须使用 HTTPS 网关，本地开发地址除外。');
         }
 

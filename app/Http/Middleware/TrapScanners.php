@@ -124,9 +124,13 @@ class TrapScanners
     private function looksLikeProbe(string $path): bool
     {
         // 后台路径由 ADMIN_PATH 决定，可能恰好含敏感词，绝不能被蜜罐扫到。
-        $adminPrefix = '/' . admin_path();
-        if ($path === $adminPrefix || str_starts_with($path, $adminPrefix . '/')) {
-            return false;
+        // 与 Laravel 路由匹配同样解码一次，否则合法的编码后台 URL 会被误判。
+        $path = rawurldecode($path);
+        foreach (['/'.admin_path(), '/api/'.admin_path()] as $adminPrefix) {
+            if ($path === $adminPrefix || str_starts_with($path, $adminPrefix.'/')) {
+                // 仅排除扫描探针判断，API 的会话、权限与备份店主校验照常执行。
+                return false;
+            }
         }
 
         foreach (self::PATTERNS as $pattern) {

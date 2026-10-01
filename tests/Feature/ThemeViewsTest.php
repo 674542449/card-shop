@@ -89,7 +89,7 @@ class ThemeViewsTest extends TestCase
         $this->get('/?q=全目录商品-25')->assertOk()->assertSee('full-catalog-25')->assertDontSee('full-catalog-24');
         $order = Order::create(['order_no' => 'FULLTHEMEORDER', 'product_id' => $product->id, 'email' => 'buyer@example.test', 'query_password' => bcrypt('buyer-password'), 'quantity' => 1,
             'unit_price' => 12, 'total_amount' => 12, 'status' => 'paid', 'payment_method' => 'manual', 'ip' => '192.0.2.1', 'expires_at' => now()->addMinutes(30)]);
-        $this->withSession(['order_verified_ids' => [$order->id]])->get('/order/detail/'.$order->order_no)->assertOk()->assertSee('申请退款')->assertSee('/order/refund/'.$order->order_no);
+        $this->withBuyerSession($order)->get('/order/detail/'.$order->order_no)->assertOk()->assertSee('申请退款')->assertSee('/order/refund/'.$order->order_no);
         $html = \App\Support\ContentRenderer::toHtml('<p>[[product:'.$product->id.']]</p>', true);
         $this->assertStringContainsString('/product/'.$product->slug, $html);
         $product->category->update(['is_active' => false]);
@@ -333,7 +333,7 @@ class ThemeViewsTest extends TestCase
         $this->assertStringContainsString('noopener', $paymentLink->getAttribute('rel'));
         $this->assertSame(0, $dom->query('//main//a[@href="/order/cards/'.$order->order_no.'/download"]')->length);
 
-        $detail = $this->withSession(['order_verified_ids' => [$order->id]])
+        $detail = $this->withBuyerSession($order)
             ->get('/order/detail/'.$order->order_no)->assertViewIs('templates.'.$theme.'.order.detail');
         $detail->assertDontSee('theme-test-card');
         $detailDom = $this->assertIndependentShell($detail);
@@ -391,7 +391,7 @@ class ThemeViewsTest extends TestCase
 
         $pay = $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('付款待核对')->assertSee('请勿重复支付');
         $pay->assertDontSee('countdown-timer')->assertDontSee('payment-polling')->assertDontSee('theme-test-card');
-        $this->withSession(['order_verified_ids' => [$order->id]])
+        $this->withBuyerSession($order)
             ->get('/order/detail/'.$order->order_no)->assertOk()->assertSee('付款待核对')->assertSee('请勿重复支付')->assertDontSee('theme-test-card');
         $this->assertSame('closed', $order->fresh()->status);
         $this->assertSame(0, $order->cards()->where('status', 'sold')->count());

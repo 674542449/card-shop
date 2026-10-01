@@ -23,7 +23,7 @@ class AdminController extends Controller
                 if (strlen($value) > 72) { $fail('密码最多 72 字节，请缩短密码。'); }
             }],
             'role' => 'required|in:owner,staff', 'permissions' => 'nullable|array',
-            'permissions.*' => 'string|regex:/^(overview|catalog|orders|refunds|content|coupons|blacklists|logs|settings|tokens|notifications|maintenance):(read|write)$/D',
+            'permissions.*' => 'string|regex:/^(overview|catalog|cards|payments|orders|refunds|content|coupons|blacklists|logs|settings|tokens|notifications|maintenance):(read|write)$/D',
             'is_active' => 'required|boolean'];
     }
 

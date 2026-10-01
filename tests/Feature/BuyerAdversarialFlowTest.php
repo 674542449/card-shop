@@ -240,7 +240,7 @@ class BuyerAdversarialFlowTest extends TestCase
     {
         $p = $this->product();
         $order = app(OrderService::class)->createOrder($this->data($p));
-        $this->withSession(['order_verified_ids' => [$order->id]]);
+        $this->withBuyerSession($order);
         $this->app['env'] = 'local';
         try {
             $this->post('/order/create', $this->data($p))->assertStatus(419);
@@ -273,7 +273,7 @@ class BuyerAdversarialFlowTest extends TestCase
         $p = $this->product();
         $order = app(OrderService::class)->createOrder($this->data($p));
         $order->update(['expires_at' => now()->subMinute()]);
-        $this->withSession(['order_verified_ids' => [$order->id]]);
+        $this->withBuyerSession($order);
         foreach (['default', 'modern', 'minimal'] as $theme) {
             Setting::set('site_theme', $theme);
             $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('若已付款')->assertSee('请勿重复支付')->assertDontSee('id="payment-polling"', false);

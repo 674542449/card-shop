@@ -113,9 +113,14 @@ class OrderController extends Controller
         ]);
     }
 
-    public function show(Order $order)
+    public function show(Request $request, Order $order)
     {
         $order->load(['product', 'cards', 'coupon', 'paymentReceipts', 'notifications', 'refunds']);
+        $canReadCards = $request->attributes->get('admin')->allows('cards', 'read');
+        if ($canReadCards) {
+            $order->cards->each(fn (Card $card) => $card->makeVisible('content'));
+        }
+        $order->setAttribute('cards_accessible', $canReadCards);
 
         return response()->json($order);
     }
@@ -131,8 +136,11 @@ class OrderController extends Controller
         return response()->json(['message' => '订单已关闭。']);
     }
 
-    public function markPaid(Order $order)
+    public function markPaid(Request $request, Order $order)
     {
+        // Closing or resending orders does not authorize dispensing stock for an
+        // unpaid order. Manual receipt confirmation is a separate funds privilege.
+        abort_unless($request->attributes->get('admin')->allows('payments', 'write'), 403, '当前账户没有人工确认付款权限。');
         // Expired and closed are allowed on purpose. This is the repair path for a
         // payment that reached the gateway after the order lapsed and could not be
         // delivered automatically — refusing everything but 'pending' meant those

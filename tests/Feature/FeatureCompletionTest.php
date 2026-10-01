@@ -145,7 +145,7 @@ class FeatureCompletionTest extends TestCase
         $this->token();
         $this->withToken('complete-token')->getJson('/api/v1/products/'.$p->id)->assertNotFound();
         $this->withToken('complete-token')->getJson('/api/v1/products')->assertJsonCount(0, 'data');
-        $this->withSession(['order_verified_ids' => [$o->id]])->get('/order/detail/'.$o->order_no)->assertOk();
+        $this->withBuyerSession($o)->get('/order/detail/'.$o->order_no)->assertOk();
         $this->expectException(\RuntimeException::class);
         app(OrderService::class)->createOrder(['product_id' => $p->id, 'quantity' => 1, 'email' => $o->email, 'query_password' => 'buyer-password', 'payment_method' => 'alipay', 'ip' => '192.0.2.1']);
     }
@@ -393,7 +393,7 @@ class FeatureCompletionTest extends TestCase
     {
         $o = $this->order($this->product(), ['status' => 'paid']);
         $this->post('/order/refund/'.$o->order_no, ['amount' => 10, 'reason' => 'buyer-refund'])->assertForbidden();
-        $this->withSession(['order_verified_ids' => [$o->id]])->post('/order/refund/'.$o->order_no, ['amount' => 10, 'reason' => 'buyer-refund'])->assertRedirect();
+        $this->withBuyerSession($o)->post('/order/refund/'.$o->order_no, ['amount' => 10, 'reason' => 'buyer-refund'])->assertRedirect();
         $this->assertSame('buyer', $o->refunds()->first()->source);
     }
 

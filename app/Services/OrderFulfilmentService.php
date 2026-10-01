@@ -42,6 +42,9 @@ class OrderFulfilmentService
         string $channel,
         array $receiptDetails = [],
     ): OrderFulfilmentResult {
+        if ($tradeNo === '' || strlen($tradeNo) > 100 || preg_match('/[\x00-\x20\x7f]/', $tradeNo)) {
+            return OrderFulfilmentResult::refused('网关交易号无效。');
+        }
         $paidAmount = trim($paidAmount);
         return $this->transition(
             $orderNo,
@@ -53,7 +56,8 @@ class OrderFulfilmentService
                 'paid_at' => now(),
                 'payment_received_amount' => $paidAmount,
                 'payment_received_at' => now(),
-                '_receipt_details' => $receiptDetails,
+                '_gateway_payment_type' => $receiptDetails['epay_type'] ?? null,
+                '_receipt_details' => \Illuminate\Support\Arr::only($receiptDetails, ['actual_amount', 'currency', 'network', 'transaction_hash']),
             ],
             // 'expired' is here because a buyer paying at T+30:01 is ordinary, not
             // hostile. Nothing tells the gateway our 30-minute deadline, and BEpusdt
@@ -142,12 +146,30 @@ class OrderFulfilmentService
                 if ($receipt->order_id !== $order->id || bccomp($receipt->amount, $payment['payment_received_amount'], 8) !== 0) {
                     return OrderFulfilmentResult::refused('网关流水已关联其他订单或金额发生变化。');
                 }
+                // A signed receipt is proof of collection, but a different trade
+                // or payment type cannot replace the checkout binding. An operator's
+                // recorded resolution is final; a gateway retry must not reopen it.
+                $bindingRefusal = null;
+                if ($source === 'epusdt' && $order->gateway_trade_no
+                    && $order->gateway_trade_no !== $receipt->trade_no) {
+                    $bindingRefusal = 'USDT 收款交易号与创建支付时绑定的交易号不一致，请核对后人工处理。';
+                } elseif ($source === 'epay' && isset($payment['_gateway_payment_type'])
+                    && $payment['_gateway_payment_type'] !== ($order->payment_method === 'alipay' ? 'alipay' : 'wxpay')) {
+                    $bindingRefusal = '网关收款方式与订单不符，请核对后人工处理。';
+                }
+                if ($bindingRefusal !== null && $receipt->review_resolved_at) {
+                    return OrderFulfilmentResult::skipped('网关回执已由操作员处理。');
+                }
                 if (!$order->isPaid()) {
                     $order->update([
                         'payment_no' => $receipt->trade_no,
                         'payment_received_amount' => $receipt->amount,
                         'payment_received_at' => $receipt->received_at,
                     ]);
+                }
+                if ($bindingRefusal !== null) {
+                    $this->recordReview($order, $receipt, $bindingRefusal);
+                    return OrderFulfilmentResult::refused($bindingRefusal, $order, true);
                 }
             }
             if ($order->isPaid()) {
@@ -223,7 +245,7 @@ class OrderFulfilmentService
                 'sold_at' => now(),
             ]);
 
-            $order->update(\Illuminate\Support\Arr::except($attributes($order), ['_receipt_details']) + ['payment_review_reason' => null]);
+            $order->update(\Illuminate\Support\Arr::except($attributes($order), ['_receipt_details', '_gateway_payment_type']) + ['payment_review_reason' => null]);
             $order->paymentReceipts()->whereNotNull('review_reason')->whereNull('review_resolved_at')
                 ->where('review_reason', 'not like', '已发货订单%')
                 ->update(['review_resolved_at' => now(), 'resolution_note' => '订单已完成发货。']);
@@ -306,7 +328,11 @@ class OrderFulfilmentService
             return '订单应付金额配置无效。';
         }
         // The callback must come from the gateway this order was sent to.
-        $expectedChannel = str_starts_with((string) $order->payment_method, 'usdt_') ? 'epusdt' : 'epay';
+        $expectedChannel = match ($order->payment_method) {
+            'alipay', 'wechat' => 'epay',
+            'usdt_trc20', 'usdt_bep20', 'usdt_polygon' => 'epusdt',
+            default => null,
+        };
         if ($channel !== $expectedChannel) {
             Log::warning('Payment channel mismatch, refusing to deliver', [
                 'order_no' => $order->order_no,
@@ -322,7 +348,7 @@ class OrderFulfilmentService
         // we cannot read is treated as a failure, not waved through: delivering
         // an unverifiable payment is the exact failure this guards against.
         $paidAmount = trim($paidAmount);
-        if (!preg_match('/^\d+(?:\.\d+)?$/D', $paidAmount)) {
+        if (!preg_match('/^\d{1,18}(?:\.\d{1,8})?$/D', $paidAmount)) {
             Log::warning('Payment callback carried no readable amount, refusing to deliver', [
                 'order_no' => $order->order_no,
                 'channel' => $channel,

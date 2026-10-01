@@ -19,6 +19,11 @@ class Card extends Model
         'sold_at',
     ];
 
+    // A card is the sold secret, not ordinary catalog metadata. Serialization
+    // must opt in at an explicitly authorized delivery/admin boundary; merely
+    // eager-loading a relation must never disclose stock to a lower-trust caller.
+    protected $hidden = ['content'];
+
     protected function casts(): array
     {
         return [

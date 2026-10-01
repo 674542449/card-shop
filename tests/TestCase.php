@@ -28,4 +28,16 @@ abstract class TestCase extends \Illuminate\Foundation\Testing\TestCase
         Cache::flush();
         settings_memo(clear: true);
     }
+
+    /** An authenticated buyer fixture, bound to this order's current credentials. */
+    protected function withBuyerSession(\App\Models\Order $order): static
+    {
+        return $this->withSession([
+            'order_verified_ids' => [$order->id],
+            'order_buyer_proofs' => [$order->id => [
+                'fingerprint' => \App\Services\BrowserOrderCredentialProof::fingerprint($order),
+                'expires_at' => now()->timestamp + \App\Services\BrowserOrderCredentialProof::LIFETIME_SECONDS,
+            ]],
+        ]);
+    }
 }

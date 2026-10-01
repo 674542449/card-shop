@@ -19,7 +19,7 @@ class CardController extends Controller
             'status' => 'nullable|in:unsold,locked,sold',
             'content' => 'nullable|string|max:500',
         ]);
-        $query = $product->cards()->with('order');
+        $query = $product->cards()->with('order:id,order_no,status');
 
         if ($request->filled('content')) {
             $query->where('content', 'ilike', '%' . $request->input('content') . '%');
@@ -30,6 +30,7 @@ class CardController extends Controller
         }
 
         $cards = $query->orderByDesc('id')->paginate($pageSize);
+        $cards->getCollection()->each(fn (Card $card) => $card->makeVisible('content'));
 
         $total = $product->cards()->count();
         $unsold = $product->cards()->where('status', 'unsold')->count();
@@ -144,7 +145,7 @@ class CardController extends Controller
 
         return response()->json([
             'message' => $outcome['changed'] ? "卡密已标记为{$label}。" : "卡密已是{$label}，无需修改。",
-            'card' => $outcome['card']->load('order'),
+            'card' => $outcome['card']->makeVisible('content')->load('order:id,order_no,status'),
         ]);
     }
 

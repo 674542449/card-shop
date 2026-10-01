@@ -34,6 +34,7 @@ const paymentMethodMap = {
 export default function OrderDetail() {
   const { id } = useParams();
   const admin=useOutletContext();const write=allows(admin,'orders','write');const refundWrite=write&&allows(admin,'refunds','write');
+  const confirmPayment = write && allows(admin, 'payments', 'write');
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -136,7 +137,7 @@ export default function OrderDetail() {
             lapsed cannot be delivered automatically, and this is the only way to
             complete the sale. Restricted to pending, the repair existed in the API
             and was unreachable from the screen the operator is looking at. */}
-        {write && ['pending', 'expired', 'closed'].includes(order.status) && (
+        {confirmPayment && ['pending', 'expired', 'closed'].includes(order.status) && (
           <Popconfirm
             title={
               order.status === 'pending'
@@ -215,11 +216,14 @@ export default function OrderDetail() {
           { title: '下次尝试', dataIndex: 'available_at', render: (value, record) => record.status === 'pending' ? fmt(value) : '-' },
         ]} />
       </ProCard>
-      {order.status === 'paid' && order.cards && order.cards.length > 0 && (
+      {order.status === 'paid' && !order.cards_accessible && (
+        <Alert type="info" showIcon message="当前账户没有卡密查看权限" description="店主可在管理员权限中单独授予卡密查看权限。" style={{ marginTop: 16 }} />
+      )}
+      {order.status === 'paid' && order.cards_accessible && order.cards && order.cards.length > 0 && (
         <ProCard title="卡密信息">
           {order.cards.map((card, idx) => (
             <Paragraph key={idx} copyable style={{ marginBottom: 4 }}>
-              {card.content || card}
+              {card.content ?? ''}
             </Paragraph>
           ))}
         </ProCard>

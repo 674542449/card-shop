@@ -13,13 +13,15 @@ import {
 } from '@ant-design/pro-components';
 import { Button, message, Popconfirm, Tag, Image } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useOutletContext } from 'react-router-dom';
+import { allows } from '../permissions';
 import { getProducts, getProduct, createProduct, updateProduct, deleteProduct, getCategories } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
 
 export default function Products() {
   const canWrite = useWritePermission('catalog');
+  const canReadCards = allows(useOutletContext(), 'cards');
   const actionRef = useRef();
   const [searchParams] = useSearchParams();
   const requestedActive = searchParams.get('is_active');
@@ -86,7 +88,7 @@ export default function Products() {
       width: 200,
       render: (_, record) => canWrite ? [
         // 同 Orders.jsx：不要带 /admin 前缀，basename 已经包含它。
-        <Link key="cards" to={`/products/${record.id}/cards`}>
+        canReadCards && <Link key="cards" to={`/products/${record.id}/cards`}>
           卡密管理
         </Link>,
         <Button type="link" htmlType="button" style={{ padding: 0, height: 'auto' }}
@@ -118,7 +120,7 @@ export default function Products() {
         >
           <Button type="link" htmlType="button" danger style={{ padding: 0, height: 'auto' }}>删除</Button>
         </Popconfirm>,
-      ] : [<Link key="cards" to={`/products/${record.id}/cards`}>卡密查看</Link>],
+      ] : (canReadCards ? [<Link key="cards" to={`/products/${record.id}/cards`}>卡密查看</Link>] : []),
     },
   ];
 
