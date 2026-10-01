@@ -21,7 +21,7 @@
         // it is hidden from assistive tech rather than read out as "check mark".
         $states = [
             'paid' => ['&#9989;', '支付成功', '订单已完成，卡密信息如下', 'is-paid'],
-            'expired' => ['&#9200;', '订单已过期', '此订单已超过支付时限', 'is-expired'],
+            'expired' => ['&#9200;', '订单已过期', '此订单已超过支付时限；若已付款，请先查询订单或联系客服核对，请勿重复支付。', 'is-expired'],
             'closed' => ['&#10060;', '订单已关闭', '此订单已被关闭', 'is-closed'],
             'pending' => ['&#9203;', '待支付', '请尽快完成支付', 'is-pending'],
         ];
@@ -31,6 +31,10 @@
             : ($order->status === 'closed' ? 'closed' : 'pending'));
 
         [$glyph, $stateTitle, $stateNote, $stateClass] = $states[$stateKey];
+        if (!$order->isPaid() && $order->payment_no) {
+            $stateTitle = '付款待核对';
+            $stateNote = '收到付款回执，订单暂未发货，请联系客服核对，请勿重复支付。';
+        }
     @endphp
     <div class="page-card order-state-card {{ $stateClass }}">
         <span class="os-glyph" aria-hidden="true">{!! $glyph !!}</span>
@@ -38,7 +42,7 @@
             <strong>{{ $stateTitle }}</strong>
             <small>{{ $stateNote }}</small>
         </span>
-        @if($stateKey === 'pending')
+        @if($stateKey === 'pending' && empty($order->payment_no))
         <a href="/order/pay/{{ $order->order_no }}" class="btn-buy-sm os-action">继续支付</a>
         @endif
     </div>
@@ -49,7 +53,7 @@
         <div class="page-card-body">
             <table class="order-info-table">
                 <tr><th>订单编号</th><td class="op-mono">{{ $order->order_no }}</td></tr>
-                <tr><th>商品名称</th><td>{{ $order->product->name ?? '—' }}</td></tr>
+                <tr><th>商品名称</th><td>{{ $order->displayName() }}</td></tr>
                 <tr><th>购买数量</th><td>{{ $order->quantity }} 件</td></tr>
                 <tr><th>单价</th><td>¥{{ number_format($order->unit_price, 2) }}</td></tr>
                 @if($order->discount_amount > 0)
@@ -65,6 +69,7 @@
                             @case('usdt_trc20') USDT(TRC20) @break
                             @case('usdt_bep20') USDT(BEP20) @break
                             @case('usdt_polygon') USDT(Polygon) @break
+                            @case('manual') 人工确认 @break
                             @default {{ $order->payment_method ?? '—' }}
                         @endswitch
                     </td>
@@ -82,7 +87,7 @@
     </div>
 
     {{-- Card Contents --}}
-    @if($order->isPaid() && $cards->count() > 0)
+    @if(($verified ?? false) && $order->isPaid() && $cards->count() > 0)
     <div class="page-card" style="margin-bottom:15px">
         <div class="page-card-header card-panel-header">
             <span>卡密信息</span>
@@ -102,8 +107,7 @@
                 <li>{{ $card->content }}</li>
                 @endforeach
             </ul>
-            <textarea id="card-content-text" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;">@foreach($cards as $card){{ $card->content }}
-@endforeach</textarea>
+            <textarea id="card-content-text" tabindex="-1" aria-hidden="true" style="position:absolute;left:-9999px;">{{ $cards->pluck("content")->implode("\n") . "\n" }}</textarea>
         </div>
     </div>
     @endif
@@ -112,4 +116,10 @@
         <a href="/order/query" style="color:var(--text-light);font-size:13px;margin-right:20px;">&larr; 返回订单列表</a>
         <a href="/" style="color:var(--text-light);font-size:13px;">返回首页</a>
     </div>
+@if($verified ?? false)
+ <section class="refund-panel" aria-label="退款与售后">@if($order->isPaid() && \App\Models\Order::paymentReview()->whereKey($order->id)->exists())<p role="status">购买已完成，另有付款回执等待店主核对。请联系客服处理额外付款，请勿重复付款。</p>@endif<h2>退款与售后</h2>
+ @if($order->refunds->isNotEmpty())<ul>@foreach($order->refunds as $refund)<li>¥{{ $refund->amount }} · {{ ['requested'=>'待审核','approved'=>'待退款','completed'=>'已退款','rejected'=>'已拒绝'][$refund->status] ?? $refund->status }} · {{ $refund->created_at->format('Y-m-d H:i') }}</li>@endforeach</ul>@endif
+ @if($order->isPaid())<details><summary>申请退款</summary><p>提交后由店主审核，实际退款完成后将更新记录。</p><form method="POST" action="/order/refund/{{ $order->order_no }}">@csrf<label>退款金额（元）<input type="number" name="amount" min="0.01" max="{{ $order->total_amount }}" step="0.01" value="{{ $order->total_amount }}" required></label><label>申请原因<textarea name="reason" maxlength="2000" required></textarea></label><button class="btn-buy-sm" type="submit">提交申请</button></form></details>@else<p>异常付款请联系客服，并提供订单编号。</p>@endif
+ </section>@endif
+@themeInclude('partials.order-cancel')
 @endsection

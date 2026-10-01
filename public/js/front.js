@@ -9,9 +9,16 @@ document.addEventListener('DOMContentLoaded', function () {
             menuToggle.setAttribute('aria-expanded', String(isOpen));
         });
         document.addEventListener('click', function (e) {
-            if (!mobileNav.contains(e.target) && e.target !== menuToggle) {
+            if (!mobileNav.contains(e.target) && !menuToggle.contains(e.target)) {
                 mobileNav.classList.remove('open');
                 menuToggle.setAttribute('aria-expanded', 'false');
+            }
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && mobileNav.classList.contains('open')) {
+                mobileNav.classList.remove('open');
+                menuToggle.setAttribute('aria-expanded', 'false');
+                menuToggle.focus();
             }
         });
     }
@@ -69,9 +76,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function updateTotalPrice() {
         if (!quantityInput || !totalPriceEl) return;
-        var qty = parseInt(quantityInput.value) || 1;
+        var unitPriceEl = document.getElementById('unit-price');
+        var qty = Number(quantityInput.value);
+        if (quantityInput.value.trim() === '' || !Number.isInteger(qty)
+            || qty < 1 || !quantityInput.validity.valid) {
+            totalPriceEl.textContent = '—';
+            if (unitPriceEl) unitPriceEl.textContent = '—';
+            wholesaleRows.forEach(function (row) { row.classList.remove('active-tier'); });
+            return;
+        }
         var unitPrice = getEffectivePrice(qty);
         var total = unitPrice * qty;
+        if (unitPriceEl) unitPriceEl.textContent = '¥' + unitPrice.toFixed(2);
         totalPriceEl.textContent = '¥' + total.toFixed(2);
     }
 
@@ -166,7 +182,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     // HTML and this checked `indexOf('"paid"')` against the whole page —
                     // which the embedded order JSON and the status labels could both
                     // satisfy while the order was still pending, reloading in a loop.
-                    if (data && data.status && data.status !== 'pending') {
+                    if (data && data.status && (data.status !== 'pending' || data.payment_review)) {
                         clearInterval(pollingInterval);
                         window.location.reload();
                     }

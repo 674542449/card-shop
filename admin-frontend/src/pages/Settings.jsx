@@ -1,10 +1,13 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import useWritePermission from '../hooks/useWritePermission';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ProForm, ProFormText, ProFormTextArea, ProFormDigit, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
 import { Card, Tabs, Spin, message, Alert, Button, Input, Space, Typography } from 'antd';
 import { SendOutlined, CheckCircleFilled, LoadingOutlined, ExclamationCircleFilled } from '@ant-design/icons';
-import { getSettings, updateSettings, changePassword, sendTestEmail } from '../services/api';
+import { Link } from 'react-router-dom';
+import { getSettings, updateSettings, sendTestEmail } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
+import { createSerialSaveQueue } from '../utils/serialSaveQueue';
 
 /**
  * 模板目录名 -> 显示名。没登记的模板直接显示目录名，所以别人加了模板不改这里也能用。
@@ -12,7 +15,7 @@ import RichTextEditor from '../components/RichTextEditor';
 const THEME_LABELS = {
   default: '默认（表格式）',
   minimal: '极简卡片流',
-  modern: '现代（仿独角数卡新版·含深色模式）',
+  modern: 'Claude 风格（暖白与陶土色）',
 };
 
 /**
@@ -22,6 +25,13 @@ const THEME_LABELS = {
  * 太长：用户改完就切走，改动还没发出去。800ms 大约是「停下来想一下」的间隔。
  */
 const AUTO_SAVE_DELAY = 800;
+const settingsSaver = createSerialSaveQueue(updateSettings, AUTO_SAVE_DELAY);
+// The queue outlives the settings route, so protect its in-flight saves there too.
+window.addEventListener('beforeunload', (event) => {
+  if (!settingsSaver.pending()) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 
 /**
  * 自动保存的状态指示。
@@ -68,6 +78,7 @@ function AutoSaveStatus({ state, onRetry }) {
 }
 
 export default function Settings() {
+  const canWrite = useWritePermission('settings');
   const [loading, setLoading] = useState(true);
   const [initialValues, setInitialValues] = useState({});
   const [testTo, setTestTo] = useState('');
@@ -79,12 +90,10 @@ export default function Settings() {
   const [autoSave, setAutoSave] = useState({ status: 'idle', error: '' });
   // 待保存的字段。只装「改过的」，不是整份表单——后端 update() 对请求里没有的 key
   // 直接跳过，所以增量提交是天然支持的，也避免了「只保存打开过的 tab」那种隐式语义。
-  const queueRef = useRef({});
-  const timerRef = useRef(null);
-  const inFlightRef = useRef(false);
+  useEffect(() => settingsSaver.subscribe(setAutoSave), []);
 
   useEffect(() => {
-    getSettings()
+    (canWrite ? settingsSaver.flush().catch(() => {}) : Promise.resolve()).then(() => getSettings())
       .then((res) => {
         const data = res.data?.data || res.data;
         // Switch fields are stored as the strings '0'/'1'; antd's Switch needs a real
@@ -95,7 +104,11 @@ export default function Settings() {
         if (Array.isArray(data._available_themes) && data._available_themes.length) {
           setThemes(data._available_themes);
         }
-        const normalised = { ...data, telegram_enabled: data.telegram_enabled === '1' || data.telegram_enabled === true };
+        const normalised = { ...data, ...(canWrite ? settingsSaver.unsaved() : {}) };
+        for (const [key, defaultValue] of Object.entries({ telegram_enabled: false, honeypot_enabled: true, honeypot_skip_reserved_ips: true, payment_reconciliation_enabled: false })) {
+          normalised[key] = normalised[key] == null ? defaultValue : normalised[key] === '1' || normalised[key] === true;
+        }
+        normalised.honeypot_ban_minutes ??= 10080;
         delete normalised._available_themes;
         setInitialValues(normalised);
         form.setFieldsValue(normalised);
@@ -111,83 +124,37 @@ export default function Settings() {
    * 「重试」按钮再调一次这个函数就能把它们重新发一遍。不做自动重试——网关挂了的话
    * 自动重试只会变成每 800ms 打一次。
    */
-  const flush = useCallback(async () => {
-    if (inFlightRef.current) {
-      // 上一批还在路上。重新排一次，等它回来再发，避免同一个 key 并发写。
-      timerRef.current = setTimeout(flush, AUTO_SAVE_DELAY);
-      return;
-    }
-
-    const payload = queueRef.current;
-    queueRef.current = {};
-
-    if (Object.keys(payload).length === 0) {
-      return;
-    }
-
-    inFlightRef.current = true;
-    setAutoSave({ status: 'saving', error: '' });
-
-    try {
-      await updateSettings(payload);
-      // 期间又攒了新的改动就别急着说「已保存」，让下一轮去报。
-      setAutoSave(
-        Object.keys(queueRef.current).length ? { status: 'saving', error: '' } : { status: 'saved', error: '' }
-      );
-    } catch (err) {
-      queueRef.current = { ...payload, ...queueRef.current };
-      setAutoSave({
-        status: 'error',
-        error: err.response?.data?.message || '保存失败，请检查网络或重新登录',
-      });
-    } finally {
-      inFlightRef.current = false;
-    }
-  }, []);
+  const flush = useCallback(() => canWrite ? settingsSaver.flush().catch(() => {}) : Promise.resolve(), [canWrite]);
 
   /** ProForm 的 onValuesChange：只把改动的字段入队，然后防抖。 */
   const handleValuesChange = useCallback(
     (changed) => {
-      queueRef.current = { ...queueRef.current, ...changed };
-      clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(flush, AUTO_SAVE_DELAY);
+      if (canWrite) settingsSaver.enqueue(changed);
     },
-    [flush]
+    [canWrite]
   );
 
   // 离开页面时把没发出去的改动补发一次，否则「改完立刻点别的菜单」会丢掉最后 800ms
   // 内的编辑。
   useEffect(() => {
     return () => {
-      clearTimeout(timerRef.current);
-      if (Object.keys(queueRef.current).length) {
-        updateSettings(queueRef.current).catch(() => {});
-      }
+      if (canWrite) settingsSaver.flush().catch(() => {});
     };
-  }, []);
-
-  // 还有没保存成功的东西时，关标签页要拦一下。这是「不能静默丢失」的最后一道。
-  useEffect(() => {
-    const onBeforeUnload = (e) => {
-      if (Object.keys(queueRef.current).length === 0) return;
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', onBeforeUnload);
-    return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, []);
 
   // The test sends through the SAVED settings, not the values sitting in the form,
   // because the server reads them from the database. Saving first is therefore part
   // of the operation rather than a separate thing to remember, so the button does it.
   const handleTestEmail = async () => {
+    if (!canWrite) return;
     if (!testTo) {
       message.warning('请填写接收测试邮件的地址');
       return;
     }
     setTesting(true);
     try {
-      await updateSettings(form.getFieldsValue());
+      settingsSaver.enqueue(form.getFieldsValue(), false);
+      await settingsSaver.flush();
       const res = await sendTestEmail(testTo);
       message.success(res.data?.message || '测试邮件已发送');
     } catch (err) {
@@ -223,14 +190,14 @@ export default function Settings() {
           />
           <ProFormTextArea name="site_description" label="站点描述" fieldProps={{ rows: 3 }} />
           <ProForm.Item name="site_announcement" label="站点公告" extra="显示在首页和商品详情页顶部。">
-            <RichTextEditor placeholder="支持加粗、颜色、链接、图片等" height={220} />
+            <RichTextEditor disabled={!canWrite} placeholder="支持加粗、颜色、链接、图片等" height={220} />
           </ProForm.Item>
           <ProForm.Item
             name="popup_announcement"
             label="弹窗公告"
             extra="留空则不弹窗。访客打开首页或商品详情页时弹出，5 秒后才能关闭。修改内容后，已看过旧公告的访客会重新看到一次。"
           >
-            <RichTextEditor placeholder="重要通知才用弹窗，频繁弹窗会赶走访客" height={200} />
+            <RichTextEditor disabled={!canWrite} placeholder="重要通知才用弹窗，频繁弹窗会赶走访客" height={200} />
           </ProForm.Item>
           <ProFormDigit
             name="popup_interval_hours"
@@ -248,13 +215,13 @@ export default function Settings() {
             placeholder="独角数卡"
           />
           <ProForm.Item name="site_logo" label="站点 Logo" extra="显示在页面左上角，高度自动缩放到 30px。">
-            <ImageUploader />
+            <ImageUploader disabled={!canWrite} />
           </ProForm.Item>
           <ProForm.Item name="site_favicon" label="浏览器图标 (Favicon)" extra="显示在浏览器标签页，建议 .ico 或 32x32 的 .png。">
-            <ImageUploader />
+            <ImageUploader disabled={!canWrite} />
           </ProForm.Item>
           <ProForm.Item name="contact_qr_image" label="联系二维码图片">
-            <ImageUploader />
+            <ImageUploader disabled={!canWrite} />
           </ProForm.Item>
         </>
       ),
@@ -264,6 +231,9 @@ export default function Settings() {
       label: 'SEO 设置',
       children: (
         <>
+          <ProFormText name="site_url" label="正式站点网址" extra="用于搜索引擎推送与验证文件地址，例如 https://shop.example.com" />
+          <ProFormText.Password name="baidu_push_token" label="百度推送 Token" />
+          <ProFormText name="bing_indexnow_key" label="IndexNow 验证密钥" extra="8–128 位字母、数字或短横线；验证文件会由站点自动提供。" />
           <ProFormText name="seo_default_title" label="默认 SEO 标题" />
           <ProFormTextArea name="seo_default_description" label="默认 SEO 描述" fieldProps={{ rows: 3 }} />
           <ProFormText name="seo_default_keywords" label="默认 SEO 关键词" />
@@ -275,6 +245,7 @@ export default function Settings() {
       label: 'EPay 支付',
       children: (
         <>
+          <ProFormSwitch name="payment_reconciliation_enabled" label="每 5 分钟核对近期付款" extra="需要 HTTPS 网关。尚未确认付款的订单会自动核对，异常结果可在订单详情查看。" />
           <ProFormText name="epay_api_url" label="EPay 网关地址" />
           <ProFormText name="epay_merchant_id" label="EPay 商户ID" />
           <ProFormText name="epay_merchant_key" label="EPay 商户密钥" />
@@ -306,7 +277,11 @@ export default function Settings() {
       children: (
         <>
           <ProFormText name="turnstile_site_key" label="Turnstile Site Key" />
-          <ProFormText name="turnstile_secret_key" label="Turnstile Secret Key" />
+          <ProFormText.Password name="turnstile_secret_key" label="Turnstile Secret Key" />
+          <ProFormSwitch name="honeypot_enabled" label="扫描防护" extra="探测敏感路径的来源会加入临时黑名单，可在黑名单页查看和解除。" />
+          <ProFormDigit name="honeypot_ban_minutes" label="自动封禁时间（分钟）" min={0} max={525600} fieldProps={{ precision: 0 }} extra="默认 10080 分钟（7 天）；0 表示永久封禁。" />
+          <ProFormTextArea name="honeypot_whitelist" label="扫描防护白名单" placeholder="例如 203.0.113.10, 2001:db8::1" extra="使用逗号分隔 IPv4 或 IPv6 地址。这里仅放行扫描防护，手动黑名单仍会生效。" />
+          <ProFormSwitch name="honeypot_skip_reserved_ips" label="跳过私网与保留地址" extra="本地开发、内网监测及健康检查建议保持开启。" />
         </>
       ),
     },
@@ -376,6 +351,7 @@ export default function Settings() {
             <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
               <Input
                 type="email"
+                disabled={!canWrite}
                 value={testTo}
                 onChange={(e) => setTestTo(e.target.value)}
                 onPressEnter={handleTestEmail}
@@ -386,6 +362,7 @@ export default function Settings() {
                 type="primary"
                 icon={<SendOutlined />}
                 loading={testing}
+                disabled={!canWrite}
                 onClick={handleTestEmail}
               >
                 发送测试
@@ -448,27 +425,18 @@ export default function Settings() {
       label: '订单设置',
       children: (
         <>
-          <ProFormDigit name="order_expire_minutes" label="订单过期时间（分钟）" min={1} />
+          <ProFormDigit name="order_expire_minutes" label="订单过期时间（分钟）" min={5} max={10080} fieldProps={{ precision: 0 }} />
         </>
       ),
     },
   ];
 
-  const handlePasswordChange = async (values) => {
-    try {
-      await changePassword(values);
-      message.success('密码已更新');
-      return true;
-    } catch (err) {
-      message.error(err.response?.data?.message || '密码修改失败');
-      return false;
-    }
-  };
-
   return (
     <>
-    <Card title="系统设置" extra={<AutoSaveStatus state={autoSave} onRetry={flush} />}>
+    <Card title="系统设置" extra={<>{canWrite ? <AutoSaveStatus state={autoSave} onRetry={flush} /> : <Typography.Text type="secondary">只读权限</Typography.Text>}</>}>
       <ProForm
+        name="system-settings"
+        disabled={!canWrite}
         form={form}
         // Without this, clearing the logo or the QR code submits no key at all and the
         // old image is kept. Fields on tabs the operator never opened stay unregistered
@@ -484,62 +452,7 @@ export default function Settings() {
         <Tabs items={tabItems} />
       </ProForm>
     </Card>
-    <Card title="修改密码" style={{ marginTop: 16 }}>
-      <Alert
-        type="warning"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="如果你还在使用安装时的初始密码，请立即修改。"
-        description="后台地址是公开可访问的，初始密码写在项目文档里。"
-      />
-      <ProForm
-        // 这一行是「一进系统设置页就被弹到修改密码区」的正解。
-        //
-        // ProForm 的 autoFocusFirstInput 默认为 true，BaseForm 会把 autoFocus:true
-        // cloneElement 到第 0 个子元素上。上面那张设置表单的第 0 个子元素是 <Tabs>
-        // （渲染成 div，React 只对 button/input/select/textarea 调 focus()，所以空转），
-        // 而这张表单的第 0 个子元素正好是「当前密码」输入框 —— autoFocus 一路透传到
-        // 真实 <input>，React 在 commit 阶段调 focus()，浏览器为了让它可见就把页面
-        // 滚下去了。页面又是先渲染 Spin、数据回来后才挂载表单，所以表现为「先看到
-        // 顶部，随即被弹到底部」。
-        //
-        // 密码框本来也不该自动获得焦点：它是一个破坏性操作的入口，不是这一页的主任务。
-        autoFocusFirstInput={false}
-        onFinish={handlePasswordChange}
-        submitter={{
-          searchConfig: { submitText: '修改密码' },
-          resetButtonProps: false,
-        }}
-      >
-        <ProFormText.Password
-          name="current_password"
-          label="当前密码"
-          rules={[{ required: true, message: '请输入当前密码' }]}
-        />
-        <ProFormText.Password
-          name="new_password"
-          label="新密码"
-          rules={[
-            { required: true, message: '请输入新密码' },
-            { min: 12, message: '新密码至少 12 个字符' },
-          ]}
-        />
-        <ProFormText.Password
-          name="new_password_confirmation"
-          label="确认新密码"
-          dependencies={['new_password']}
-          rules={[
-            { required: true, message: '请再次输入新密码' },
-            ({ getFieldValue }) => ({
-              validator: (_, value) =>
-                !value || getFieldValue('new_password') === value
-                  ? Promise.resolve()
-                  : Promise.reject(new Error('两次输入的密码不一致')),
-            }),
-          ]}
-        />
-      </ProForm>
-    </Card>
+    <Card title="账户安全" style={{ marginTop: 24 }}><Typography.Paragraph type="secondary">在账户设置中查看最近登录信息并更新管理员密码。</Typography.Paragraph><Link to="/account">打开账户设置 →</Link></Card>
 
     </>
   );

@@ -1,0 +1,1 @@
+<svg class="n-placeholder {{ $class ?? '' }}" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><rect x="15" y="15" width="34" height="34" rx="5"/><path d="M23 25h18m-18 7h12m-12 7h7" stroke-linecap="round"/><path d="M10 25V13a3 3 0 0 1 3-3h12m14 44h12a3 3 0 0 0 3-3V39" stroke-linecap="round"/></svg>

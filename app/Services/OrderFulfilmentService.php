@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Card;
 use App\Models\Coupon;
 use App\Models\Order;
+use App\Models\PaymentReceipt;
 use Closure;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\Log;
  * The single place an order becomes paid.
  *
  * Both the gateway callback and the admin's 手动确认支付 button run through
- * transition(), so the pending-only guard, card allocation and delivery cannot
+ * transition(), so status checks, card allocation and delivery cannot
  * drift apart the way the two hand-written copies did. The two entry points
  * differ in exactly one thing — what they verify before allowing the transition
  * — and that difference is written out below rather than expressed as a flag a
@@ -22,7 +23,7 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderFulfilmentService
 {
-    public function __construct(private readonly NotificationService $notifications)
+    public function __construct(private readonly NotificationQueue $notifications)
     {
     }
 
@@ -39,7 +40,9 @@ class OrderFulfilmentService
         string $tradeNo,
         string $paidAmount,
         string $channel,
+        array $receiptDetails = [],
     ): OrderFulfilmentResult {
+        $paidAmount = trim($paidAmount);
         return $this->transition(
             $orderNo,
             $channel,
@@ -48,6 +51,9 @@ class OrderFulfilmentService
                 'status' => 'paid',
                 'payment_no' => $tradeNo,
                 'paid_at' => now(),
+                'payment_received_amount' => $paidAmount,
+                'payment_received_at' => now(),
+                '_receipt_details' => $receiptDetails,
             ],
             // 'expired' is here because a buyer paying at T+30:01 is ordinary, not
             // hostile. Nothing tells the gateway our 30-minute deadline, and BEpusdt
@@ -115,26 +121,11 @@ class OrderFulfilmentService
             // gateway callback and an operator click arriving together serialise
             // here and the loser finds the order already paid.
             $order = Order::where('order_no', $orderNo)
-                ->whereIn('status', $fromStatuses)
                 ->lockForUpdate()
                 ->first();
 
             if (!$order) {
-                // Separate the benign miss from the expensive one. A repeat callback
-                // on an order already paid is what this branch was written for. Any
-                // OTHER status means a verified payment arrived for a sale we will
-                // not complete — nothing downstream ever looks at that, so it has to
-                // be raised here or it is lost entirely.
-                $existing = Order::where('order_no', $orderNo)->first();
-
-                if ($existing && $existing->status !== 'paid') {
-                    return OrderFulfilmentResult::orphaned(
-                        $existing,
-                        "订单状态为 {$existing->status}，支付到达时无法自动发货。"
-                    );
-                }
-
-                return OrderFulfilmentResult::skipped('订单不是待支付状态，无法确认支付。');
+                return OrderFulfilmentResult::skipped('订单不存在。');
             }
 
             $refusal = $verify($order);
@@ -142,9 +133,51 @@ class OrderFulfilmentService
                 return OrderFulfilmentResult::refused($refusal);
             }
 
+            $receipt = null;
+            if ($source !== 'manual') {
+                $payment = $attributes($order);
+                $receipt = PaymentReceipt::firstOrCreate([
+                    'channel' => $source, 'trade_no' => $payment['payment_no'],
+                ], ['order_id' => $order->id, 'amount' => $payment['payment_received_amount'], 'received_at' => now()] + ($payment['_receipt_details'] ?? []));
+                if ($receipt->order_id !== $order->id || bccomp($receipt->amount, $payment['payment_received_amount'], 8) !== 0) {
+                    return OrderFulfilmentResult::refused('网关流水已关联其他订单或金额发生变化。');
+                }
+                if (!$order->isPaid()) {
+                    $order->update([
+                        'payment_no' => $receipt->trade_no,
+                        'payment_received_amount' => $receipt->amount,
+                        'payment_received_at' => $receipt->received_at,
+                    ]);
+                }
+            }
+            if ($order->isPaid()) {
+                if ($receipt && $order->payment_no !== $receipt->trade_no && !$receipt->review_resolved_at) {
+                    $this->recordReview($order, $receipt, '已发货订单收到另一笔付款，请核对重复收款并处理退款。');
+                }
+                return OrderFulfilmentResult::skipped('订单已发货。');
+            }
+            // A second verified receipt must remain visible even if the first
+            // arrived while stock was unavailable and fulfilment succeeds now.
+            if ($receipt) {
+                foreach ($order->paymentReceipts()->where('id', '!=', $receipt->id)->whereNull('review_resolved_at')->get() as $other) {
+                    $this->recordReview($order, $other, '已发货订单收到另一笔付款，请核对重复收款并处理退款。');
+                }
+            }
+            if (!in_array($order->status, $fromStatuses, true)) {
+                $reason = "订单状态为 {$order->status}，支付到达时无法自动发货。";
+                if ($receipt) {
+                    $this->recordReview($order, $receipt, $reason);
+                    return OrderFulfilmentResult::orphaned($order, $reason);
+                }
+                return OrderFulfilmentResult::refused($reason);
+            }
+
             $cards = $this->allocateCards($order);
 
             if ($cards->count() < $order->quantity) {
+                if ($receipt) {
+                    $this->recordReview($order, $receipt, "库存不足：需要 {$order->quantity} 张，可用 {$cards->count()} 张。");
+                }
                 Log::warning('Refusing to fulfil order, insufficient stock', [
                     'order_no' => $orderNo,
                     'source' => $source,
@@ -162,55 +195,47 @@ class OrderFulfilmentService
                 );
             }
 
+            // A late payment must reclaim a released coupon slot. Otherwise an
+            // expired one-cent checkout and a new checkout can both redeem a
+            // single-use coupon. Conflicts retain the gateway reference and alert
+            // the operator; manual confirmation remains the explicit repair path.
+            if ($order->status !== 'pending'
+                && $order->coupon_id
+                && bccomp((string) $order->discount_amount, '0.00', 2) > 0) {
+                $claim = Coupon::where('id', $order->coupon_id);
+                if ($source !== 'manual') {
+                    $claim->where(fn ($q) => $q->where('max_uses', '<=', 0)
+                        ->orWhereColumn('used_count', '<', 'max_uses'));
+                }
+                if ($claim->increment('used_count') === 0 && $source !== 'manual') {
+                    $this->recordReview($order, $receipt, '迟到付款的优惠券名额已被其他订单占用，请核对网关流水后人工处理。');
+                    return OrderFulfilmentResult::refused(
+                        '迟到付款的优惠券名额已被其他订单占用，请核对网关流水后人工处理。',
+                        $order,
+                        true,
+                    );
+                }
+            }
+
             Card::whereIn('id', $cards->pluck('id'))->update([
                 'status' => 'sold',
                 'order_id' => $order->id,
                 'sold_at' => now(),
             ]);
 
-            // Re-take the coupon use if this order had already been written off.
-            // Expiring or closing an order gives its coupon use back, which is right
-            // while the order is dead — but a late gateway payment brings it back to
-            // life, and without this the buyer would keep the discount while the
-            // coupon kept the slot. Deliberately not gated on max_uses: the sale is
-            // already paid for, so this is restoring the count, not granting a use.
-            if ($order->status !== 'pending'
-                && $order->coupon_id
-                && (float) $order->discount_amount > 0) {
-                Coupon::where('id', $order->coupon_id)->increment('used_count');
-            }
-
-            $order->update($attributes($order));
+            $order->update(\Illuminate\Support\Arr::except($attributes($order), ['_receipt_details']) + ['payment_review_reason' => null]);
+            $order->paymentReceipts()->whereNotNull('review_reason')->whereNull('review_resolved_at')
+                ->where('review_reason', 'not like', '已发货订单%')
+                ->update(['review_resolved_at' => now(), 'resolution_note' => '订单已完成发货。']);
+            // Durable notification records commit with the delivered cards. A process
+            // crash after commit cannot lose email delivery; callbacks do no SMTP I/O.
+            $this->notifications->enqueuePaid($order);
 
             return OrderFulfilmentResult::fulfilled($order);
         });
 
-        // Delivery happens after the commit and only on the call that performed
-        // the transition. Inside the transaction a rollback would leave a buyer
-        // holding secrets for an order that does not exist; outside it without
-        // the guard, a repeated callback would mail them twice.
-        if ($result->wasFulfilled()) {
-            $order = $result->order;
-            $order->refresh()->load(['product', 'cards']);
-
-            // A failed send is not a failed sale — the cards are delivered and the
-            // buyer can still read them at /order/query — but the operator has to
-            // learn about it from something other than silence.
-            if (!$this->notifications->sendOrderEmail($order)) {
-                $this->notifications->sendTelegramNotification(
-                    "<b>卡密邮件发送失败</b>\n订单号: <code>" . e($order->order_no) . "</code>\n"
-                    . '邮箱: ' . e($order->email) . "\n请检查邮件配置，买家仍可在订单查询页自取卡密。"
-                );
-            }
-
-            $this->notifications->notifyNewOrder($order);
-        }
-
-        // Money reached the gateway and no card left the shelf. Nothing else in the
-        // system reports this: the callback is acked as handled (correctly — a retry
-        // would land in the same state), no email is sent, and the admin order list
-        // shows an ordinary unpaid order. Without this the first anyone hears of it
-        // is the buyer asking where their cards are.
+        // The receipt, review reason and queued alert have already committed.
+        // Logging supplements the operator-visible records without blocking callbacks.
         if ($result->needsOperatorAttention && $result->order) {
             Log::error('Verified payment could not be fulfilled', [
                 'order_no' => $result->order->order_no,
@@ -218,17 +243,19 @@ class OrderFulfilmentService
                 'source' => $source,
                 'reason' => $result->reason,
             ]);
-
-            $this->notifications->sendTelegramNotification(
-                "<b>⚠ 支付已到账但未发货</b>\n订单号: <code>" . e($result->order->order_no) . "</code>\n"
-                . '订单状态: ' . e($result->order->status) . "\n"
-                . '支付渠道: ' . e($source) . "\n"
-                . '原因: ' . e((string) $result->reason) . "\n"
-                . '请核对网关流水后在后台手动确认支付。'
-            );
         }
 
         return $result;
+    }
+
+    private function recordReview(Order $order, PaymentReceipt $receipt, string $reason): void
+    {
+        if (!$receipt->review_resolved_at) { $receipt->update(['review_reason' => $reason]); }
+        $order->update(['payment_review_reason' => $reason]);
+        $this->notifications->enqueue('payment-review:'.$receipt->id, 'payment_review', $order, [
+            'message' => "<b>⚠ 付款需要核对</b>\n订单号: <code>".e($order->order_no)."</code>\n"
+                .'网关流水: '.e($receipt->trade_no)."\n金额: ".e($receipt->amount)."\n原因: ".e($reason),
+        ]);
     }
 
     /**
@@ -272,6 +299,12 @@ class OrderFulfilmentService
      */
     private function verifyGatewayPayment(Order $order, string $paidAmount, string $channel): ?string
     {
+        // Reject legacy/corrupt zero-price orders too. A signed zero callback must
+        // never deliver a paid product merely because its stored total is zero.
+        if (bccomp((string) $order->total_amount, '0.01', 2) < 0 || $order->quantity < 1) {
+            Log::warning('Invalid payable order rejected', ['order_no' => $order->order_no]);
+            return '订单应付金额配置无效。';
+        }
         // The callback must come from the gateway this order was sent to.
         $expectedChannel = str_starts_with((string) $order->payment_method, 'usdt_') ? 'epusdt' : 'epay';
         if ($channel !== $expectedChannel) {
@@ -288,7 +321,8 @@ class OrderFulfilmentService
         // the amount at the gateway pays a fen and receives the cards. An amount
         // we cannot read is treated as a failure, not waved through: delivering
         // an unverifiable payment is the exact failure this guards against.
-        if ($paidAmount === '' || !is_numeric($paidAmount)) {
+        $paidAmount = trim($paidAmount);
+        if (!preg_match('/^\d+(?:\.\d+)?$/D', $paidAmount)) {
             Log::warning('Payment callback carried no readable amount, refusing to deliver', [
                 'order_no' => $order->order_no,
                 'channel' => $channel,
@@ -298,9 +332,8 @@ class OrderFulfilmentService
             return '支付回调金额无法识别。';
         }
 
-        // Tolerate a 1-fen rounding difference in the gateway's favour; reject
-        // any real underpayment.
-        if ((float) $paidAmount < (float) $order->total_amount - 0.011) {
+        // Compare decimal currency exactly: even a one-fen underpayment must fail.
+        if (bccomp($paidAmount, (string) $order->total_amount, 2) < 0) {
             Log::warning('Underpaid callback rejected', [
                 'order_no' => $order->order_no,
                 'expected' => (string) $order->total_amount,

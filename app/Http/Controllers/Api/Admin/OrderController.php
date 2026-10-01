@@ -7,8 +7,9 @@ use App\Models\Card;
 use App\Models\Coupon;
 use App\Models\OperationLog;
 use App\Models\Order;
-use App\Services\NotificationService;
+use App\Services\NotificationQueue;
 use App\Services\OrderFulfilmentService;
+use App\Support\AdminListQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ use Illuminate\Support\Facades\Response;
 class OrderController extends Controller
 {
     public function __construct(
-        private readonly NotificationService $notifications,
+        private readonly NotificationQueue $notifications,
         private readonly OrderFulfilmentService $fulfilment,
     ) {
     }
@@ -31,8 +32,23 @@ class OrderController extends Controller
      */
     private function applyFilters(Request $request, Builder $query): Builder
     {
+        $request->validate([
+            'status' => 'nullable|in:pending,paid,closed,expired',
+            'payment_review' => 'nullable|boolean',
+            'payment_method' => 'nullable|in:alipay,wechat,usdt_trc20,usdt_bep20,usdt_polygon,manual',
+            'order_no' => 'nullable|string|max:100',
+            'email' => 'nullable|string|max:254',
+            'keyword' => 'nullable|string|max:254',
+            'date_from' => 'nullable|date_format:Y-m-d',
+            'date_to' => 'nullable|date_format:Y-m-d',
+            'start_date' => 'nullable|date_format:Y-m-d',
+            'end_date' => 'nullable|date_format:Y-m-d',
+        ]);
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+        }
+        if ($request->boolean('payment_review')) {
+            $query->paymentReview();
         }
         if ($request->filled('payment_method')) {
             $query->where('payment_method', $request->payment_method);
@@ -67,6 +83,10 @@ class OrderController extends Controller
 
     public function index(Request $request)
     {
+        $pageSize = AdminListQuery::pageSize($request, 20, [
+            'sort' => 'nullable|string|max:50',
+            'dir' => 'nullable|string|max:10',
+        ]);
         $query = $this->applyFilters($request, Order::with('product'));
 
         $sortBy = $request->get('sort', 'created_at');
@@ -85,7 +105,7 @@ class OrderController extends Controller
         // twice and another is never shown.
         $orders = $query->orderBy($sortBy, $sortDir)
             ->orderBy('id', $sortDir)
-            ->paginate($request->get('pageSize', 20));
+            ->paginate($pageSize);
 
         return response()->json([
             'data' => $orders->items(),
@@ -95,53 +115,19 @@ class OrderController extends Controller
 
     public function show(Order $order)
     {
-        $order->load(['product', 'cards', 'coupon']);
+        $order->load(['product', 'cards', 'coupon', 'paymentReceipts', 'notifications', 'refunds']);
 
         return response()->json($order);
     }
 
-    public function close(Order $order)
+    public function close(Order $order, \App\Services\OrderService $service)
     {
-        if ($order->status !== 'pending') {
-            return response()->json(['message' => '只能关闭待支付订单。'], 422);
+        try {
+            $service->closeOrder($order, true);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
         }
-
-        // Claim the order first, cards second — the same order OrderFulfilmentService
-        // takes them in. Taking the card locks first inverted the lock order against
-        // fulfilment, which is a deadlock two concurrent transactions can reach.
-        //
-        // And the claim has to be conditional: the status check above read a
-        // route-bound instance, so a callback can pay the order in the gap and an
-        // unconditional write would stamp 'closed' over it, losing the sale from the
-        // books with no way to repair it from the admin.
-        $closed = DB::transaction(function () use ($order) {
-            $claimed = Order::where('id', $order->id)
-                ->where('status', 'pending')
-                ->update(['status' => 'closed']);
-
-            if ($claimed === 0) {
-                return false;
-            }
-
-            Card::where('order_id', $order->id)
-                ->where('status', 'locked')
-                ->update(['status' => 'unsold', 'order_id' => null, 'locked_at' => null]);
-
-            // Claimed at checkout before any money moved, so closing the order has to
-            // give it back — otherwise max_uses counts abandoned carts, not sales.
-            if ($order->coupon_id && (float) $order->discount_amount > 0) {
-                Coupon::release($order->coupon_id);
-            }
-
-            return true;
-        });
-
-        if (!$closed) {
-            return response()->json(['message' => '订单状态已变化（可能刚刚支付成功），请刷新后查看。'], 422);
-        }
-
         OperationLog::log('关闭订单', 'order', $order->id, "关闭订单 {$order->order_no}");
-
         return response()->json(['message' => '订单已关闭。']);
     }
 
@@ -169,7 +155,7 @@ class OrderController extends Controller
 
         OperationLog::log('手动确认支付', 'order', $order->id, "手动确认订单 {$order->order_no}");
 
-        return response()->json(['message' => '订单已确认支付，卡密已发送。']);
+        return response()->json(['message' => '订单已确认支付，卡密可在查单页获取，邮件已加入发送队列。']);
     }
 
     public function resend(Order $order)
@@ -184,18 +170,16 @@ class OrderController extends Controller
             return response()->json(['message' => '该订单没有已发放的卡密，无法补发。'], 422);
         }
 
-        // Reported before the send is confirmed is the same bug this method was
-        // written to fix, one layer down: sendOrderEmail used to swallow every
-        // failure, so the operator closed the ticket believing mail went out.
-        if (!$this->notifications->sendOrderEmail($order)) {
-            return response()->json([
-                'message' => '邮件发送失败，请检查邮件配置后重试。买家仍可在订单查询页自行获取卡密。',
-            ], 500);
+        // Queue acceptance is distinct from successful transport delivery.
+        try {
+            $delivery = $this->notifications->resend($order);
+        } catch (\RuntimeException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
         }
 
         OperationLog::log('补发卡密', 'order', $order->id, "订单 {$order->order_no} 补发卡密");
 
-        return response()->json(['message' => "卡密已重新发送至 {$order->email}。"]);
+        return response()->json(['message' => '卡密邮件已加入发送队列，请刷新查看投递状态。', 'data' => $delivery], 202);
     }
 
     public function export(Request $request)
@@ -245,7 +229,7 @@ class OrderController extends Controller
                 foreach ($orders as $order) {
                     fwrite($out, implode(',', array_map($cell, [
                         $order->order_no,
-                        $order->product->name ?? '',
+                        $order->displayName(),
                         $order->email,
                         $order->quantity,
                         $order->total_amount,

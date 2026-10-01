@@ -37,7 +37,8 @@ class PaymentController extends Controller
 
         // The merchant id must be ours. Cheap, and it rejects a callback replayed from
         // a different shop that happens to share the gateway.
-        if ((string) ($params['pid'] ?? '') !== (string) setting('epay_merchant_id')) {
+        if (! $this->validReference($params['pid'] ?? null, 100)
+            || (string) $params['pid'] !== (string) setting('epay_merchant_id')) {
             Log::warning('EPay notify: merchant id mismatch', ['pid' => $params['pid'] ?? null]);
             return 'fail';
         }
@@ -45,7 +46,8 @@ class PaymentController extends Controller
         $orderNo = $params['out_trade_no'] ?? '';
         $tradeNo = $params['trade_no'] ?? '';
 
-        if (!$orderNo) {
+        if (! $this->validReference($orderNo, 30) || ! $this->validReference($tradeNo, 100)
+            || ! $this->validAmountType($params['money'] ?? null)) {
             return 'fail';
         }
 
@@ -127,7 +129,12 @@ class PaymentController extends Controller
             return response('invalid signature', 200)->header('Content-Type', 'text/plain');
         }
 
-        $status = (int) ($params['status'] ?? 0);
+        $rawStatus = $params['status'] ?? null;
+        if ((! is_string($rawStatus) && ! is_int($rawStatus))
+            || ! in_array((string) $rawStatus, ['1', '2', '3'], true)) {
+            return response('invalid status', 200)->header('Content-Type', 'text/plain');
+        }
+        $status = (int) $rawStatus;
         if ($status !== 2) {
             // 1 (pending) arrives every minute until the order resolves, and 3
             // (expired) once. Neither is retried by the gateway; acknowledge and
@@ -138,7 +145,8 @@ class PaymentController extends Controller
         $orderNo = $params['order_id'] ?? '';
         $tradeNo = $params['trade_id'] ?? '';
 
-        if (!$orderNo) {
+        if (! $this->validReference($orderNo, 30) || ! $this->validReference($tradeNo, 100)
+            || ! $this->validAmountType($params['amount'] ?? null)) {
             Log::warning('EPUSDT notify: missing order_id', $this->logContext($params, [
                 'trade_id', 'status', 'amount',
             ]));
@@ -153,7 +161,17 @@ class PaymentController extends Controller
         // two hours. Original epusdt only checks the status code, so "ok" satisfies
         // both. A non-200 asks for that retry rather than leaving a paid order
         // stranded.
-        return $this->processPayment($orderNo, $tradeNo, (string) ($params['amount'] ?? ''), 'epusdt')
+        $details = ['currency' => 'USDT'];
+        $actual = $params['actual_amount'] ?? null;
+        if (is_scalar($actual) && preg_match('/^\d{1,16}(?:\.\d{1,8})?$/D', (string) $actual) && bccomp((string) $actual, '0', 8) > 0) {
+            $details['actual_amount'] = (string) $actual;
+        }
+        foreach (['network' => 'network', 'block_transaction_id' => 'transaction_hash'] as $input => $column) {
+            if (isset($params[$input]) && is_string($params[$input]) && strlen($params[$input]) <= ($column === 'network' ? 40 : 255)) {
+                $details[$column] = $params[$input];
+            }
+        }
+        return $this->processPayment($orderNo, $tradeNo, (string) ($params['amount'] ?? ''), 'epusdt', $details)
             ? response('ok', 200)->header('Content-Type', 'text/plain')
             : response('fulfilment failed, please retry', 500)->header('Content-Type', 'text/plain');
     }
@@ -181,6 +199,18 @@ class PaymentController extends Controller
         }
 
         return $context;
+    }
+
+    private function validReference(mixed $value, int $maximum): bool
+    {
+        return (is_string($value) || is_int($value))
+            && strlen((string) $value) > 0 && strlen((string) $value) <= $maximum;
+    }
+
+    private function validAmountType(mixed $value): bool
+    {
+        return (is_string($value) || is_int($value) || is_float($value))
+            && strlen((string) $value) <= 100;
     }
 
     /**
@@ -263,10 +293,10 @@ class PaymentController extends Controller
      * something we will never accept. A THROWN failure is transient, and reporting it
      * as handled would strand a paid order with nothing left to recover it.
      */
-    private function processPayment(string $orderNo, string $tradeNo, string $paidAmount, string $channel): bool
+    private function processPayment(string $orderNo, string $tradeNo, string $paidAmount, string $channel, array $details = []): bool
     {
         try {
-            $this->fulfilment->fulfilFromGateway($orderNo, $tradeNo, $paidAmount, $channel);
+            $this->fulfilment->fulfilFromGateway($orderNo, $tradeNo, $paidAmount, $channel, $details);
 
             return true;
         } catch (\Throwable $e) {

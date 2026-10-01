@@ -26,13 +26,16 @@ class EpayService
      */
     public function createPayment(Order $order, string $payType): string
     {
+        if ($this->apiUrl === '' || $this->merchantId === '' || $this->merchantKey === '') {
+            throw new \RuntimeException('支付宝/微信支付尚未配置');
+        }
         $params = [
             'pid' => $this->merchantId,
             'type' => $payType,
             'out_trade_no' => $order->order_no,
             'notify_url' => url('/payment/epay/notify'),
             'return_url' => url('/payment/epay/return'),
-            'name' => mb_substr($order->product->name, 0, 50),
+            'name' => mb_substr($order->displayName(), 0, 50),
             'money' => number_format((float) $order->total_amount, 2, '.', ''),
         ];
 

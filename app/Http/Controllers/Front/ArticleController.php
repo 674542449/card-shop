@@ -68,7 +68,7 @@ class ArticleController extends Controller
 
         $article->increment('views');
 
-        $contentHtml = ContentRenderer::toHtml($article->content);
+        $contentHtml = ContentRenderer::toHtml($article->content, true);
 
         $relatedArticles = Article::published()
             ->where('article_category_id', $article->article_category_id)

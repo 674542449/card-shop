@@ -22,7 +22,7 @@ class AdminAuth
 
         $admin = Admin::find($adminId);
 
-        if (!$admin) {
+        if (!$admin || !$admin->is_active) {
             $request->session()->forget('admin_id');
             if ($request->expectsJson()) {
                 return response()->json(['message' => '未登录'], 401);
@@ -51,6 +51,18 @@ class AdminAuth
         }
 
         $request->attributes->set('admin', $admin);
+        $segment = explode('/', trim(substr($request->path(), strlen('api/'.admin_path())), '/'))[0];
+        $areas = ['dashboard' => 'overview', 'categories' => 'catalog', 'products' => 'catalog', 'cards' => 'catalog',
+            'orders' => 'orders', 'refunds' => 'refunds', 'articles' => 'content', 'article-categories' => 'content',
+            'coupons' => 'coupons', 'blacklists' => 'blacklists', 'logs' => 'logs', 'settings' => 'settings',
+            'api-tokens' => 'tokens', 'notifications' => 'notifications', 'maintenance' => 'maintenance', 'seo-deliveries' => 'content'];
+        if ($segment === 'admins' && $admin->role !== 'owner') { return response()->json(['message' => '仅店主管理员可以管理账户。'], 403); }
+        if (isset($areas[$segment]) && !$admin->allows($areas[$segment], $request->isMethod('GET') ? 'read' : 'write')) {
+            return response()->json(['message' => '当前账户没有此操作权限。'], 403);
+        }
+        if ($segment === 'upload' && !$admin->allows('catalog', 'write') && !$admin->allows('content', 'write') && !$admin->allows('settings', 'write')) {
+            return response()->json(['message' => '当前账户没有上传权限。'], 403);
+        }
 
         return $next($request);
     }

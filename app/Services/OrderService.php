@@ -6,6 +6,7 @@ use App\Models\Card;
 use App\Models\Coupon;
 use App\Models\Order;
 use App\Models\Product;
+use App\Models\ApiToken;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use RuntimeException;
@@ -16,7 +17,7 @@ class OrderService
         private readonly CardService $cardService,
         private readonly EpayService $epayService,
         private readonly EpusdtService $epusdtService,
-        private readonly NotificationService $notificationService,
+        private readonly CheckoutPricingService $pricing,
     ) {}
 
     /**
@@ -32,6 +33,7 @@ class OrderService
      *     quantity: int,
      *     coupon_code?: string|null,
      *     payment_method: string,
+     *     api_token_id?: int|null,
      *     ip: string
      * } $data
      *
@@ -39,9 +41,16 @@ class OrderService
      */
     public function createOrder(array $data): Order
     {
+        if (!in_array($data['payment_method'], \App\Support\PaymentMethods::supported(), true)) {
+            throw new RuntimeException('当前支付网关不支持所选支付方式或网络。');
+        }
+        // bcrypt ignores bytes beyond 72; reject them before reserving any stock.
+        if (strlen($data['query_password']) > 72) {
+            throw new RuntimeException('查询密码不能超过72字节，中文等字符会占用多个字节');
+        }
+
         // 1. Validate product exists and is active
-        $product = Product::where('id', $data['product_id'])
-            ->where('is_active', true)
+        $product = Product::active()->where('id', $data['product_id'])
             ->first();
 
         if (!$product) {
@@ -68,49 +77,30 @@ class OrderService
             throw new RuntimeException('访问被拒绝');
         }
 
-        // 4. Calculate price (with wholesale check)
-        $unitPrice = $product->getEffectivePrice($quantity);
-        $totalAmount = bcmul((string) $unitPrice, (string) $quantity, 2);
-
-        // 5. Validate and apply coupon if provided
-        $coupon = null;
-        $discountAmount = '0.00';
-        if (!empty($data['coupon_code'])) {
-            $coupon = Coupon::where('code', $data['coupon_code'])->first();
-
-            if (!$coupon) {
-                throw new RuntimeException('优惠券不存在');
+        return DB::transaction(function () use ($product, $data, $quantity) {
+            $tokenId = $data['api_token_id'] ?? null;
+            if ($tokenId !== null) {
+                // Lock the quota owner before counting reservations. Concurrent
+                // requests across products/IPs cannot both claim the final allowance.
+                $token = ApiToken::whereKey($tokenId)->where('is_active', true)->lockForUpdate()->first();
+                if (!$token || $token->expires_at?->isPast() || ($token->scopes !== null && !in_array('orders:create', $token->scopes, true)) || ($token->allowed_ips && !\Symfony\Component\HttpFoundation\IpUtils::checkIp($data['ip'], $token->allowed_ips))) {
+                    throw new RuntimeException('API 令牌已失效');
+                }
+                // A deadline alone does not release card rows. Count reservations
+                // until the expiry transaction actually changes the order status.
+                $held = Order::where('api_token_id', $token->id)->where('status', 'pending')
+                    ->selectRaw('count(*) as orders, COALESCE(sum(quantity), 0) as quantity')->first();
+                if ((int) $held->orders >= $token->max_pending_orders
+                    || (int) $held->quantity + $quantity > $token->max_pending_quantity) {
+                    throw new RuntimeException('API 未付款订单或库存占用已达额度，请先完成支付或等待过期资源释放');
+                }
             }
+            $quote = $this->pricing->calculate($product, $quantity, $data['coupon_code'] ?? null);
+            $unitPrice = $quote['unit_price'];
+            $totalAmount = $quote['total_amount'];
+            $discountAmount = $quote['discount_amount'];
+            $coupon = $quote['coupon'];
 
-            if (!$coupon->isValid()) {
-                throw new RuntimeException('优惠券已失效或已使用完');
-            }
-
-            // Check product-specific coupon
-            if ($coupon->product_id && $coupon->product_id !== $product->id) {
-                throw new RuntimeException('此优惠券不适用于该商品');
-            }
-
-            // Check minimum amount requirement
-            if ((float) $totalAmount < (float) $coupon->min_amount) {
-                throw new RuntimeException(
-                    "订单金额不满足优惠券最低消费 ¥{$coupon->min_amount} 的要求"
-                );
-            }
-
-            $discountAmount = number_format($coupon->calculateDiscount((float) $totalAmount), 2, '.', '');
-            $totalAmount = bcsub($totalAmount, $discountAmount, 2);
-
-            // Ensure total doesn't go below zero
-            if (bccomp($totalAmount, '0', 2) <= 0) {
-                $totalAmount = '0.01';
-            }
-        }
-
-        // 6. Lock cards and create order in a transaction
-        return DB::transaction(function () use (
-            $product, $data, $quantity, $unitPrice, $totalAmount, $coupon, $discountAmount
-        ) {
             // Lock cards via Redis + DB lockForUpdate
             $cards = $this->cardService->lockCards($product->id, $quantity);
 
@@ -119,9 +109,11 @@ class OrderService
 
                 $order = Order::create([
                     'order_no' => generate_order_no(),
+                    'api_token_id' => $tokenId,
                     'product_id' => $product->id,
                     'email' => $data['email'],
                     'query_password' => Hash::make($data['query_password']),
+                    'query_password_key' => Order::passwordKey($data['email'], $data['query_password']),
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'total_amount' => $totalAmount,
@@ -183,6 +175,9 @@ class OrderService
 
         if ($order->expires_at->isPast()) {
             throw new RuntimeException('订单已过期');
+        }
+        if ($order->payment_no) {
+            throw new RuntimeException('订单已有付款回执，请等待核对，不要重复支付');
         }
 
         return match ($method) {
@@ -263,13 +258,8 @@ class OrderService
             throw new RuntimeException('只能重发已支付订单的卡密');
         }
 
-        // Propagated, not swallowed. Nothing calls this today — the admin goes
-        // straight to Api\Admin\OrderController::resend — but a resend that reports
-        // success without sending is the exact bug that method just had, and leaving
-        // a second copy of it here is how it comes back.
-        if (!$this->notificationService->sendOrderEmail($order)) {
-            throw new RuntimeException('邮件发送失败，请检查邮件配置');
-        }
+        // Use the same durable resend path as the admin controller.
+        app(NotificationQueue::class)->resend($order);
     }
 
     /**
@@ -277,7 +267,7 @@ class OrderService
      *
      * @throws RuntimeException If the order cannot be closed.
      */
-    public function closeOrder(Order $order): void
+    public function closeOrder(Order $order, bool $pendingOnly = false): void
     {
         if ($order->isPaid()) {
             throw new RuntimeException('已支付的订单不能关闭');
@@ -287,7 +277,15 @@ class OrderService
             throw new RuntimeException('订单已关闭');
         }
 
-        DB::transaction(function () use ($order) {
+        DB::transaction(function () use ($order, $pendingOnly) {
+            $fresh = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
+            if ($pendingOnly && $fresh->status !== 'pending') {
+                throw new RuntimeException('只能取消待支付订单，请刷新查看订单状态。');
+            }
+            if ($fresh->payment_no || $fresh->paymentReceipts()->exists()) {
+                throw new RuntimeException('订单已收到付款回执，请先完成付款核对，不能取消。');
+            }
+            $releaseCoupon = $fresh->status === 'pending';
             // Conditional, like every other status write: the checks above read a
             // model loaded before the transaction, so a gateway callback can pay the
             // order in the gap and an unconditional write would stamp 'closed' over
@@ -303,8 +301,8 @@ class OrderService
             $lockedCards = $order->cards()->where('status', 'locked')->get();
             $this->cardService->releaseCards($lockedCards);
 
-            if ($order->coupon_id && (float) $order->discount_amount > 0) {
-                Coupon::release($order->coupon_id);
+            if ($releaseCoupon && $fresh->coupon_id && (float) $fresh->discount_amount > 0) {
+                Coupon::release($fresh->coupon_id);
             }
         });
     }

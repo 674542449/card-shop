@@ -8,16 +8,12 @@
 
 @section('structured_data')
 @php
-    // 见 home.blade.php 的说明：模板里字面量的 "@context" 会被当成 @context 指令解析，
-    // 编译出一个没有闭合的 if()。所以这段必须留在 @php 块里。
     $structuredData = [
         '@context' => 'https://schema.org',
         '@type' => 'Article',
         'headline' => $article->title,
         'description' => $article->seo_description
             ?: $article->summary
-            // 见 product/show.blade.php：没有注册类别名，上面两个回退都为空时
-            // 裸写 Str:: 会致命错误。
             ?: \Illuminate\Support\Str::limit(strip_tags($contentHtml), 200),
         'url' => url('/articles/' . $article->slug),
         'datePublished' => $article->created_at?->toIso8601String(),
@@ -27,9 +23,7 @@
             'name' => setting('site_name', 'CardShop'),
         ],
     ];
-
     if ($article->cover_image) {
-        // schema.org 要绝对 URL，而上传器现在写的是 /storage/uploads/... 这样的站内相对路径。
         $structuredData['image'] = url($article->cover_image);
     }
 @endphp
@@ -37,86 +31,64 @@
 @endsection
 
 @section('content')
-{{-- 和列表页共用 .articles-layout（1fr + 280px 侧栏）。正文卡片借用模板的
-     .pd-main-card——模板自己的文章详情页也是这么借的。 --}}
-<div class="articles-layout">
-    <article class="pd-main-card">
-        {{-- 面包屑。模板里这一条是行内样式、没有类名，而样式表里没有面包屑组件。
-             .pd-facts-wrap 给横排 + 下外边距，.article-card-footer 给小号次级配色，
-             两个都是已有的类，比自造一个样式表里不存在的类名安全。
-             分类那一级放到了下面的彩色标签里，避免同一个分类名在这一屏出现两次。 --}}
-        <nav class="pd-facts-wrap article-card-footer" aria-label="面包屑">
-            <a href="/" class="home-ann-link">首页</a>
-            <span aria-hidden="true">/</span>
-            <a href="/articles" class="home-ann-link">文章</a>
-        </nav>
+<nav class="m-breadcrumb m-article-breadcrumb" aria-label="面包屑">
+    <a href="/">商店</a><span aria-hidden="true">/</span><a href="/articles">公告与指南</a>
+</nav>
 
-        {{-- 标题是这一页的主语，所以它是最大的字。 --}}
-        <h2 class="pd-title">{{ $article->title }}</h2>
-
-        <div class="pd-facts-wrap">
+<div class="m-article-layout m-article-reading-layout">
+    <article class="m-article-paper">
+        <header class="m-article-reading-header">
             @if($article->articleCategory)
-            {{-- 模板的 .article-tag-badge 是空类（样式表里没有规则），.home-ann-tag 才是
-                 那个品牌色小标签的实际外观。做成链接，分类入口不因为改版而消失。 --}}
-            <a href="/articles/category/{{ $article->articleCategory->slug }}" class="home-ann-tag">{{ $article->articleCategory->name }}</a>
+            <a href="/articles/category/{{ $article->articleCategory->slug }}" class="m-article-category">{{ $article->articleCategory->name }}</a>
+            @else
+            <span class="m-eyebrow">商店笔记</span>
             @endif
-            <time class="badge-stock" datetime="{{ $article->created_at->toDateString() }}">{{ $article->created_at->format('Y-m-d') }}</time>
-            <span class="badge-stock">{{ $article->views }} 次阅读</span>
-        </div>
+            <h1 class="m-article-reading-title">{{ $article->title }}</h1>
+            <div class="m-article-reading-meta">
+                <time datetime="{{ $article->created_at->toDateString() }}">{{ $article->created_at->format('Y 年 m 月 d 日') }}</time>
+                <span aria-hidden="true">·</span>
+                <span>{{ $article->views }} 次阅读</span>
+            </div>
+        </header>
 
         @if($article->cover_image)
-        {{-- 定高 180px 的槽位：位置在文件到达之前就占好了，正文不会因为封面加载而往下跳，
-             上传的图也定不了自己的尺寸。不做懒加载——它在这一页的首屏里。 --}}
-        <div class="pd-hero-showcase">
-            <img src="{{ $article->cover_image }}" alt="{{ $article->title }} 封面图"
-                 decoding="async" fetchpriority="high">
-        </div>
+        <figure class="m-article-cover">
+            <img src="{{ $article->cover_image }}" alt="{{ $article->title }} 封面图" decoding="async" fetchpriority="high">
+        </figure>
         @endif
 
-        {{-- 正文容器只挂 .rich-text，故意不加模板的 .rich-content：
-             .rich-content li 里写死了 list-style: disc，直接落在 li 上，压过 ol 继承下来的
-             decimal——教程类文章的有序步骤会全变成圆点，读者看不出顺序。
-             .rich-text 这一条同时是编辑器大图的守卫（img 的行内 width/height 靠它的
-             !important 兜住）和段落间距的还原，不能换成别的类。 --}}
-        <div class="rich-text">
-            {!! $contentHtml !!}
-        </div>
+        <div class="m-rich-text m-article-body">{!! $contentHtml !!}</div>
 
-        {{-- 底部导航。.pd-section-box 只给上分隔线和间距，横排和字号来自
-             .article-card-footer，两个类各管一半。 --}}
-        <div class="pd-section-box article-card-footer">
-            <a href="/articles" class="home-ann-link">← 返回文章列表</a>
-            <a href="/" class="btn-buy">去挑选商品</a>
-        </div>
+        <footer class="m-article-reading-footer">
+            <a href="/articles" class="m-button m-button-quiet"><span aria-hidden="true">←</span> 返回文章列表</a>
+            <a href="/" class="m-button m-button-secondary">去挑选商品 <span aria-hidden="true">↗</span></a>
+        </footer>
     </article>
 
-    <aside class="articles-sidebar">
-        @if($relatedArticles->count() > 0)
-        <div class="sidebar-widget">
-            <h2 class="widget-title">相关文章</h2>
-            <ul class="widget-list">
+    <aside class="m-article-sidebar">
+        @if($relatedArticles->isNotEmpty())
+        <section class="m-article-sidebar-section">
+            <h2 class="m-eyebrow">继续阅读</h2>
+            <div class="m-article-related-list">
                 @foreach($relatedArticles as $related)
-                <li>
-                    <a href="/articles/{{ $related->slug }}">
-                        {{ $related->title }}
-                        <span class="article-card-footer">
-                            <time datetime="{{ $related->created_at->toDateString() }}">{{ $related->created_at->format('Y-m-d') }}</time>
-                        </span>
-                    </a>
-                </li>
+                <a href="/articles/{{ $related->slug }}" class="m-article-related-link">
+                    <span>{{ $related->title }}</span>
+                    <time datetime="{{ $related->created_at->toDateString() }}">{{ $related->created_at->format('Y.m.d') }}</time>
+                </a>
                 @endforeach
-            </ul>
-        </div>
+            </div>
+        </section>
         @endif
 
-        <div class="sidebar-widget">
-            <h2 class="widget-title">快捷入口</h2>
-            <ul class="widget-list">
-                <li><a href="/articles">全部文章</a></li>
-                <li><a href="/order/query">查询订单</a></li>
-                <li><a href="/">挑选商品</a></li>
-            </ul>
-        </div>
+        <section class="m-article-note m-panel m-panel-pad">
+            <span class="m-article-note-mark" aria-hidden="true">✳</span>
+            <h2 class="m-section-title">回到商店</h2>
+            <p class="m-muted">找到需要的商品，或者查看已有订单。</p>
+            <div class="m-article-note-links">
+                <a href="/" class="m-button m-button-quiet">挑选商品 <span aria-hidden="true">→</span></a>
+                <a href="/order/query" class="m-button m-button-quiet">查询订单 <span aria-hidden="true">→</span></a>
+            </div>
+        </section>
     </aside>
 </div>
 @endsection

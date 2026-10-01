@@ -25,6 +25,7 @@ class Product extends Model
         'seo_title',
         'seo_description',
         'seo_keywords',
+        'low_stock_threshold',
     ];
 
     protected function casts(): array
@@ -35,6 +36,8 @@ class Product extends Model
             'sort_order' => 'integer',
             'min_quantity' => 'integer',
             'max_quantity' => 'integer',
+            'low_stock_threshold' => 'integer',
+            'low_stock_notified' => 'boolean',
         ];
     }
 
@@ -60,7 +63,8 @@ class Product extends Model
 
     public function scopeActive(Builder $query): Builder
     {
-        return $query->where('is_active', true);
+        return $query->where('products.is_active', true)->where(fn ($q) => $q
+            ->whereNull('category_id')->orWhereHas('category', fn ($c) => $c->where('is_active', true)));
     }
 
     /**

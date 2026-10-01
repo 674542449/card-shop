@@ -1,3 +1,4 @@
+import useWritePermission from '../hooks/useWritePermission';
 import React, { useRef, useState } from 'react';
 import { ProTable, ModalForm, ProFormText, ProFormDigit } from '@ant-design/pro-components';
 import { Button, message, Popconfirm } from 'antd';
@@ -5,6 +6,7 @@ import { PlusOutlined } from '@ant-design/icons';
 import { getArticleCategories, createArticleCategory, updateArticleCategory, deleteArticleCategory } from '../services/api';
 
 export default function ArticleCategories() {
+  const canWrite = useWritePermission('content');
   const actionRef = useRef();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
@@ -14,12 +16,13 @@ export default function ArticleCategories() {
     { title: '名称', dataIndex: 'name' },
     { title: 'Slug', dataIndex: 'slug', search: false },
     { title: '排序', dataIndex: 'sort_order', search: false, width: 80 },
+    { title: '文章数', dataIndex: 'articles_count', search: false, width: 90 },
     {
       title: '操作',
       valueType: 'option',
       width: 150,
-      render: (_, record) => [
-        <a
+      render: (_, record) => canWrite ? [
+        <Button type="link" htmlType="button" style={{ padding: 0, height: 'auto' }}
           key="edit"
           onClick={() => {
             setEditingRecord(record);
@@ -27,7 +30,7 @@ export default function ArticleCategories() {
           }}
         >
           编辑
-        </a>,
+        </Button>,
         <Popconfirm
           key="delete"
           title="确认删除此分类？"
@@ -41,9 +44,9 @@ export default function ArticleCategories() {
             }
           }}
         >
-          <a style={{ color: '#ff4d4f' }}>删除</a>
+          <Button type="link" htmlType="button" danger style={{ padding: 0, height: 'auto' }}>删除</Button>
         </Popconfirm>,
-      ],
+      ] : [],
     },
   ];
 
@@ -53,6 +56,7 @@ export default function ArticleCategories() {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        form={{ name: 'article-categories-search' }}
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getArticleCategories({ page: params.current, per_page: params.pageSize, ...params });
@@ -64,7 +68,7 @@ export default function ArticleCategories() {
             success: true,
           };
         }}
-        toolBarRender={() => [
+        toolBarRender={() => canWrite ? [
           <Button
             key="add"
             type="primary"
@@ -76,9 +80,11 @@ export default function ArticleCategories() {
           >
             新增分类
           </Button>,
-        ]}
+        ] : []}
       />
       <ModalForm
+        name="article-category-editor"
+        key={editingRecord?.id || 'new'}
         title={editingRecord ? '编辑分类' : '新增分类'}
         open={modalVisible}
         onOpenChange={setModalVisible}
@@ -86,11 +92,12 @@ export default function ArticleCategories() {
         modalProps={{ destroyOnClose: true }}
         onFinish={async (values) => {
           try {
+            const data = { ...values, sort_order: values.sort_order ?? 0 };
             if (editingRecord) {
-              await updateArticleCategory(editingRecord.id, values);
+              await updateArticleCategory(editingRecord.id, data);
               message.success('更新成功');
             } else {
-              await createArticleCategory(values);
+              await createArticleCategory(data);
               message.success('创建成功');
             }
             actionRef.current?.reload();
@@ -102,7 +109,7 @@ export default function ArticleCategories() {
         }}
       >
         <ProFormText name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} />
-        <ProFormText name="slug" label="Slug" rules={[{ required: true, message: '请输入 Slug' }]} />
+        <ProFormText name="slug" label="网址标识（Slug）" placeholder="留空自动生成" />
         <ProFormDigit name="sort_order" label="排序" min={0} />
       </ModalForm>
     </>

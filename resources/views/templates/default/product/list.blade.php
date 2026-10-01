@@ -6,6 +6,9 @@
 @section('canonical', url('/category/' . $category->slug))
 
 @section('content')
+<form method="GET" action="{{ request()->url() }}" class="catalog-search-form" role="search">
+ <label for="global-product-search">搜索全部商品</label><div class="catalog-search-controls"><input id="global-product-search" type="search" name="q" value="{{ request('q') }}" maxlength="200" placeholder="商品名称"><button class="btn-buy-sm" type="submit">搜索</button>@if(request()->filled('q'))<a href="{{ request()->url() }}">清空</a>@endif</div>
+ </form>
     <blockquote class="site-quote cat-quote">
         @themeInclude('partials.category-thumb', ['category' => $category, 'size' => 40, 'modifier' => 'cat-thumb-lg'])
         <span class="cat-quote-text">

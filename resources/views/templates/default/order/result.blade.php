@@ -3,12 +3,13 @@
 @section('title', '查询结果 - ' . setting('site_name', 'CardShop'))
 
 @section('content')
+    @themeInclude('partials.order-search-next')
     <div style="margin-bottom:15px;">
         <a href="/order/query" style="color:var(--text-light);font-size:13px">&larr; 返回查询</a>
     </div>
 
     <blockquote class="site-quote">
-        共查询到 <strong>{{ $orders->count() }}</strong> 笔订单
+        本次查询到 <strong>{{ $orders->count() }}</strong> 笔订单
     </blockquote>
 
     @if($orders->count() > 0)
@@ -48,7 +49,7 @@
                         <span class="oc-no-full">{{ $order->order_no }}</span>
                         <span class="oc-no-tail">…{{ substr($order->order_no, -6) }}</span>
                     </td>
-                    <td class="oc-name" title="{{ $order->product->name ?? '' }}">{{ $order->product->name ?? '—' }}</td>
+                    <td class="oc-name" title="{{ $order->displayName() }}">{{ $order->displayName() }}</td>
                     <td class="oc-qty">{{ $order->quantity }}</td>
                     <td class="oc-amount">¥{{ number_format($order->total_amount, 2) }}</td>
                     <td class="oc-status">@themeInclude('partials.order-status', ['status' => $order->status])</td>

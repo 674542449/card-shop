@@ -14,6 +14,8 @@ import {
   SettingOutlined,
   StopOutlined,
   HistoryOutlined,
+  KeyOutlined,
+  UserOutlined,
 } from '@ant-design/icons';
 
 /**
@@ -40,6 +42,12 @@ const loaders = {
   '/blacklists': () => import('./pages/Blacklists'),
   '/logs': () => import('./pages/Logs'),
   '/settings': () => import('./pages/Settings'),
+  '/api-tokens': () => import('./pages/ApiTokens'),
+  '/account': () => import('./pages/Account'),
+  '/notifications': () => import('./pages/Notifications'),
+  '/refunds': () => import('./pages/Refunds'),
+  '/admins': () => import('./pages/AdminAccounts'),
+  '/operations': () => import('./pages/Operations'),
   '/login': () => import('./pages/LoginPage'),
 };
 
@@ -87,6 +95,7 @@ export const menuTree = {
         name: '交易',
         icon: <TransactionOutlined />,
         routes: [
+          { path: '/refunds', name: '退款管理', icon: <TransactionOutlined /> },
           { path: '/orders', name: '订单管理', icon: <FileTextOutlined /> },
           { path: '/coupons', name: '优惠券', icon: <GiftOutlined /> },
         ],
@@ -105,9 +114,14 @@ export const menuTree = {
         name: '系统',
         icon: <ToolOutlined />,
         routes: [
+          { path: '/admins', name: '管理员', icon: <UserOutlined /> },
+          { path: '/operations', name: '维护与推送', icon: <ToolOutlined /> },
           { path: '/settings', name: '系统设置', icon: <SettingOutlined /> },
+          { path: '/api-tokens', name: 'API 令牌', icon: <KeyOutlined /> },
+          { path: '/account', name: '账户与密码', icon: <UserOutlined /> },
           { path: '/blacklists', name: '黑名单', icon: <StopOutlined /> },
           { path: '/logs', name: '操作日志', icon: <HistoryOutlined /> },
+          { path: '/notifications', name: '通知投递', icon: <HistoryOutlined /> },
         ],
       },
     ],
@@ -133,6 +147,9 @@ export const leafPaths = (() => {
  * called; the title already says that.
  */
 export const pageMeta = {
+  '/refunds': {title:'退款管理',desc:'审核退款申请，登记实际退款凭证'},
+  '/admins': {title:'管理员',desc:'管理账户启停与操作权限'},
+  '/operations': {title:'维护与推送',desc:'查看任务健康、搜索引擎推送和素材维护'},
   '/': { title: '概览', desc: '今天的成交、库存和待处理的事情' },
   '/products': { title: '商品管理', desc: '上架商品，设置价格、起购数量和库存' },
   '/categories': { title: '商品分类', desc: '给商品分组，决定它们在首页的排列顺序' },
@@ -141,6 +158,9 @@ export const pageMeta = {
   '/articles': { title: '文章管理', desc: '发布公告、使用教程和帮助页面' },
   '/article-categories': { title: '文章分类', desc: '给文章分组' },
   '/settings': { title: '系统设置', desc: '站点信息、支付网关、邮件发送和安全设置' },
+  '/api-tokens': { title: 'API 令牌', desc: '创建调用凭据，查看使用记录并随时停用或撤销' },
+  '/account': { title: '账户与密码', desc: '查看登录记录，更新管理账户密码' },
   '/blacklists': { title: '黑名单', desc: '拉黑滥用的 IP 或邮箱，被拉黑的访客无法下单' },
   '/logs': { title: '操作日志', desc: '后台每一次改动的记录' },
+  '/notifications': { title: '通知投递', desc: '查看发送状态，修复配置后重试失败通知' },
 };

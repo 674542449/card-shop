@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Order;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -49,6 +50,30 @@ class EpusdtService
      */
     public function createPayment(Order $order, string $chain): array
     {
+        $key = 'epusdt_payment:' . $order->order_no;
+        return Cache::lock('epusdt_create:' . $order->order_no, 30)->block(5, function () use ($key, $order, $chain) {
+            if ($cached = Cache::get($key)) {
+                return $cached;
+            }
+            $result = $this->createTransaction($order, $chain);
+            if (empty($result['payment_url'])) {
+                throw new RuntimeException('USDT支付接口未返回支付链接');
+            }
+            if (is_string($result['trade_id']) && strlen($result['trade_id']) <= 100 && $result['trade_id'] !== '') {
+                $order->update(['gateway_trade_no' => $result['trade_id']]);
+            }
+            $ttl = max(1, (int) now()->diffInSeconds($order->expires_at, false));
+            Cache::put($key, $result, $ttl);
+            Cache::put('payment_url:' . $order->order_no, $result['payment_url'], $ttl);
+            return $result;
+        });
+    }
+
+    private function createTransaction(Order $order, string $chain): array
+    {
+        if (!isset(self::TRADE_TYPES[$chain]) || ($this->flavour !== 'bepusdt' && $chain !== 'trc20')) {
+            throw new RuntimeException('当前 USDT 网关不支持所选网络，请使用默认 USDT 入口。');
+        }
         if ($this->apiUrl === '' || $this->apiToken === '') {
             throw new RuntimeException('USDT支付尚未配置');
         }

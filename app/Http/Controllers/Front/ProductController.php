@@ -10,16 +10,18 @@ use Illuminate\Http\Request;
 
 class ProductController extends Controller
 {
-    public function category(string $slug)
+    public function category(Request $request, string $slug)
     {
+        $request->validate(['q' => 'nullable|string|max:200', 'page' => 'nullable|integer|min:1']);
         $category = Category::active()->where('slug', $slug)->firstOrFail();
 
         $products = Product::active()
             ->ordered()
             ->where('category_id', $category->id)
+            ->when($request->filled('q'), fn ($q) => $q->where('name', 'ilike', '%'.$request->q.'%'))
             ->withStock()
             ->with(['category', 'wholesalePrices'])
-            ->paginate(12);
+            ->paginate(12)->withQueryString();
 
         $seoTitle = $category->name . ' - ' . setting('site_name', 'CardShop');
         $seoDescription = $category->description ?: setting('seo_default_description', '');

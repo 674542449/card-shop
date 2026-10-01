@@ -22,6 +22,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('orders:expire')
             ->everyMinute()
             ->withoutOverlapping(10);
+        $schedule->command('stock:check')->everyMinute()->withoutOverlapping(10);
+        $schedule->command('shop:health --scheduler')->everyMinute()->withoutOverlapping(2);
+        $schedule->command('payments:reconcile --limit=10')->everyFiveMinutes()->withoutOverlapping(5);
     })
     ->withMiddleware(function (Middleware $middleware) {
         // This should normally be EMPTY. It is not the fix for "visitors all show the
@@ -74,6 +77,6 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        $exceptions->dontFlash(['query_password', 'cf-turnstile-response']);
     })
     ->create();

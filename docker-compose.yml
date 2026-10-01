@@ -46,8 +46,7 @@ services:
       # 新手看到这个报错会以为部署失败，从而去做各种不必要的重来。
       start_period: 300s
 
-  # Runs Laravel's scheduler. Its only job today is releasing the cards held by
-  # abandoned pending orders; without it that stock is lost permanently.
+  # Release abandoned stock and check low-stock thresholds every minute.
   # entrypoint is overridden so this container does not re-run migrations/seeds —
   # it waits for `app` to be healthy, by which point those have already happened.
   scheduler:
@@ -83,6 +82,33 @@ services:
       - REDIS_HOST=redis
       # Must be a container env var, not just a .env line: bootstrap/app.php reads it
       # before .env is parsed.
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+
+  notifications:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: cardshop-notifications
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - .:/var/www/html
+    working_dir: /var/www/html
+    entrypoint: ["php", "artisan", "notifications:send", "--work"]
+    user: "33:33"
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cardshop
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
 
   nginx:

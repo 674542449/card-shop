@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Front;
 
 use App\Http\Controllers\Controller;
 use App\Models\Article;
+use App\Models\ArticleCategory;
 use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\Response;
@@ -46,6 +47,9 @@ class SitemapController extends Controller
         $xml .= $this->buildUrl(url('/articles'), now()->toIso8601String(), 'weekly', '0.7');
 
         // Article pages
+        foreach (ArticleCategory::whereHas('articles', fn ($q) => $q->published())->ordered()->get() as $articleCategory) {
+            $xml .= $this->buildUrl(url('/articles/category/'.$articleCategory->slug), $articleCategory->updated_at->toIso8601String(), 'weekly', '0.6');
+        }
         foreach ($articles as $article) {
             $xml .= $this->buildUrl(
                 url('/articles/' . $article->slug),

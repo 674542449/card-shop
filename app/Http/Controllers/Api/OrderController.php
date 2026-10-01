@@ -30,7 +30,7 @@ class OrderController extends Controller
             'query_password' => ['required', 'string', 'min:6', 'max:50'],
             'quantity' => ['required', 'integer', 'min:1'],
             'coupon_code' => ['nullable', 'string', 'max:50'],
-            'payment_method' => ['required', 'in:alipay,wechat,usdt_trc20,usdt_bep20,usdt_polygon'],
+            'payment_method' => ['required', \Illuminate\Validation\Rule::in(\App\Support\PaymentMethods::supported())],
         ], [
             'product_id.required' => '请选择商品',
             'product_id.exists' => '商品不存在',
@@ -55,6 +55,7 @@ class OrderController extends Controller
             ], 422);
         }
 
+        $order = null;
         try {
             $order = $this->orderService->createOrder([
                 'product_id' => (int) $request->input('product_id'),
@@ -64,6 +65,7 @@ class OrderController extends Controller
                 'coupon_code' => $request->input('coupon_code'),
                 'payment_method' => $request->input('payment_method'),
                 'ip' => $request->ip(),
+                'api_token_id' => $request->attributes->get('api_token')->id,
             ]);
 
             // Process payment to get the payment URL
@@ -85,10 +87,12 @@ class OrderController extends Controller
                 ],
             ], 201);
         } catch (\RuntimeException $e) {
+            $this->releaseFailedOrder($order);
             return response()->json([
                 'message' => $e->getMessage(),
             ], 422);
         } catch (\Throwable $e) {
+            $this->releaseFailedOrder($order);
             Log::error('API order creation failed', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -100,16 +104,53 @@ class OrderController extends Controller
         }
     }
 
+    public function cancel(Request $request, string $orderNo): JsonResponse
+    {
+        $input = $request->isJson() ? $request->json()->all() : $request->request->all();
+        $data = Validator::make($input, [
+            'email' => 'required|email|max:200', 'query_password' => 'required|string|max:50',
+        ])->validate();
+        $order = app(\App\Services\OrderLookupService::class)->search($data['email'], $data['query_password'], $orderNo)['orders']->first();
+        if (!$order || $order->api_token_id !== $request->attributes->get('api_token')->id) {
+            return response()->json(['message' => '订单不存在或查询密码错误'], 404)->header('Cache-Control', 'no-store');
+        }
+        try {
+            $this->orderService->closeOrder($order, true);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422)->header('Cache-Control', 'no-store');
+        }
+        return response()->json(['message' => '订单已取消，库存和优惠次数已释放。', 'data' => ['order_no' => $order->order_no, 'status' => 'closed']])->header('Cache-Control', 'no-store');
+    }
+
+    private function releaseFailedOrder(?Order $order): void
+    {
+        if (!$order) {
+            return;
+        }
+        try {
+            $this->orderService->closeOrder($order->fresh());
+        } catch (\Throwable $e) {
+            Log::warning('Could not close failed API checkout', [
+                'order_no' => $order->order_no,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     /**
      * Show order details.
      *
-     * Requires email and query_password in query params for authentication.
+     * Credentials are accepted only in the POST body, never the URL.
      */
     public function show(Request $request, string $orderNo): JsonResponse
     {
-        $validator = Validator::make($request->query(), [
-            'email' => ['required', 'email'],
-            'query_password' => ['required', 'string'],
+        if ($request->query->has('email') || $request->query->has('query_password')) {
+            return response()->json(['message' => '请通过 POST 请求正文传递邮箱和查询密码，不要放在 URL 中。'], 422)->header('Cache-Control', 'no-store');
+        }
+        $input = $request->isJson() ? $request->json()->all() : $request->request->all();
+        $validator = Validator::make($input, [
+            'email' => ['required', 'email', 'max:200'],
+            'query_password' => ['required', 'string', 'max:50'],
         ], [
             'email.required' => '请提供邮箱地址',
             'email.email' => '邮箱格式不正确',
@@ -127,14 +168,15 @@ class OrderController extends Controller
             ->where('order_no', $orderNo)
             // Case-insensitive, matching the buyer-facing lookup. A buyer who typed
             // Buyer@Example.com at checkout is the same person as buyer@example.com.
-            ->whereRaw('lower(email) = ?', [mb_strtolower((string) $request->query('email'))])
+            ->whereRaw('lower(email) = ?', [mb_strtolower($input['email'])])
             ->first();
 
         // ONE response for "no such (order, email) pair" and for "wrong password".
         // Two distinct answers — 404 versus 403 — told a caller which pairs are real,
         // and this endpoint emits card secrets on success. The buyer-facing path
         // merges these two cases deliberately; this one had not.
-        if (!$order || !Hash::check($request->query('query_password'), $order->query_password)) {
+        $authenticated = app(\App\Services\OrderLookupService::class)->search($input['email'], $input['query_password'], $orderNo)['orders']->isNotEmpty();
+        if (!$order || !$authenticated) {
             return response()->json([
                 'message' => '订单不存在或查询密码错误',
             ], 404);
@@ -145,7 +187,7 @@ class OrderController extends Controller
                 'order_no' => $order->order_no,
                 'product' => [
                     'id' => $order->product->id,
-                    'name' => $order->product->name,
+                    'name' => $order->displayName(),
                 ],
                 'email' => $order->email,
                 'quantity' => $order->quantity,
@@ -154,6 +196,11 @@ class OrderController extends Controller
                 'discount_amount' => $order->discount_amount,
                 'payment_method' => $order->payment_method,
                 'status' => $order->status,
+                'payment_review' => Order::paymentReview()->whereKey($order->id)->exists(),
+                'payment_received_amount' => $order->payment_received_amount,
+                'payment_received_at' => $order->payment_received_at?->toIso8601String(),
+                'payment_received_currency' => 'CNY',
+                'refunds' => $order->refunds()->get(['amount', 'status', 'created_at', 'completed_at']),
                 'paid_at' => $order->paid_at?->toIso8601String(),
                 'expires_at' => $order->expires_at->toIso8601String(),
                 'created_at' => $order->created_at->toIso8601String(),
@@ -169,6 +216,6 @@ class OrderController extends Controller
                 ->toArray();
         }
 
-        return response()->json($response);
+        return response()->json($response)->header('Cache-Control', 'no-store');
     }
 }

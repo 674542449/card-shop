@@ -33,6 +33,25 @@ class Blacklist extends Model
         static::creating(function (Blacklist $model) {
             $model->created_at = $model->freshTimestamp();
         });
+
+        $forget = static function (Blacklist $model): void {
+            foreach ([
+                [$model->getOriginal('type'), $model->getOriginal('value')],
+                [$model->type, $model->value],
+            ] as [$type, $value]) {
+                if (!is_string($value)) {
+                    continue;
+                }
+                $value = $type === 'email' ? mb_strtolower($value) : $value;
+                try {
+                    Cache::store('redis')->forget("blacklist:{$type}:" . md5($value));
+                } catch (\Throwable) {
+                    // The middleware falls back to a database lookup during outages.
+                }
+            }
+        };
+        static::saved($forget);
+        static::deleted($forget);
     }
 
     /**

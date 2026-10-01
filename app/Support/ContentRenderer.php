@@ -58,7 +58,7 @@ class ContentRenderer
 
     private static ?HTMLPurifier $purifier = null;
 
-    public static function toHtml(?string $raw): string
+    public static function toHtml(?string $raw, bool $allowProducts = false): string
     {
         $raw = trim((string) $raw);
 
@@ -66,9 +66,17 @@ class ContentRenderer
             return '';
         }
 
-        return self::looksLikeHtml($raw)
+        $html = self::looksLikeHtml($raw)
             ? self::purifier()->purify($raw)
             : self::markdown($raw);
+        if (!$allowProducts) { return $html; }
+        $pattern = '/<p(?:\s[^>]*)?>\s*\[\[product:(\d{1,18})\]\]\s*<\/p>/i';
+        preg_match_all($pattern, $html, $matches);
+        $products = \App\Models\Product::active()->withStock()->with(['category', 'wholesalePrices'])->whereIn('id', array_slice(array_unique($matches[1]), 0, 20))->get()->keyBy('id');
+        return preg_replace_callback($pattern, function ($match) use ($products) {
+            $product = $products->get((int) $match[1]);
+            return view(theme_view_path('partials.article-product'), compact('product'))->render();
+        }, $html);
     }
 
     private static function looksLikeHtml(string $raw): bool

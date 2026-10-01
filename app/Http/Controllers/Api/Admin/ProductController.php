@@ -9,6 +9,7 @@ use App\Models\ProductWholesalePrice;
 use App\Models\OperationLog;
 use Illuminate\Http\Request;
 use App\Support\SlugGenerator;
+use App\Support\AdminListQuery;
 use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
@@ -35,8 +36,20 @@ class ProductController extends Controller
 
     public function index(Request $request)
     {
+        $pageSize = AdminListQuery::pageSize($request, 20, [
+            'category_id' => 'nullable|integer',
+            'is_active' => 'nullable|boolean',
+            'keyword' => 'nullable|string|max:200',
+            'name' => 'nullable|string|max:200',
+            'low_stock' => 'nullable|boolean',
+        ]);
         $query = Product::with('category')
             ->withCount(['cards as stock_count' => fn ($q) => $q->where('status', 'unsold')]);
+
+        if ($request->boolean('low_stock')) {
+            $query->where('is_active', true)->whereNotNull('low_stock_threshold')
+                ->whereRaw('(select count(*) from cards where cards.product_id = products.id and cards.status = ?) <= products.low_stock_threshold', ['unsold']);
+        }
 
         if ($request->filled('category_id')) {
             $query->where('category_id', $request->category_id);
@@ -52,7 +65,7 @@ class ProductController extends Controller
             $query->where('name', 'ilike', '%' . $keyword . '%');
         }
 
-        $products = $query->ordered()->paginate($request->get('pageSize', 20));
+        $products = $query->ordered()->paginate($pageSize);
         $categories = Category::ordered()->get(['id', 'name']);
 
         return response()->json([
@@ -64,13 +77,19 @@ class ProductController extends Controller
 
     public function store(Request $request)
     {
+        $request->merge([
+            'min_quantity' => $request->input('min_quantity') ?? 1,
+            'max_quantity' => $request->input('max_quantity') ?? 10,
+            'sort_order' => $request->input('sort_order') ?? 0,
+        ]);
         $data = $request->validate([
             'name' => 'required|string|max:200',
-            'slug' => 'nullable|string|max:200|unique:products,slug',
+            'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:products,slug',
             'category_id' => 'required|exists:categories,id',
             'description' => 'nullable|string',
             'image' => 'nullable|string|max:500',
             'price' => 'required|numeric|min:0.01',
+            'low_stock_threshold' => 'sometimes|nullable|integer|min:0|max:100000',
             'min_quantity' => 'nullable|integer|min:1',
             'max_quantity' => ['nullable', 'integer', 'min:1', $this->maxNotBelowMin($request)],
             'is_active' => 'boolean',
@@ -79,7 +98,7 @@ class ProductController extends Controller
             'seo_description' => 'nullable|string|max:500',
             'seo_keywords' => 'nullable|string|max:200',
             'wholesale_prices' => 'nullable|array',
-            'wholesale_prices.*.min_quantity' => 'required_with:wholesale_prices|integer|min:2',
+            'wholesale_prices.*.min_quantity' => 'required_with:wholesale_prices|integer|min:2|distinct',
             'wholesale_prices.*.price' => 'required_with:wholesale_prices|numeric|min:0.01',
         ]);
 
@@ -90,15 +109,13 @@ class ProductController extends Controller
             $data['slug'] = SlugGenerator::unique($data['name'], 'products');
         }
 
-        $product = Product::create($data);
-
-        foreach ($wholesalePrices as $wp) {
-            ProductWholesalePrice::create([
-                'product_id' => $product->id,
-                'min_quantity' => $wp['min_quantity'],
-                'price' => $wp['price'],
-            ]);
-        }
+        $product = DB::transaction(function () use ($data, $wholesalePrices) {
+            $product = Product::create($data);
+            foreach ($wholesalePrices as $wp) {
+                $product->wholesalePrices()->create($wp);
+            }
+            return $product;
+        });
 
         OperationLog::log('创建商品', 'product', $product->id, $product->name);
 
@@ -114,13 +131,19 @@ class ProductController extends Controller
 
     public function update(Request $request, Product $product)
     {
+        $request->merge([
+            'min_quantity' => $request->input('min_quantity') ?? $product->min_quantity,
+            'max_quantity' => $request->input('max_quantity') ?? $product->max_quantity,
+            'sort_order' => $request->input('sort_order') ?? $product->sort_order,
+        ]);
         $data = $request->validate([
             'name' => 'required|string|max:200',
-            'slug' => 'nullable|string|max:200|unique:products,slug,' . $product->id,
+            'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:products,slug,' . $product->id,
             'category_id' => 'required|exists:categories,id',
             'description' => 'nullable|string',
             'image' => 'nullable|string|max:500',
             'price' => 'required|numeric|min:0.01',
+            'low_stock_threshold' => 'sometimes|nullable|integer|min:0|max:100000',
             'min_quantity' => 'nullable|integer|min:1',
             'max_quantity' => ['nullable', 'integer', 'min:1', $this->maxNotBelowMin($request)],
             'is_active' => 'boolean',
@@ -129,7 +152,7 @@ class ProductController extends Controller
             'seo_description' => 'nullable|string|max:500',
             'seo_keywords' => 'nullable|string|max:200',
             'wholesale_prices' => 'nullable|array',
-            'wholesale_prices.*.min_quantity' => 'required_with:wholesale_prices|integer|min:2',
+            'wholesale_prices.*.min_quantity' => 'required_with:wholesale_prices|integer|min:2|distinct',
             'wholesale_prices.*.price' => 'required_with:wholesale_prices|numeric|min:0.01',
         ]);
 
@@ -145,7 +168,11 @@ class ProductController extends Controller
         }
 
         DB::transaction(function () use ($product, $data, $replaceTiers, $wholesalePrices) {
-            $product->update($data);
+            $product->fill($data);
+            if ($product->isDirty(['low_stock_threshold', 'is_active'])) {
+                $product->forceFill(['low_stock_notified' => false]);
+            }
+            $product->save();
 
             if ($replaceTiers) {
                 $product->wholesalePrices()->delete();

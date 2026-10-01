@@ -112,19 +112,19 @@ class SeoService
         try {
             $response = Http::timeout(10)
                 ->withBody(implode("\n", $urls), 'text/plain')
-                ->post("http://data.zz.baidu.com/urls?site={$site}&token={$token}");
+                ->post('https://data.zz.baidu.com/urls?'.http_build_query(['site' => $site, 'token' => $token]));
 
-            if (!$response->successful()) {
+            if (!$response->successful() || $response->json('error') || (int) $response->json('success', 0) < count($urls)) {
                 Log::warning('Baidu push failed', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
+
                 ]);
                 return false;
             }
 
             return true;
         } catch (\Throwable $e) {
-            Log::error('Baidu push exception', ['error' => $e->getMessage()]);
+            Log::error('Baidu push exception', ['type' => get_class($e)]);
             return false;
         }
     }
@@ -146,20 +146,21 @@ class SeoService
                 ->post('https://api.indexnow.org/indexnow', [
                     'host' => $host,
                     'key' => $apiKey,
+                    'keyLocation' => rtrim((string) setting('site_url', config('app.url')), '/').'/'.$apiKey.'.txt',
                     'urlList' => $urls,
                 ]);
 
             if (!$response->successful()) {
                 Log::warning('IndexNow push failed', [
                     'status' => $response->status(),
-                    'body' => $response->body(),
+
                 ]);
                 return false;
             }
 
             return true;
         } catch (\Throwable $e) {
-            Log::error('IndexNow push exception', ['error' => $e->getMessage()]);
+            Log::error('IndexNow push exception', ['type' => get_class($e)]);
             return false;
         }
     }

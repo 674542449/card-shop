@@ -8,7 +8,7 @@
         <div class="page-card-body">
             <table class="order-info-table">
                 <tr><th>订单编号</th><td class="op-mono">{{ $order->order_no }}</td></tr>
-                <tr><th>商品名称</th><td>{{ $order->product->name ?? '—' }}</td></tr>
+                <tr><th>商品名称</th><td>{{ $order->displayName() }}</td></tr>
                 <tr><th>购买数量</th><td>{{ $order->quantity }} 件</td></tr>
                 @if($order->discount_amount > 0)
                 <tr><th>优惠金额</th><td class="op-discount">-¥{{ number_format($order->discount_amount, 2) }}</td></tr>
@@ -23,6 +23,7 @@
                             @case('usdt_trc20') USDT(TRC20) @break
                             @case('usdt_bep20') USDT(BEP20) @break
                             @case('usdt_polygon') USDT(Polygon) @break
+                            @case('manual') 人工确认 @break
                             @default {{ $order->payment_method }}
                         @endswitch
                     </td>

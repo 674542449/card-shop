@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import { ProCard, ProDescriptions } from '@ant-design/pro-components';
-import { Button, Tag, Spin, message, Popconfirm, Space, Typography } from 'antd';
+import { Alert, Button, Tag, Spin, message, Popconfirm, Space, Typography, Result, Table, Modal, Input, InputNumber, Select } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import api from '../services/api';
+import {allows} from '../permissions';
 import { getOrder, closeOrder, markPaid, resendOrder } from '../services/api';
 
 const { Paragraph } = Typography;
@@ -31,18 +33,24 @@ const paymentMethodMap = {
 
 export default function OrderDetail() {
   const { id } = useParams();
+  const admin=useOutletContext();const write=allows(admin,'orders','write');const refundWrite=write&&allows(admin,'refunds','write');
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const [refundOpen,setRefundOpen]=useState(false); const [refundAmount,setRefundAmount]=useState(null); const [refundReason,setRefundReason]=useState(''); const [refundReceipt,setRefundReceipt]=useState('primary');
+  const [resolveReceipt,setResolveReceipt]=useState(null); const [resolveNote,setResolveNote]=useState('');
 
   const fetchOrder = async () => {
     setLoading(true);
+    setLoadError('');
+    setOrder(null);
     try {
       const res = await getOrder(id);
       setOrder(res.data?.data || res.data);
-    } catch {
-      message.error('获取订单信息失败');
+    } catch (err) {
+      setLoadError(err.response?.status === 404 ? '订单不存在或已不可用' : '获取订单信息失败，请重试');
     } finally {
       setLoading(false);
     }
@@ -81,8 +89,9 @@ export default function OrderDetail() {
   const handleResend = async () => {
     setActionLoading(true);
     try {
-      await resendOrder(id);
-      message.success('发送成功');
+      const response = await resendOrder(id);
+      message.success(response.data.message);
+      fetchOrder();
     } catch (err) {
       message.error(err.response?.data?.message || '操作失败');
     } finally {
@@ -98,17 +107,26 @@ export default function OrderDetail() {
     );
   }
 
-  if (!order) return null;
+  if (!order) return <Result status="warning" title={loadError || '订单不可用'} extra={<Space><Button onClick={() => navigate('/orders')}>返回订单列表</Button><Button onClick={fetchOrder}>重试</Button></Space>} />;
 
   const s = statusMap[order.status];
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      {order.status !== 'paid' && order.payment_no && (
+        <Alert
+          type="warning"
+          showIcon
+          message="付款待核对"
+          description="收到付款回执，但尚未发货。请核对网关金额及交易状态后人工处理，避免重复付款。"
+          style={{ marginBottom: 16 }}
+        />
+      )}
+      <Space wrap style={{ marginBottom: 16 }}>
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
           返回订单列表
         </Button>
-        {order.status === 'pending' && (
+        {write && order.status === 'pending' && !order.payment_no && !order.payment_receipts?.length && (
           <Popconfirm title="确认关闭此订单？" onConfirm={handleClose}>
             <Button loading={actionLoading}>关闭订单</Button>
           </Popconfirm>
@@ -118,7 +136,7 @@ export default function OrderDetail() {
             lapsed cannot be delivered automatically, and this is the only way to
             complete the sale. Restricted to pending, the repair existed in the API
             and was unreachable from the screen the operator is looking at. */}
-        {['pending', 'expired', 'closed'].includes(order.status) && (
+        {write && ['pending', 'expired', 'closed'].includes(order.status) && (
           <Popconfirm
             title={
               order.status === 'pending'
@@ -132,7 +150,7 @@ export default function OrderDetail() {
             </Button>
           </Popconfirm>
         )}
-        {order.status === 'paid' && (
+        {write && order.status === 'paid' && (
           <Popconfirm title="确认重新发送邮件？" onConfirm={handleResend}>
             <Button loading={actionLoading}>重新发送</Button>
           </Popconfirm>
@@ -145,7 +163,7 @@ export default function OrderDetail() {
           <ProDescriptions.Item label="状态">
             {s ? <Tag color={s.color}>{s.text}</Tag> : order.status}
           </ProDescriptions.Item>
-          <ProDescriptions.Item label="商品">{order.product?.name || '-'}</ProDescriptions.Item>
+          <ProDescriptions.Item label="商品">{order.product_name || order.product?.name || '-'}</ProDescriptions.Item>
           <ProDescriptions.Item label="数量">{order.quantity}</ProDescriptions.Item>
           <ProDescriptions.Item label="单价">¥{order.unit_price}</ProDescriptions.Item>
           <ProDescriptions.Item label="总金额">¥{order.total_amount}</ProDescriptions.Item>
@@ -157,11 +175,46 @@ export default function OrderDetail() {
           <ProDescriptions.Item label="优惠券">{order.coupon?.code || '-'}</ProDescriptions.Item>
           <ProDescriptions.Item label="优惠金额">¥{order.discount_amount || 0}</ProDescriptions.Item>
           <ProDescriptions.Item label="IP">{order.ip || '-'}</ProDescriptions.Item>
+          <ProDescriptions.Item label="网关交易号">{order.payment_no || '-'}</ProDescriptions.Item>
+          <ProDescriptions.Item label="回执金额（人民币）">{order.payment_received_amount ? `${order.payment_received_amount} CNY` : '-'}</ProDescriptions.Item>
+          <ProDescriptions.Item label="回执时间">{fmt(order.payment_received_at)}</ProDescriptions.Item>
+          <ProDescriptions.Item label="待核对原因">{order.payment_review_reason || '-'}</ProDescriptions.Item>
           <ProDescriptions.Item label="创建时间">{fmt(order.created_at)}</ProDescriptions.Item>
           <ProDescriptions.Item label="支付时间">{fmt(order.paid_at)}</ProDescriptions.Item>
+          <ProDescriptions.Item label="支付截止时间">{fmt(order.expires_at)}</ProDescriptions.Item>
         </ProDescriptions>
       </ProCard>
 
+      <Space wrap style={{marginTop:16}}>
+        <Button disabled={!write} onClick={async()=>{try{const r=await api.post(`/orders/${id}/sync`);message.success(r.data.message);fetchOrder();}catch(e){message.error(e.response?.data?.message||'对账失败');}}}>同步网关付款状态</Button>
+        <Button disabled={!refundWrite} onClick={()=>{setRefundAmount(Number(order.total_amount));setRefundReason('');setRefundReceipt('primary');setRefundOpen(true);}}>登记退款申请</Button>
+      </Space>
+      {order.reconciliation_error&&<Alert type="warning" message={order.reconciliation_error} style={{marginTop:12}} />}
+      <Modal title="登记退款申请" open={refundOpen} onCancel={()=>setRefundOpen(false)} onOk={async()=>{try{await api.post(`/orders/${id}/refunds`,{amount:refundAmount,reason:refundReason,payment_receipt_id:refundReceipt==='primary'?null:refundReceipt});message.success('已登记，前往退款管理审核');setRefundOpen(false);fetchOrder();}catch(e){message.error(e.response?.data?.message||'登记失败');}}}>
+        <p>选择退款对应的付款。金额按人民币订单金额登记；实际退款需在原渠道完成。</p>
+        <Select style={{width:'100%',marginBottom:12}} value={refundReceipt} onChange={setRefundReceipt} options={[{value:'primary',label:'订单原付款'},...(order.payment_receipts||[]).map(r=>({value:r.id,label:`${r.trade_no} · ${r.amount} CNY`}))]} />
+        <InputNumber aria-label="退款金额" min={0.01} precision={2} value={refundAmount} onChange={setRefundAmount} style={{width:'100%',marginBottom:12}} />
+        <Input.TextArea aria-label="退款原因" placeholder="退款原因" value={refundReason} onChange={e=>setRefundReason(e.target.value)} />
+      </Modal>
+      <Modal title="完成付款核对" open={!!resolveReceipt} onCancel={()=>setResolveReceipt(null)} onOk={async()=>{try{await api.post(`/orders/${id}/receipts/${resolveReceipt.id}/resolve`,{note:resolveNote});message.success('核对结果已保存');setResolveReceipt(null);fetchOrder();}catch(e){message.error(e.response?.data?.message||'保存失败');}}}><Input.TextArea value={resolveNote} onChange={e=>setResolveNote(e.target.value)} placeholder="说明核对结果和实际处置" /></Modal>
+      <ProCard title="退款记录" style={{marginTop:16}}><Table rowKey="id" size="small" pagination={false} dataSource={order.refunds||[]} columns={[{title:'金额（人民币）',dataIndex:'amount'},{title:'状态',dataIndex:'status'},{title:'原因',dataIndex:'reason'},{title:'凭证',dataIndex:'reference'}]} /></ProCard>
+      <ProCard title="付款回执" style={{ marginTop: 16 }}>
+        <Table size="small" rowKey="id" pagination={false} dataSource={order.payment_receipts || []} scroll={{ x: 600 }} columns={[
+          { title: '渠道', dataIndex: 'channel' }, { title: '网关流水', dataIndex: 'trade_no' },
+          { title: '订单金额（人民币）', dataIndex: 'amount', render: (value) => `${value} CNY` }, { title: '收到时间', dataIndex: 'received_at', render: fmt },
+          {title:'实际代币金额',render:(_,r)=>r.actual_amount?`${r.actual_amount} ${r.currency}`:'-'},{title:'网络 / 交易哈希',render:(_,r)=>`${r.network||'-'} / ${r.transaction_hash||'-'}`},
+          {title:'核对状态',render:(_,r)=>r.review_reason?(r.review_resolved_at?`已处理：${r.resolution_note}`:r.review_reason):'正常'},
+          {title:'操作',render:(_,r)=>write&&r.review_reason&&!r.review_resolved_at?<Button onClick={()=>{setResolveReceipt(r);setResolveNote('');}}>记录核对结果</Button>:null},
+        ]} />
+      </ProCard>
+      <ProCard title="通知投递" extra={<Button onClick={fetchOrder}>刷新状态</Button>} style={{ marginTop: 16 }}>
+        <Table size="small" rowKey="id" pagination={false} dataSource={order.notifications || []} scroll={{ x: 700 }} columns={[
+          { title: '类型', dataIndex: 'type', render: (value) => ({ order_email: '卡密邮件', new_order: '订单通知', payment_review: '付款待核对' }[value] || value) },
+          { title: '状态', dataIndex: 'status', render: (value) => ({ pending: '等待发送 / 重试', processing: '发送中', sent: '已交给发送服务', failed: '失败，需人工重试', skipped: '通知未启用，已跳过' }[value] || value) },
+          { title: '尝试次数', dataIndex: 'attempts' }, { title: '错误', dataIndex: 'last_error' },
+          { title: '下次尝试', dataIndex: 'available_at', render: (value, record) => record.status === 'pending' ? fmt(value) : '-' },
+        ]} />
+      </ProCard>
       {order.status === 'paid' && order.cards && order.cards.length > 0 && (
         <ProCard title="卡密信息">
           {order.cards.map((card, idx) => (

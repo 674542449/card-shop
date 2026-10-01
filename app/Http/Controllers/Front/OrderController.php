@@ -9,6 +9,7 @@ use App\Models\Card;
 use App\Models\Coupon;
 use App\Models\Order;
 use App\Models\Product;
+use App\Services\CheckoutPricingService;
 use App\Services\EpusdtService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,8 @@ use Illuminate\Support\Str;
 
 class OrderController extends Controller
 {
+    public function __construct(private readonly CheckoutPricingService $pricing) {}
+
     /**
      * Create a new order and initiate payment.
      */
@@ -31,6 +34,10 @@ class OrderController extends Controller
 
         try {
             $order = DB::transaction(function () use ($validated, $request) {
+                // Serialize this visitor's quota check across products and browser
+                // sessions. Card locks alone run after the count and cannot prevent
+                // two requests claiming the final pending-order allowance.
+                DB::select('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', ['web-order-reservation', (string) $request->ip()]);
                 $product = Product::active()->findOrFail($validated['product_id']);
                 $quantity = (int) $validated['quantity'];
 
@@ -51,60 +58,17 @@ class OrderController extends Controller
                 // caps how much stock one visitor can hold at a time.
                 $held = Order::where('ip', $request->ip())
                     ->where('status', 'pending')
-                    ->where('expires_at', '>', now())
                     ->count();
 
                 if ($held >= 3) {
                     throw new \RuntimeException('您有未完成的订单，请先完成支付或等待订单过期');
                 }
 
-                // Calculate price
-                $unitPrice = (float) $product->getEffectivePrice($quantity);
-                $totalAmount = round($unitPrice * $quantity, 2);
-                $discountAmount = 0;
-                $couponId = null;
-
-                // Apply coupon if provided
-                if (!empty($validated['coupon_code'])) {
-                    $coupon = Coupon::where('code', $validated['coupon_code'])->first();
-
-                    if (!$coupon) {
-                        throw new \RuntimeException('优惠码不存在');
-                    }
-
-                    if (!$coupon->isValid()) {
-                        throw new \RuntimeException('优惠码已过期或已达使用上限');
-                    }
-
-                    // Check if coupon is product-specific
-                    if ($coupon->product_id && $coupon->product_id !== $product->id) {
-                        throw new \RuntimeException('该优惠码不适用于此商品');
-                    }
-
-                    // 门槛不满足时必须报错，不能静默按原价下单。
-                    //
-                    // calculateDiscount() 在低于 min_amount 时返回 0，而这里之前没有
-                    // 单独校验，于是买家用一张「满 1000 减 50」的码去买 350 元的东西，
-                    // 得到的是：订单按 350 原价建立、discount_amount=0、coupon_id 却
-                    // 写进了订单，然后直接跳转到网关收 350，全程没有任何一句提示——
-                    // 支付页的「优惠金额」那一行是 @if($order->discount_amount > 0)
-                    // 才渲染的，买家在付款前也看不出优惠码被吞了。
-                    //
-                    // 同一张券走 /api/v1/orders（OrderService::createOrder）会明确报
-                    // 「订单金额不满足优惠券最低消费」并返回 422。两条下单路径对同一
-                    // 份数据给出相反的行为，这里跟 OrderService 对齐。
-                    if ((float) $totalAmount < (float) $coupon->min_amount) {
-                        throw new \RuntimeException(
-                            '订单金额不满足该优惠码的最低消费 ¥'
-                            . number_format((float) $coupon->min_amount, 2) . ' 的要求'
-                        );
-                    }
-
-                    $discountAmount = $coupon->calculateDiscount($totalAmount);
-                    $couponId = $coupon->id;
-                }
-
-                $finalAmount = max(0.01, round($totalAmount - $discountAmount, 2));
+                $quote = $this->pricing->calculate($product, $quantity, $validated['coupon_code'] ?? null);
+                $unitPrice = $quote['unit_price'];
+                $finalAmount = $quote['total_amount'];
+                $discountAmount = $quote['discount_amount'];
+                $couponId = $quote['coupon']?->id;
 
                 // Create order
                 $order = Order::create([
@@ -112,6 +76,7 @@ class OrderController extends Controller
                     'product_id' => $product->id,
                     'email' => $validated['email'],
                     'query_password' => Hash::make($validated['query_password']),
+                    'query_password_key' => Order::passwordKey($validated['email'], $validated['query_password']),
                     'quantity' => $quantity,
                     'unit_price' => $unitPrice,
                     'total_amount' => $finalAmount,
@@ -147,7 +112,7 @@ class OrderController extends Controller
                 // has to be enforced by the write itself: whichever transaction loses
                 // the row lock re-evaluates the predicate against the committed row,
                 // affects zero rows, and rolls its own order back.
-                if ($couponId && $discountAmount > 0) {
+                if ($couponId && bccomp($discountAmount, '0.00', 2) > 0) {
                     $claimed = Coupon::where('id', $couponId)
                         ->where(function ($q) {
                             $q->where('max_uses', '<=', 0)
@@ -196,7 +161,7 @@ class OrderController extends Controller
                 ? $e->getMessage()
                 : '下单失败，请稍后重试';
 
-            return back()->withInput()->withErrors(['error' => $message]);
+            return back()->withInput($request->except(['query_password', 'cf-turnstile-response']))->withErrors(['error' => $message]);
         }
     }
 
@@ -220,7 +185,8 @@ class OrderController extends Controller
                 $order->refresh();
             }
 
-            return response()->json(['status' => $order->status]);
+            return response()->json(['status' => $order->status, 'payment_review' => !$order->isPaid() && !empty($order->payment_no)])
+                ->header('Cache-Control', 'no-store');
         }
 
         if ($order->isPaid()) {
@@ -258,14 +224,18 @@ class OrderController extends Controller
         // returns false and this used to fall through to the live payment page. The
         // buyer then got a countdown initialised from a timestamp in the past, which
         // front.js reads as finished and reloads two seconds later, forever.
-        if (!$order->isPending()) {
+        if (!$order->isPending() || !empty($order->payment_no)) {
+            $paymentReview = ! empty($order->payment_no);
             return theme_view('order.pay', [
                 'order' => $order,
                 'expired' => true,
-                'deadReason' => $order->status === 'closed'
+                'paymentReview' => $paymentReview,
+                'deadReason' => $paymentReview
+                    ? '收到付款回执，订单暂未发货，请联系客服核对，请勿重复支付。'
+                    : ($order->status === 'closed'
                     ? '此订单已关闭，请重新下单。'
-                    : '此订单已超过支付时限，请重新下单。',
-                'deadTitle' => $order->status === 'closed' ? '订单已关闭' : '订单已过期',
+                    : '此订单已超过支付时限。若已付款，请先查询订单或联系客服核对，请勿重复支付；尚未付款可重新下单。'),
+                'deadTitle' => $paymentReview ? '付款待核对' : ($order->status === 'closed' ? '订单已关闭' : '订单已过期'),
                 'paymentUrl' => null,
             ]);
         }
@@ -370,20 +340,40 @@ class OrderController extends Controller
         $validated = $request->validated();
 
         if ($this->tooManyAttempts($request, $validated['email'])) {
-            return back()->withInput()->withErrors(['error' => '尝试次数过多，请稍后再试']);
+            return back()->withInput($request->except(['query_password', 'cf-turnstile-response']))->withErrors(['error' => '尝试次数过多，请稍后再试']);
         }
 
-        $matched = $this->matchOrders($validated['email'], $validated['query_password']);
+        $result = app(\App\Services\OrderLookupService::class)->search($validated['email'], $validated['query_password'], $validated['order_no'] ?? null);
+        return $this->lookupResponse($request, $result, $validated['email'], $validated['query_password'], $validated['order_no'] ?? null);
+    }
 
-        if ($matched->isEmpty()) {
-            // One message for "no such email" and for "wrong password". Two different
-            // messages would tell an attacker which email addresses have bought here.
-            return back()->withInput()->withErrors(['error' => '邮箱或查询密码错误']);
+    public function queryPage(Request $request)
+    {
+        $search = $request->session()->get('order_search');
+        if (!$search || $search['expires'] < now()->timestamp) {
+            $request->session()->forget('order_search');
+            return redirect('/order/query')->withErrors(['error' => '查询已过期，请重新验证。']);
         }
+        $credentials = json_decode(\Illuminate\Support\Facades\Crypt::decryptString($search['credentials']), true);
+        if ($this->tooManyAttempts($request, $credentials['email'])) {
+            return back()->withErrors(['error' => '尝试次数过多，请稍后再试']);
+        }
+        $result = app(\App\Services\OrderLookupService::class)->search($credentials['email'], $credentials['password'], null, $search['cursor']);
+        return $this->lookupResponse($request, $result, $credentials['email'], $credentials['password']);
+    }
 
+    private function lookupResponse(Request $request, array $result, string $email, string $password, ?string $orderNo = null)
+    {
+        $matched = $result['orders'];
+        $request->session()->put('order_search', [
+            'credentials' => \Illuminate\Support\Facades\Crypt::encryptString(json_encode(compact('email', 'password'))),
+            'cursor' => $result['cursor'] ?? 0, 'expires' => now()->timestamp + 600,
+        ]);
+        if ($matched->isEmpty() && !$result['has_more']) {
+            return redirect('/order/query')->withInput(['email' => $email, 'order_no' => $orderNo])->withErrors(['error' => '邮箱或查询密码错误；历史记录较多时请填写订单号精确查询。']);
+        }
         $this->grantAccess($matched);
-
-        return theme_view('order.result', ['orders' => $matched->load('product')]);
+        return theme_view('order.result', ['orders' => $matched->load('product'), 'hasMore' => $result['has_more']]);
     }
 
     /**
@@ -398,106 +388,10 @@ class OrderController extends Controller
      * 候选都要做一次 bcrypt，而这个端点任何人都能调。分桶而不是单一时间窗口，见下面
      * phase 1 的说明。
      */
-    private function matchOrders(string $email, string $password)
+    private function matchOrders(string $email, string $password, ?string $orderNo = null)
     {
-        $lower = mb_strtolower($email);
-
-        // PHASE 1 — authenticate.
-        //
-        // 候选集要有上限，因为每个候选都要做一次 bcrypt（cost 12，本机实测 0.2 秒），
-        // 而这个端点任何人都能调。但上限不能是「按时间取最近 N 条」那种单一窗口：
-        //
-        //   - 谁都能拿别人的邮箱下单（下单不验邮箱），所以攻击者刷一批未支付订单就能
-        //     把受害者真正付过款的那单挤出窗口。之前靠「只看 paid 或未过期 pending」
-        //     来防这一手，但 pending 本身就在窗口里，刷 25 笔 pending 照样挤得掉。
-        //   - 而把 expired/closed 挡在窗口外，又造成另一个问题：订单全部过期的买家
-        //     用完全正确的密码来查，phase 1 直接空集，页面告诉他「邮箱或查询密码
-        //     错误」——他的密码没错，只是订单过期了。
-        //
-        // 所以改成按状态分桶取样：三个桶各自独立取最近若干条。刷 pending 只能填满
-        // pending 那个桶，冲不掉 paid 桶；expired/closed 有自己的名额，全过期的买家
-        // 也能通过认证走到 phase 2。总候选数 8+6+6=20，比原来的 25 还低。
-        $bucket = function (callable $filter, int $take) use ($lower) {
-            return Order::whereRaw('lower(email) = ?', [$lower])
-                ->where($filter)
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->limit($take)
-                ->get();
-        };
-
-        $probe = $bucket(fn ($q) => $q->where('status', 'paid'), 8)
-            ->concat($bucket(
-                fn ($q) => $q->where('status', 'pending')->where('expires_at', '>', now()),
-                6
-            ))
-            ->concat($bucket(fn ($q) => $q->whereIn('status', ['expired', 'closed']), 6))
-            ->unique('id')
-            ->values();
-
-        if ($probe->isEmpty()) {
-            // Equalise the cost of "this address has never bought here" with a real
-            // check. Without it the reply time says exactly what the deliberately
-            // identical error message refuses to: an unknown address returns in
-            // single-digit ms, a known one after a bcrypt at cost 12.
-            Hash::check($password, $this->timingPaddingHash());
-
-            return $probe;
-        }
-
-        $matched = $probe->filter(fn (Order $o) => Hash::check($password, $o->query_password));
-
-        if ($matched->isEmpty()) {
-            return $matched->values();
-        }
-
-        // PHASE 2 — 身份已经证明，把其余订单也找出来。
-        //
-        // phase 1 的取样限制是为了给匿名调用者的开销封顶、并防止挤出；密码一旦匹配，
-        // 这两条理由都不成立了。把限制带到结果集里会让买家看不到自己的老订单，也看
-        // 不到已过期/已关闭的订单。
-        //
-        // 两处成本控制，缺一不可：
-        //
-        // 1) 排除 phase 1 已经验过的那些 id。之前这里是无条件重新取 200 条再逐个
-        //    bcrypt，phase 1 刚验过的 20 条又被验了第二遍。实测一个被灌了 25 笔订单
-        //    的邮箱查询要 15 秒，其中约一半是这种重复验证。
-        //
-        // 2) 给整个请求的 bcrypt 次数封顶。每次 cost 12 大约几十毫秒到 0.2 秒，
-        //    没有上限时「订单越多越慢」会同时变成买家的体验问题和一个廉价的放大器
-        //    ——别人可以拿你的邮箱刷订单，把你的查询页拖成十几秒。
-        //    优先验 paid：卡密在已支付订单上，那才是买家来这一页要拿的东西。
-        $checkedIds = $probe->pluck('id')->all();
-        $budget = self::MAX_PASSWORD_CHECKS - count($checkedIds);
-
-        if ($budget > 0) {
-            $rest = Order::whereRaw('lower(email) = ?', [$lower])
-                ->whereNotIn('id', $checkedIds)
-                // paid 先验：卡密只挂在已支付订单上。
-                ->orderByRaw("case when status = 'paid' then 0 else 1 end")
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->limit($budget)
-                ->get()
-                ->filter(fn (Order $o) => Hash::check($password, $o->query_password));
-
-            $matched = $matched->concat($rest);
-        }
-
-        return $matched
-            ->unique('id')
-            ->sortByDesc(fn (Order $o) => [$o->created_at?->getTimestamp() ?? 0, $o->id])
-            ->values();
+        return app(\App\Services\OrderLookupService::class)->search($email, $password, $orderNo)['orders'];
     }
-
-    /**
-     * 单次查单请求允许做的 bcrypt 上限（phase 1 + phase 2 合计）。
-     *
-     * 这个数字是在「让真实买家看到自己全部订单」和「不让任何人把这一页拖垮」之间取
-     * 的折中。真实买家几乎不可能有这么多订单；超过这个数时优先返回已支付的那些，
-     * 因为卡密只在它们上面。
-     */
-    private const MAX_PASSWORD_CHECKS = 60;
 
     /**
      * A real bcrypt hash of a value nobody knows, used only to spend the time a
@@ -524,12 +418,34 @@ class OrderController extends Controller
      */
     private function grantAccess($orders): void
     {
-        session(['order_verified_ids' => $orders->pluck('id')->all()]);
+        session(['order_verified_ids' => array_values(array_unique(array_merge(session('order_verified_ids', []), $orders->pluck('id')->all())))]);
     }
 
     private function isVerified(Order $order): bool
     {
         return in_array($order->id, session('order_verified_ids', []), true);
+    }
+
+    public function requestRefund(Request $request, string $orderNo, \App\Services\RefundService $service)
+    {
+        $order = Order::where('order_no', $orderNo)->firstOrFail();
+        abort_unless($this->isVerified($order), 403);
+        $data = $request->validate(['amount' => 'required|numeric|gt:0|decimal:0,2|max:9999999999999999', 'reason' => 'required|string|max:2000']);
+        try { $service->request($order, (string) $data['amount'], $data['reason'], null, 'buyer'); }
+        catch (\RuntimeException $e) { return back()->withErrors(['error' => $e->getMessage()]); }
+        return back()->with('success', '退款申请已提交，请等待店主处理。');
+    }
+
+    public function cancel(Request $request, string $orderNo, \App\Services\OrderService $service)
+    {
+        $order = Order::where('order_no', $orderNo)->firstOrFail();
+        abort_unless($this->isVerified($order), 403);
+        try {
+            $service->closeOrder($order, true);
+        } catch (\RuntimeException $e) {
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+        return redirect('/order/detail/'.$order->order_no)->with('success', '订单已取消，库存和优惠次数已释放。');
     }
 
     /**
@@ -575,7 +491,7 @@ class OrderController extends Controller
     public function detail(string $orderNo)
     {
         $order = Order::where('order_no', $orderNo)
-            ->with(['product', 'cards'])
+            ->with(['product', 'cards', 'refunds'])
             ->firstOrFail();
 
         $verified = $this->isVerified($order);
@@ -611,7 +527,7 @@ class OrderController extends Controller
     public function downloadCards(string $orderNo)
     {
         $order = Order::where('order_no', $orderNo)
-            ->with(['product', 'cards'])
+            ->with(['product', 'cards', 'refunds'])
             ->firstOrFail();
 
         if (!$this->isVerified($order)) {
@@ -629,7 +545,7 @@ class OrderController extends Controller
         // mojibake instead of their cards.
         $lines = [
             '订单编号: ' . $order->order_no,
-            '商品名称: ' . ($order->product->name ?? '—'),
+            '商品名称: ' . ($order->displayName()),
             '购买数量: ' . $order->quantity,
             '支付时间: ' . ($order->paid_at ? $order->paid_at->format('Y-m-d H:i:s') : '—'),
             str_repeat('-', 40),
@@ -662,8 +578,9 @@ class OrderController extends Controller
     public function verify(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => ['required', 'email'],
-            'query_password' => ['required', 'string'],
+            'email' => ['required', 'email', 'max:200'],
+            'order_no' => ['nullable', 'string', 'max:30'],
+            'query_password' => ['required', 'string', 'max:50'],
         ]);
 
         // This endpoint is not behind the turnstile that protects /order/query, so
@@ -675,7 +592,7 @@ class OrderController extends Controller
             ], 429);
         }
 
-        $matched = $this->matchOrders($request->input('email'), $request->input('query_password'));
+        $matched = $this->matchOrders($request->input('email'), $request->input('query_password'), $request->input('order_no'));
 
         if ($matched->isEmpty()) {
             // Deliberately identical to the "no such email" case — see query().
@@ -733,7 +650,7 @@ class OrderController extends Controller
             'out_trade_no' => $order->order_no,
             'notify_url' => url('/payment/epay/notify'),
             'return_url' => url('/payment/epay/return'),
-            'name' => $order->product->name ?? '商品购买',
+            'name' => $order->displayName(),
             'money' => $order->total_amount,
         ];
 

@@ -22,6 +22,38 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        foreach ([\App\Models\Article::class, \App\Models\Product::class, \App\Models\Category::class, \App\Models\Setting::class] as $model) {
+            $model::saving(fn ($record) => app(\App\Services\AssetMaintenanceService::class)->restoreReferences($record->getAttributes()));
+        }
+        \App\Models\Article::saved(function ($article) {
+            if ($article->is_published && ($article->wasRecentlyCreated || $article->wasChanged(['is_published', 'slug', 'content', 'title', 'seo_title', 'seo_description']))) {
+                app(\App\Services\SeoQueue::class)->enqueue('/articles/'.$article->slug, hash('sha256', json_encode($article->getAttributes())));
+            }
+        });
+        \App\Models\Product::saved(function ($product) {
+            if ($product->is_active && ($product->wasRecentlyCreated || $product->wasChanged(['is_active', 'slug', 'name', 'description', 'price', 'seo_title', 'seo_description']))) {
+                app(\App\Services\SeoQueue::class)->enqueue('/product/'.$product->slug, hash('sha256', json_encode($product->getAttributes())));
+            }
+        });
+        \App\Models\Category::saved(function ($category) {
+            if (!$category->wasRecentlyCreated && !$category->wasChanged(['is_active', 'slug', 'name', 'description'])) { return; }
+            $queue = app(\App\Services\SeoQueue::class);
+            $revision = 'category:'.$category->id.':'.hash('sha256', json_encode($category->getAttributes()));
+            $queue->enqueue('/category/'.$category->slug, $revision);
+            if ($category->wasChanged('slug')) { $queue->enqueue('/category/'.$category->getRawOriginal('slug'), $revision); }
+            if ($category->wasChanged('is_active')) {
+                $category->products()->select(['id', 'slug'])->chunkById(200, function ($items) use ($queue, $revision) {
+                    foreach ($items as $item) { $queue->enqueue('/product/'.$item->slug, $revision); }
+                });
+            }
+        });
+        foreach ([\App\Models\Article::class => '/articles/', \App\Models\Product::class => '/product/'] as $model => $prefix) {
+            $model::saved(function ($record) use ($prefix) {
+                if ($record->wasChanged('slug')) { app(\App\Services\SeoQueue::class)->enqueue($prefix.$record->getRawOriginal('slug'), 'retired:'.$record->updated_at); }
+                if ($record->wasChanged(['is_published', 'is_active']) && !($record->is_published ?? $record->is_active)) { app(\App\Services\SeoQueue::class)->enqueue($prefix.$record->slug, 'retired:'.$record->updated_at); }
+            });
+            $model::deleted(fn ($record) => app(\App\Services\SeoQueue::class)->enqueue($prefix.$record->slug, 'deleted:'.now()->toISOString()));
+        }
         if (str_starts_with(config('app.url'), 'https://')) {
             URL::forceScheme('https');
         }

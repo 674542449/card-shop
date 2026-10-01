@@ -1,130 +1,32 @@
 @extends(theme_view_path('layout'))
-
 @section('title', setting('seo_default_title', $siteName))
 @section('meta_description', setting('seo_default_description', ''))
 @section('meta_keywords', setting('seo_default_keywords', ''))
-
+@section('canonical', url('/'))
 @section('structured_data')
-@php
-    // 用数组构造再 json_encode，不在模板里直接写字面量 JSON：行首的 "@context" 会被
-    // 当成真正的 @context 指令，编译出一个没闭合的 if()，整页 500。@php 块里的内容
-    // 在指令编译前就被当作原始块存下来，所以放这里是安全的。
-    $structuredData = [
-        '@context' => 'https://schema.org',
-        '@type' => 'WebSite',
-        'name' => $siteName,
-        'url' => url('/'),
-        'description' => setting('seo_default_description', ''),
-    ];
-@endphp
+@php $structuredData = ['@context' => 'https://schema.org', '@type' => 'WebSite', 'name' => $siteName, 'url' => url('/'), 'description' => setting('seo_default_description', '')]; @endphp
 <script type="application/ld+json">{!! json_encode($structuredData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
 @endsection
-
-@php
-    // 只有真的有分类上传过图片时才给缩略图留位。一张都没有的店保持纯文字排版，
-    // 而不是多出一列空盘子。与 default 同源，两边的判断必须一致。
-    $anyCategoryImage = $categories->contains(fn ($c) => filled($c->image));
-@endphp
-
 @section('content')
-
-    @if($siteAnnouncement)
-    <blockquote class="site-quote">{!! \App\Support\ContentRenderer::toHtml($siteAnnouncement) !!}</blockquote>
-    @endif
-
-    {{--
-        分类不再是表头，而是一行安静的小标题加一条延伸到右侧的发丝线（.cat-heading
-        的 ::after）。线本身完成分组，不需要再叠一个背景色块——这是这套模板和 default
-        最大的结构差别：那边一个分类是一张表，这边一个分类是一段留白里的一组卡片。
-    --}}
-    @foreach($categories as $category)
-        @php $catProducts = $groupedProducts->get($category->id, collect()); @endphp
-        @if($catProducts->isNotEmpty())
-        <section aria-label="{{ $category->name }}">
-            <h2 class="cat-heading">
-                @themeInclude('partials.category-thumb', ['category' => $category, 'size' => 18, 'reserve' => $anyCategoryImage])
-                {{ $category->name }}
-                <span class="cat-count">{{ $catProducts->count() }}</span>
-            </h2>
-
-            <div class="card-grid">
-                @foreach($catProducts as $product)
-                @themeInclude('partials.product-card', ['product' => $product])
-                @endforeach
-            </div>
-        </section>
-        @endif
-    @endforeach
-
-    @if($products->isEmpty())
-    <div class="empty-state text-center">
-        @themeInclude('partials.image-placeholder', ['class' => 'empty-state-glyph'])
-        <p>还没有上架任何商品。</p>
-    </div>
-    @endif
-
-    {{-- 文章与标签沿用 default 的结构：这两块的样式来自 front.css，而本模板覆盖了
-         token 层，所以配色会自动跟着走，不需要在这里重写一遍标记。 --}}
-    @if($latestArticles->isNotEmpty() || $recommendedArticles->isNotEmpty())
-    <section class="two-col-section">
-        <div class="article-block">
-            <div class="article-block-header">
-                <h3>最新发布</h3>
-                <a href="/articles">更多 &raquo;</a>
-            </div>
-            <ol class="article-list">
-                @foreach($latestArticles as $article)
-                <li>
-                    <a href="/articles/{{ $article->slug }}">{{ $article->title }}</a>
-                    <span class="date">{{ $article->created_at->format('m-d') }}</span>
-                </li>
-                @endforeach
-            </ol>
-        </div>
-        <div class="article-block">
-            <div class="article-block-header">
-                <h3>推荐文章</h3>
-                <a href="/articles">更多 &raquo;</a>
-            </div>
-            <ol class="article-list">
-                @foreach($recommendedArticles as $article)
-                <li>
-                    <a href="/articles/{{ $article->slug }}">{{ $article->title }}</a>
-                    <span class="date">{{ $article->created_at->format('m-d') }}</span>
-                </li>
-                @endforeach
-            </ol>
-        </div>
-    </section>
-    @endif
-
-    @if($categories->isNotEmpty())
-    <div class="tag-cloud">
-        @foreach($categories as $category)
-        <a href="/category/{{ $category->slug }}" class="tag-item">
-            @themeInclude('partials.category-thumb', ['category' => $category, 'size' => 16, 'reserve' => $anyCategoryImage])
-            {{ $category->name }}
-        </a>
-        @endforeach
-    </div>
-    @endif
-
-    @if(setting('contact_qr_image') || setting('contact_text'))
-    <section class="contact-section">
-        @if(setting('contact_qr_image'))
-        <img src="{{ setting('contact_qr_image') }}" alt="客服联系二维码" class="qr-img"
-             width="96" height="96" loading="lazy" decoding="async">
-        @endif
-        {{-- 结构与 default 保持一致：这一块的样式来自 front.css，改了类名就会错位。
-             正文用 {{ }} 而不是富文本渲染，也和 default 一样——这个字段是纯文本。 --}}
-        <div class="contact-text">
-            <div class="contact-title">联系我们</div>
-            @if(setting('contact_text'))
-            <div class="contact-sub">{{ setting('contact_text') }}</div>
-            @endif
-            <div class="contact-hint">扫描二维码或点击右下角按钮联系客服</div>
-        </div>
-    </section>
-    @endif
-
+<section class="n-home-hero">
+    <div><span class="n-kicker">DIGITAL STORE / 数字商店</span><h1>你需要的，<br>即刻就绪。</h1><p>{{ $siteDescription ?: '挑选数字商品，完成支付，领取卡密。让每一次购买都简单一点。' }}</p><div class="n-actions"><a href="#catalog" class="n-button n-button-primary">浏览商品 <span aria-hidden="true">↓</span></a><a href="/order/query" class="n-button n-button-text">查询已购订单 →</a></div></div>
+    <div class="n-home-checklist" aria-label="购买流程"><span class="n-kicker">从选择到使用</span><ol><li><span>01</span><strong>选择商品</strong><small>找到适合你的数字工具</small></li><li><span>02</span><strong>安全付款</strong><small>确认订单金额与支付方式</small></li><li><span>03</span><strong>领取卡密</strong><small>订单页查看、复制或下载</small></li></ol></div>
+</section>
+@if($siteAnnouncement)<section class="n-announcement" aria-label="站点公告"><span class="n-kicker">公告</span><div class="n-rich">{!! \App\Support\ContentRenderer::toHtml($siteAnnouncement) !!}</div></section>@endif
+<section class="n-catalog" id="catalog">
+    <div class="n-section-head"><div><span class="n-kicker">CATALOG</span><h2>商品目录 <small>{{ $products->total() }} 件</small></h2></div></div>
+<form method="GET" action="{{ request()->url() }}" class="n-catalog-search-form" role="search">
+ <label for="global-product-search">搜索全部商品</label><div class="n-catalog-search-controls"><input id="global-product-search" type="search" name="q" value="{{ request('q') }}" maxlength="200" placeholder="商品名称或分类"><button class="n-button n-button-primary" type="submit">搜索</button>@if(request()->filled('q'))<a href="{{ request()->url() }}">清空</a>@endif</div>
+ </form>
+    <nav class="n-filter-bar" aria-label="商品分类"><a href="/#catalog" class="is-active" aria-current="page">全部商品</a>@foreach($categories as $cat)<a href="/category/{{ $cat->slug }}">{{ $cat->name }} <small>{{ $cat->products_count ?? 0 }}</small></a>@endforeach</nav>
+    @if($products->isNotEmpty())
+    <div class="n-catalog-grid" id="catalog-grid">@foreach($products as $product)@themeInclude('partials.product-card', ['product' => $product])@endforeach</div>
+    <div class="n-empty" id="catalog-empty" hidden><h3>没有找到匹配的商品</h3><p>换一个关键词，或清空搜索查看全部商品。</p></div><p class="n-sr" id="catalog-search-status" role="status" aria-live="polite"></p>
+    @else<div class="n-empty">@themeInclude('partials.image-placeholder')<h3>{{ request()->filled("q") ? "没有找到匹配商品" : "商品正在准备中" }}</h3><p>试试其他关键词，或切换商品分类。</p></div>@endif
+</section>
+{{ $products->links() }}
+@if($latestArticles->isNotEmpty())
+<section class="n-home-resources"><div class="n-section-head"><div><span class="n-kicker">RESOURCES</span><h2>公告与使用指南</h2></div><a href="/articles" class="n-button n-button-text">全部文章 →</a></div><div class="n-resource-grid">@foreach($latestArticles->take(3) as $article)<a href="/articles/{{ $article->slug }}" class="n-resource-card"><time datetime="{{ $article->created_at?->toDateString() }}">{{ $article->created_at?->format('Y.m.d') }}</time><h3>{{ $article->title }}</h3><p>{{ \Illuminate\Support\Str::limit(trim(strip_tags((string) ($article->summary ?: $article->content))), 96) }}</p><span class="n-resource-arrow" aria-hidden="true">↗</span></a>@endforeach</div></section>
+@endif
+@if(setting('contact_qr_image') || setting('contact_text'))<section class="n-contact"><div><span class="n-kicker">SUPPORT</span><h2>有疑问，随时联系。</h2>@if(setting('contact_text'))<p>{{ setting('contact_text') }}</p>@endif @if(setting('contact_url'))<a href="{{ setting('contact_url') }}" class="n-button n-button-secondary" target="_blank" rel="noopener">联系客服 ↗</a>@endif</div>@if(setting('contact_qr_image'))<img src="{{ setting('contact_qr_image') }}" alt="客服联系二维码" width="104" height="104" loading="lazy" decoding="async">@endif</section>@endif
 @endsection

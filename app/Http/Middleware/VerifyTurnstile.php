@@ -77,6 +77,6 @@ class VerifyTurnstile
             return response()->json(['message' => $message], 422);
         }
 
-        return back()->withErrors(['turnstile' => $message])->withInput();
+        return back()->withErrors(['turnstile' => $message])->withInput($request->except(['query_password', 'cf-turnstile-response']));
     }
 }

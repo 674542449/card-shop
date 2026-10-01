@@ -185,7 +185,7 @@ docker compose logs -f app
 **怎么确认成功**——三条都要过：
 
 ```bash
-# ① 五个容器都在跑
+# ① 六个容器都在跑
 docker compose ps
 
 # ② .env 权限正确（这条很关键，见下方说明）
@@ -195,7 +195,7 @@ docker compose exec app su -s /bin/sh -c 'test -r /var/www/html/.env && echo rea
 curl -s http://127.0.0.1/ | grep -c "csrf-token"
 ```
 
-- ① 应该看到 `app` `scheduler` `nginx` `postgres` `redis` 五个，状态 `Up`
+- ① 应该看到 `app` `scheduler` `notifications` `nginx` `postgres` `redis` 六个，状态 `Up`
 - ② **必须输出 `readable`**。PHP-FPM 的工作进程以 `www-data` 运行，读不到 `.env` 就会
   全站 500，而启动日志会一片绿（entrypoint 里的迁移和种子是 root 跑的，照样成功）。
   这个坑真实发生过，非常难自己诊断。输出 `NOT-readable` 的话执行
@@ -217,11 +217,10 @@ curl -s http://127.0.0.1/ | grep -c "csrf-token"
 echo "ADMIN_PASSWORD=你自己定的密码" >> ~/card-shop/.env
 ```
 
-这样就不用去日志里翻，也不会错过。没设的话，首次启动会生成一个随机密码，
-**只在日志里打印一次**：
+没有预设时，首次启动会生成随机密码，写入容器内受限文件，**不会把明文密码写进启动日志**。通过有权限的终端读取：
 
 ```bash
-docker compose logs app | grep -A6 "管理员账号已创建"
+docker compose exec app cat storage/app/initial-admin-password.txt
 ```
 
 错过了也不要紧，有专门的命令可以重置（**不要用 tinker，生产镜像里没装**）：
@@ -441,7 +440,7 @@ cd ~/card-shop && sudo ./scripts/doctor.sh
 
 **域名不用填**——它从 `.env` 的 `APP_URL` 读。
 
-它会检查：`.env` 的每一项配置、文件权限（包括容器里的 www-data 能不能读到）、五个容器
+它会检查：`.env` 的每一项配置、文件权限（包括容器里的 www-data 能不能读到）、六个容器
 是否在跑、scheduler 的运行身份、本地和经 Cloudflare 的页面渲染、CF-RAY、HSTS、
 HTTP 跳转、源站证书、容器出站、防火墙链的结构与可达性、开机自启单元。
 
@@ -544,6 +543,8 @@ git pull
 
 docker compose up -d                          # ③ 让改过的 compose 配置生效（没改就是空操作）
 docker compose restart app                    # ④ 这条不能省，理由见下
+docker compose up -d --wait app                # 等待迁移完成、app 健康
+docker compose restart scheduler notifications # 重新加载调度与通知代码
 docker compose restart nginx                  # ⑤ 避免 502
 ```
 
@@ -569,7 +570,7 @@ git diff --name-only HEAD@{1} HEAD -- docker/ composer.json
 
 **⑤ `restart nginx`** 是因为 nginx 启动时就把 `app:9000` 解析成了一个固定 IP。app 容器一旦
 被重建就会换 IP，而 nginx 还握着旧地址 —— 表现是升级后整站 502，而 `docker compose ps` 里
-五个容器全是 Up。
+六个容器全是 Up。
 
 升级后按第 4 步的三条验证跑一遍，**再加下面这两条**（第 4 步只能证明「站还活着」，证明不了
 「更新到位了」）：
@@ -596,9 +597,33 @@ docker compose exec -T app su -s /bin/sh -c 'head -c 1 public/index.php >/dev/nu
 git reset --hard $(cat /tmp/rollback.txt) && docker compose restart app nginx
 ```
 
-### 备份
+### 通知发送进程
 
-数据全部在 `pgdata` 这个 Docker 卷里，机器没了就没了。建议配个每日备份：
+升级后运行 `docker compose up -d --build`，确认 `notifications` 服务在运行。
+它负责数据库通知队列，支付回调只入队；后台「通知投递」可查看失败及重新入队。
+`docker compose logs --tail=50 notifications` 查看进程日志。
+非 Docker 部署须常驻 `php artisan notifications:send --work`，调度器继续运行，
+用于订单过期和每分钟低库存检查。详细重试规则及 API 查单迁移见 README。
+
+### 备份与恢复
+
+后台「维护与推送 → 备份与恢复」由店主管理员创建、校验和下载完整备份。归档包括 PostgreSQL 自定义格式转储、`.env`、上传文件、归档素材和历史操作记录，保存于 `storage/app/private/shop-backups/`。这些文件含密钥，必须使用私有存储，并额外复制到受控的异机存储。
+
+命令行创建与演练：
+
+```bash
+docker compose exec -T --user www-data app php artisan shop:backup
+docker compose exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --verify-only
+# 先创建一个独立空库；数据库必须已存在，恢复命令不会猜测目标库。
+docker compose exec -T postgres createdb -U cardshop cardshop_restore_check
+docker compose exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --database=cardshop_restore_check --confirm=restore:cardshop_restore_check
+```
+
+完整恢复会覆盖明确指定的目标库；独立库演练不会改动正在使用的上传文件和配置。恢复到当前正式库前，工具会先创建一份备份，并恢复归档内的上传文件和私有归档文件；现有额外文件保留。仅显式追加 `--include-config` 才会覆盖 `.env`。正式库恢复须先暂停 Web、调度和通知进程，恢复后执行 `config:clear`、`cache:clear`，再启动服务并核对订单、库存和素材。应用代码与后台构建产物通过对应的 Git 版本恢复。备份校验会检查清单、路径、每个文件的 SHA-256 和大小。
+
+PHP 镜像安装 PostgreSQL 17 客户端，与本项目数据库一致；非 Docker 部署需在 PATH 配置同版本或更高版本的 `pg_dump`/`pg_restore`，也可使用 `PG_DUMP_BINARY`、`PG_RESTORE_BINARY` 指定完整路径。
+
+建议每日执行完整备份并检查退出码。下面保留数据库单独导出的旧方案；它不包含上传文件和 `.env`：
 
 ```bash
 mkdir -p /opt/cardshop-backups
@@ -613,6 +638,20 @@ chmod +x /etc/cron.daily/cardshop-backup
 ```
 
 先手动跑一次确认能生成文件：`/etc/cron.daily/cardshop-backup && ls -lh /opt/cardshop-backups/`
+
+### 运行健康与主动对账
+
+维护页面显示通知进程、调度器和付款对账心跳，以及通知积压、逾期订单。独立于商城调度器的服务器监控应每分钟执行 `php artisan shop:health --alert`，退出码 0 表示正常，1 表示异常。Docker 环境使用 `docker compose exec -T --user www-data app php artisan shop:health --alert`。`--alert` 使用已启用且配置完整的 Telegram 直接发送，每 15 分钟最多一条；未配置 Telegram 时，监控平台应依据退出码报警。不要把这项检查仅交给商城自身调度器，否则调度器停止时无法检测自身。
+
+系统设置的支付页可启用每 5 分钟主动对账；默认关闭。对账只查询已配置的 HTTPS 网关（本机开发地址除外），核验订单、商户、渠道和人民币金额，再执行与回调相同的幂等发货流程。后台订单页提供手动同步与错误提示。BEpusdt 使用 `/api/v1/pay/info`；EPUSDT 兼容版本必须返回可核对的交易号和金额，不兼容版本会明确拒绝自动确认，继续使用签名回调或人工核对。重复付款保留独立回执并进入待核对列表。
+
+USDT 网关类型必须与实际安装版本一致。原版 EPUSDT 的下单接口无法指定网络，商城只显示「网关默认网络」入口；BEpusdt 才会向网关传递买家选择的 TRC20、BEP20 或 Polygon。切换后先核对网关钱包和网络配置，再用实际网关验收收款与回调。订单取消会释放库存，但不会撤销网关已经受理的付款；有效付款仍按回调与对账流程处理。
+
+### 素材和记录保留
+
+维护页面仅允许归档未被商品、分类、文章或设置引用、上传超过 7 天的素材。归档移入私有目录，可恢复；后续编辑引用归档素材时会自动恢复。不会直接永久删除素材。
+
+`php artisan shop:archive-records --days=365` 只预览。明确添加 `--apply` 后，旧操作日志、已完成/跳过的通知和已提交的 SEO 记录会先写入私有 JSON 归档并校验，再从数据库清理；订单、支付回执、退款与未完成任务保留。归档文件进入完整备份，建议在完整备份成功后执行清理。
 
 ### Cloudflare 网段会变
 

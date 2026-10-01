@@ -164,7 +164,7 @@
 
                     <div class="form-group">
                         <label class="form-label" for="quantity">数量</label>
-                        <input type="number" name="quantity" id="quantity" class="form-input @error('quantity') is-invalid @enderror"
+                        <input type="number" name="quantity" id="quantity" class="form-input @error('quantity') is-invalid @enderror" required step="1"
                                value="{{ old('quantity', $product->min_quantity) }}"
                                min="{{ $product->min_quantity }}"
                                max="{{ $product->max_quantity ? min((int) $product->max_quantity, $stockCount) : $stockCount }}">
@@ -174,7 +174,7 @@
                     <div class="form-group">
                         <label class="form-label" for="email">邮箱</label>
                         <input type="email" name="email" id="email" class="form-input @error('email') is-invalid @enderror"
-                               value="{{ old('email') }}" required placeholder="接收卡密信息">
+                               value="{{ old('email') }}" maxlength="200" autocomplete="email" required placeholder="接收卡密信息">
                     </div>
                     @error('email') <div class="form-error">{{ $message }}</div> @enderror
 
@@ -194,17 +194,18 @@
                     <div class="form-group">
                         <label class="form-label" for="query_password">查询密码</label>
                         <input type="password" name="query_password" id="query_password" class="form-input @error('query_password') is-invalid @enderror"
-                               minlength="6" required placeholder="至少6位，用于查询订单">
+                               minlength="6" maxlength="50" autocomplete="new-password" required placeholder="至少6位，用于查询订单">
                     </div>
                     @error('query_password') <div class="form-error">{{ $message }}</div> @enderror
 
                     <div class="form-group">
                         <label class="form-label" for="coupon_code">优惠码</label>
                         <input type="text" name="coupon_code" id="coupon_code" class="form-input @error('coupon_code') is-invalid @enderror"
-                               value="{{ old('coupon_code') }}" placeholder="可选">
+                               value="{{ old('coupon_code') }}" maxlength="50" placeholder="可选">
                     </div>
                     @error('coupon_code') <div class="form-error">{{ $message }}</div> @enderror
 
+<div style="margin:12px 0"><button type="button" class="btn btn-secondary" data-checkout-quote>校验优惠码并试算</button><p class="hint" data-quote-status role="status" aria-live="polite">可试算优惠，试算不占用库存或优惠次数。</p></div>
                     @php
                         // CreateOrderRequest requires payment_method, so this field is not
                         // optional — without it every checkout fails validation.
@@ -228,7 +229,11 @@
                             $payMethods = ['alipay' => '支付宝', 'wechat' => '微信'];
                         }
 
-                        $selectedPay = old('payment_method', array_key_first($payMethods));
+                        foreach (array_keys($payMethods) as $method) {
+        if (!in_array($method, \App\Support\PaymentMethods::supported(), true)) { unset($payMethods[$method]); }
+    }
+    if (isset($payMethods['usdt_trc20']) && setting('usdt_gateway', 'epusdt') !== 'bepusdt') { $payMethods['usdt_trc20'] = 'USDT · 网关默认网络'; }
+    $selectedPay = old('payment_method', array_key_first($payMethods));
                     @endphp
 
                     {{-- Laid out as visible radio tiles rather than a <select>: every gateway
@@ -268,7 +273,7 @@
                          figure at the mercy of a rule landing. The classes worth sharing
                          (.form-turnstile, .form-error) are the ones that repeat. --}}
                     <div style="display:flex;justify-content:space-between;align-items:baseline;margin:15px 0 10px;">
-                        <span style="color:var(--text-muted);font-size:14px;">应付金额</span>
+                        <span data-checkout-total-label style="color:var(--text-muted);font-size:14px;">商品小计</span>
                         <span id="total-price" style="font-size:22px;font-weight:700;color:var(--price-color);">¥{{ number_format($product->price * $product->min_quantity, 2) }}</span>
                     </div>
 

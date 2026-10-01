@@ -1,13 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LoginForm, ProFormText } from '@ant-design/pro-components';
-import { UserOutlined, LockOutlined } from '@ant-design/icons';
-import { message } from 'antd';
+import { UserOutlined, LockOutlined, ArrowRightOutlined, ExportOutlined } from '@ant-design/icons';
+import { Button, Form, Input, message } from 'antd';
 import { login } from '../services/api';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const [loading, setLoading] = React.useState(false);
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (values) => {
     setLoading(true);
@@ -23,43 +22,50 @@ export default function LoginPage() {
   };
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: '100vh',
-        background: '#f0f2f5',
-      }}
-    >
-      <LoginForm
-        title="Card Shop 管理后台"
-        subTitle="管理员登录"
-        onFinish={handleSubmit}
-        submitter={{
-          searchConfig: { submitText: '登录' },
-          submitButtonProps: { loading, size: 'large', style: { width: '100%' } },
-        }}
-      >
-        <ProFormText
-          name="username"
-          fieldProps={{
-            size: 'large',
-            prefix: <UserOutlined />,
-          }}
-          placeholder="用户名"
-          rules={[{ required: true, message: '请输入用户名' }]}
-        />
-        <ProFormText.Password
-          name="password"
-          fieldProps={{
-            size: 'large',
-            prefix: <LockOutlined />,
-          }}
-          placeholder="密码"
-          rules={[{ required: true, message: '请输入密码' }]}
-        />
-      </LoginForm>
-    </div>
+    <main className="admin-login-shell">
+      <a className="admin-login-brand" href="/" aria-label="CardShop 商城首页">
+        <svg width="28" height="32" viewBox="0 0 28 32" fill="none" aria-hidden="true">
+          <path d="M6 2.5h12l5.5 5.5v20A1.5 1.5 0 0 1 22 29.5H6A1.5 1.5 0 0 1 4.5 28V4A1.5 1.5 0 0 1 6 2.5Z" stroke="currentColor" strokeWidth="1.6" />
+          <path d="M17.5 3v6H23M9 15h10M9 20h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span>CardShop</span>
+      </a>
+      <div className="admin-login-grid">
+        <section className="admin-login-intro">
+          <span className="admin-eyebrow">你的商城工作台</span>
+          <h1>好生意，<br /><em>从容打理。</em></h1>
+          <p>把商品整理妥当，让订单顺畅交付。<br />从这里开始，照顾好你的每一位顾客。</p>
+          <div className="admin-login-art" aria-hidden="true">
+            <div className="admin-login-sheet">
+              <div className="admin-login-sheet-title">今日经营手记 <span>01</span></div>
+              <div className="admin-login-sheet-line"><span className="admin-login-check">✓</span> 一切准备就绪</div>
+              <div className="admin-login-sheet-line"><span className="admin-login-check">✓</span> 商品有序陈列</div>
+              <div className="admin-login-sheet-line"><span className="admin-login-check">✓</span> 每一份交付，都值得认真</div>
+              <div className="admin-login-sheet-rule" />
+              <span className="admin-login-handwriting">Make good things happen.</span>
+            </div>
+            <span className="admin-login-art-star">✳</span>
+          </div>
+        </section>
+        <section className="admin-login-panel" aria-labelledby="admin-login-title">
+          <span className="admin-eyebrow">欢迎回来</span>
+          <h2 id="admin-login-title">登录管理后台</h2>
+          <p className="admin-login-description">使用管理员账户，继续打理你的商城。</p>
+          <Form name="admin-login" layout="vertical" onFinish={handleSubmit} requiredMark={false} disabled={loading} size="large">
+            <Form.Item name="username" label="管理员账号" rules={[{ required: true, message: '请输入用户名' }]}>
+              <Input prefix={<UserOutlined />} placeholder="输入管理员账号" autoComplete="username" />
+            </Form.Item>
+            <Form.Item name="password" label="登录密码" rules={[{ required: true, message: '请输入密码' }]}>
+              <Input.Password prefix={<LockOutlined />} placeholder="输入登录密码" autoComplete="current-password" />
+            </Form.Item>
+            <Button className="admin-login-submit" type="primary" htmlType="submit" loading={loading} block icon={<ArrowRightOutlined />}>
+              进入工作台
+            </Button>
+          </Form>
+          <div className="admin-login-panel-footer"><LockOutlined /><span>管理员专属入口</span></div>
+        </section>
+      </div>
+      <footer className="admin-login-footer"><span>专注经营，安心交付。</span><a href="/">返回商城 <ExportOutlined /></a></footer>
+    </main>
   );
 }

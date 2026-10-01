@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Alert, Button, Card, Col, Row, Skeleton, Table, Tag, Typography, Empty } from 'antd';
+import Link from '../components/PermissionLink';
+import { Alert, Button, Card, Col, Row, Skeleton, Table, Tag, Typography, Empty, Space } from 'antd';
+import { ArrowRightOutlined, ClockCircleOutlined, FileTextOutlined, ReloadOutlined, ShoppingOutlined, WalletOutlined, PlusOutlined } from '@ant-design/icons';
 import { getDashboard } from '../services/api';
 
 const STATUS = {
@@ -9,158 +10,44 @@ const STATUS = {
   expired: { text: '已过期', color: 'default' },
   closed: { text: '已关闭', color: 'red' },
 };
+const money = (value) => '¥' + Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const money = (v) =>
-  '¥' + Number(v || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/**
- * A stat tile, not a chart: a single number's job is to be read, not compared.
- *
- * `tone` is reserved for the one tile that can require action. Amber is the shop's
- * own --warm-btn and is used here for nothing else, so a coloured tile on this page
- * always means the same thing — something is waiting on you.
- */
-function Stat({ label, value, tone, hint, to }) {
+function Stat({ label, value, tone, hint, to, icon }) {
   const body = (
-    <Card
-      size="small"
-      styles={{ body: { padding: '14px 16px' } }}
-      style={{
-        height: '100%',
-        borderColor: tone === 'attention' ? '#ffb800' : undefined,
-        background: tone === 'attention' ? '#fffbf0' : undefined,
-      }}
-    >
-      <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-        {label}
-      </Typography.Text>
-      <div
-        style={{
-          /* Tabular figures so digits keep their column between tiles instead of
-             shifting width with the value — this row is meant to be read at a glance. */
-          fontVariantNumeric: 'tabular-nums',
-          fontSize: 26,
-          fontWeight: 700,
-          lineHeight: 1.25,
-          marginTop: 2,
-          color: tone === 'money' ? '#ff4400' : tone === 'attention' ? '#a86a00' : '#20242c',
-        }}
-      >
-        {value}
-      </div>
-      {hint ? (
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {hint}
-        </Typography.Text>
-      ) : null}
+    <Card className={`admin-stat ${tone ? `admin-stat-${tone}` : ''}`} size="small">
+      <div className="admin-stat-top"><span>{label}</span><span className="admin-stat-icon">{icon}</span></div>
+      <div className="admin-stat-value">{value}</div>
+      <div className="admin-stat-hint">{hint}{to && <ArrowRightOutlined />}</div>
     </Card>
   );
-
-  return to ? (
-    <Link to={to} className="dash-tile-link" style={{ display: 'block', height: '100%' }}>
-      {body}
-    </Link>
-  ) : (
-    body
-  );
+  return to ? <Link to={to} className="dash-tile-link">{body}</Link> : body;
 }
 
-/**
- * Seven daily revenue totals as bars.
- *
- * Bars, not a line: these are seven discrete daily buckets, and a line between them
- * would claim a continuity the data does not have. One series, so there is no legend
- * — the card title names it — and only the best day carries a number, because a
- * label on every bar is noise at this size.
- *
- * #009688 is the storefront's own --teal, and it is the shade that passes the palette
- * checks (lightness band, chroma floor, >=3:1 against the card surface). The darker
- * #00796b used for buttons measured below the chroma floor and read as grey — the
- * button needed contrast for white text, this needs chroma to read as data.
- */
+/** Daily totals are separate buckets; zero revenue remains visible on the baseline. */
 function RevenueBars({ labels = [], data = [] }) {
-  const values = data.map((v) => Number(v) || 0);
+  const values = data.map((value) => Number(value) || 0);
   const max = Math.max(...values, 0);
-
   if (!values.length || max === 0) {
-    return <Empty description="最近 7 天还没有收入" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+    return <div className="admin-chart-empty"><Empty description="最近 7 天还没有收入" image={Empty.PRESENTED_IMAGE_SIMPLE} /></div>;
   }
-
   const best = values.indexOf(max);
-  const H = 132;
-  const summary = labels.map((l, i) => l + ' ' + money(values[i])).join('，');
-
+  const summary = labels.map((label, index) => label + ' ' + money(values[index])).join('，');
   return (
-    <div role="img" aria-label={'近 7 天每日收入：' + summary}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: H }}>
-        {values.map((v, i) => {
-          /* A zero day still gets a visible sliver, otherwise "sold nothing" and
-             "no data for this day" look identical. */
-          const h = Math.max(3, Math.round((v / max) * (H - 26)));
-          return (
+    <div className="admin-revenue-chart" role="img" aria-label={'近 7 天每日销售额：' + summary}>
+      <div className="admin-chart-bars">
+        {values.map((value, index) => (
+          <div className="admin-chart-column" key={index}>
+            {index === best && <span className="admin-chart-best">{money(value)}</span>}
             <div
-              key={i}
-              style={{
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                gap: 4,
-              }}
-            >
-              {i === best ? (
-                <span
-                  style={{
-                    fontSize: 11,
-                    color: '#5b6270',
-                    fontVariantNumeric: 'tabular-nums',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {money(v)}
-                </span>
-              ) : null}
-              <div
-                title={labels[i] + '　' + money(v)}
-                className="dash-bar"
-                style={{
-                  width: '100%',
-                  height: h,
-                  /* Rounded data-end at the top only: the bar is anchored to the
-                     baseline, and rounding the bottom would lift it off its own axis. */
-                  borderRadius: '4px 4px 0 0',
-                  background: v === 0 ? '#e3e6ea' : '#009688',
-                }}
-              />
-            </div>
-          );
-        })}
-      </div>
-      <div
-        style={{
-          display: 'flex',
-          gap: 8,
-          marginTop: 6,
-          borderTop: '1px solid #eceef1',
-          paddingTop: 6,
-        }}
-      >
-        {labels.map((l, i) => (
-          <div
-            key={i}
-            style={{
-              flex: 1,
-              textAlign: 'center',
-              fontSize: 11,
-              color: '#8a919e',
-              fontVariantNumeric: 'tabular-nums',
-            }}
-          >
-            {l}
+              title={`${labels[index] || ''}　${money(value)}`}
+              className={`dash-bar ${index === best ? 'dash-bar-best' : ''} ${value === 0 ? 'dash-bar-zero' : ''}`}
+              style={{ height: Math.max(3, Math.round((value / max) * 130)) }}
+            />
           </div>
         ))}
       </div>
+      <div className="admin-chart-labels">{labels.map((label, index) => <span key={index}>{label}</span>)}</div>
+      <div className="admin-chart-caption"><span className="admin-chart-key" />已支付订单销售额（未扣退款）<span>按成交日期统计</span></div>
     </div>
   );
 }
@@ -175,113 +62,78 @@ export default function Dashboard() {
     setFailed(false);
     getDashboard()
       .then((res) => setData(res.data?.data || res.data))
-      // The failure has to be visible. Swallowing it left every figure at its ?? 0
-      // fallback, so a request that never arrived rendered a confident 今日收入
-      // ¥0.00 — indistinguishable from a day with no sales, and far more alarming.
       .catch(() => setFailed(true))
       .finally(() => setLoading(false));
   };
-
   useEffect(load, []);
 
-  if (loading) {
-    return <Skeleton active paragraph={{ rows: 8 }} />;
-  }
-
+  if (loading) return <Skeleton active paragraph={{ rows: 8 }} />;
   if (failed) {
-    return (
-      <Alert
-        type="error"
-        showIcon
-        message="数据加载失败"
-        description="没能取到今天的经营数据。这不表示没有成交——请检查网络或服务器后重试。"
-        action={<Button size="small" onClick={load}>重试</Button>}
-      />
-    );
+    return <Alert type="error" showIcon message="数据加载失败" description="没能取到今天的经营数据。这不表示没有成交，请检查网络或服务器后重试。" action={<Button size="small" onClick={load}>重试</Button>} />;
   }
 
   const pending = Number(data.pending_orders || 0);
-
+  const dateLabel = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
   const columns = [
     {
-      title: '订单号',
-      dataIndex: 'order_no',
-      /* Monospace with tabular figures: order numbers are all the same length, so in
-         a column they line up and an odd one out is visible without reading it.
-         ellipsis rather than wrap — a 19-digit number broken across two lines is
-         harder to read than a truncated one, and the full value is one click away. */
-      ellipsis: true,
-      width: 170,
-      render: (v, r) => (
-        <Link
-          to={'/orders/' + r.id}
-          style={{ fontFamily: 'ui-monospace, Consolas, monospace', whiteSpace: 'nowrap' }}
-        >
-          {v}
-        </Link>
-      ),
+      title: '订单号', dataIndex: 'order_no', width: 225,
+      render: (value, record) => <Link className="admin-order-number" to={'/orders/' + record.id}>{value}</Link>,
     },
-    { title: '商品', dataIndex: 'product_name', ellipsis: true },
-    {
-      title: '金额',
-      dataIndex: 'total_amount',
-      width: 110,
-      align: 'right',
-      render: (v) => <span style={{ fontVariantNumeric: 'tabular-nums' }}>{money(v)}</span>,
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      width: 90,
-      render: (v) => <Tag color={STATUS[v]?.color}>{STATUS[v]?.text || v}</Tag>,
-    },
-    { title: '时间', dataIndex: 'created_at', width: 150 },
+    { title: '商品', dataIndex: 'product_name', ellipsis: true, width: 220 },
+    { title: '金额', dataIndex: 'total_amount', width: 120, align: 'right', render: (value) => <span className="admin-amount">{money(value)}</span> },
+    { title: '状态', dataIndex: 'status', width: 100, render: (value) => <Tag color={STATUS[value]?.color}>{STATUS[value]?.text || value}</Tag> },
+    { title: '时间', dataIndex: 'created_at', width: 155 },
   ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <Row gutter={[16, 16]}>
-        <Col xs={12} lg={6}>
-          <Stat
-            label="今日收入"
-            value={money(data.today_revenue)}
-            tone="money"
-            hint={'本月 ' + money(data.month_revenue)}
-          />
+    <div className="admin-dashboard">
+      <section className="admin-dashboard-intro">
+        <div><span className="admin-eyebrow">{dateLabel}</span><h2>每一笔订单，都井然有序。</h2><p>看看今天的经营进展，再照顾好接下来要做的事。</p></div>
+        <Button icon={<ReloadOutlined />} onClick={load}>刷新数据</Button>
+      </section>
+      <Row gutter={[16, 16]} className="admin-stat-row">
+        <Col xs={12} xl={6}><Stat label="今日销售额" value={money(data.today_revenue)} tone="money" hint={'本月 ' + money(data.month_revenue)} icon={<WalletOutlined />} /></Col>
+        <Col xs={12} xl={6}><Stat label="今日订单" value={data.today_orders ?? 0} hint={'累计 ' + (data.total_orders ?? 0) + ' 笔'} icon={<FileTextOutlined />} /></Col>
+        <Col xs={12} xl={6}><Stat label="待支付订单" value={pending} tone={pending > 0 ? 'attention' : undefined} hint={pending > 0 ? '查看待付款的订单' : '没有待处理的订单'} to={pending > 0 ? '/orders?status=pending' : undefined} icon={<ClockCircleOutlined />} /></Col>
+        <Col xs={12} xl={6}><Stat label="在售商品" value={data.total_products ?? 0} hint="查看已上架的商品" to="/products?is_active=1" icon={<ShoppingOutlined />} /></Col>
+      </Row>
+      <Row gutter={[16, 16]} className="admin-stat-row">
+        <Col xs={12} xl={8}><Stat label="今日净销售额" value={money(data.today_net_revenue)} hint={'本月 ' + money(data.month_net_revenue)} icon={<WalletOutlined />} /></Col>
+        <Col xs={12} xl={8}><Stat label="今日完成退款" value={money(data.today_refund_amount)} hint={'累计 ' + money(data.total_refund_amount)} icon={<WalletOutlined />} /></Col>
+        <Col xs={12} xl={8}><Stat label="退款待审核" value={data.requested_refunds || 0} hint={'已批准待退款 ' + (data.approved_refunds || 0) + ' 笔'} to="/refunds?status=requested" icon={<ClockCircleOutlined />} /></Col>
+      </Row>
+      <Typography.Paragraph type="secondary">销售额按订单付款日期统计；退款按实际完成日期统计。净销售额只扣订单退款，退款金额另含额外收款退回；这些数据不代表利润。</Typography.Paragraph>
+      <Row gutter={[20, 20]}>
+        <Col xs={24}>
+          <Space wrap size="large">
+            <Link to="/orders?payment_review=1">付款待核对：{data.payment_review_orders || 0} 笔</Link>
+            <Link to="/products?low_stock=1">低库存商品：{data.low_stock_count || 0} 件</Link>
+            <Link to="/notifications?status=failed">发送失败：{data.failed_notifications || 0} 条</Link>
+          </Space>
         </Col>
-        <Col xs={12} lg={6}>
-          <Stat label="今日订单" value={data.today_orders ?? 0} hint={'累计 ' + (data.total_orders ?? 0) + ' 笔'} />
+        {Number(data.low_stock_count) > 0 && <Col xs={24}>
+          <Card title="库存预警" extra={<Link to="/products?low_stock=1">查看全部</Link>}>
+            <Table rowKey="id" size="small" pagination={false} dataSource={data.low_stock_products || []} scroll={{ x: 500 }} columns={[
+              { title: '商品', dataIndex: 'name', render: (value, record) => <Link to={`/products/${record.id}/cards`}>{value}</Link> },
+              { title: '可售库存', dataIndex: 'stock_count' }, { title: '预警阈值', dataIndex: 'low_stock_threshold' },
+            ]} />
+          </Card>
+        </Col>}
+        <Col xs={24} lg={16}>
+          <Card className="admin-chart-card" title="近 7 天销售额（未扣退款）" extra={<span className="admin-card-caption">经营趋势</span>}>
+            <RevenueBars labels={data.chart_labels} data={data.chart_data} />
+          </Card>
         </Col>
-        <Col xs={12} lg={6}>
-          {/* The only tile that can ask for something, and the only one that links
-              away. Amber solely when the count is non-zero — a tile that is always
-              coloured stops meaning anything. */}
-          <Stat
-            label="待支付订单"
-            value={pending}
-            tone={pending > 0 ? 'attention' : undefined}
-            hint={pending > 0 ? '点击查看，可手动确认或关闭' : '没有待处理的订单'}
-            to={pending > 0 ? '/orders' : undefined}
-          />
-        </Col>
-        <Col xs={12} lg={6}>
-          <Stat label="在售商品" value={data.total_products ?? 0} hint="仅统计已上架的" to="/products" />
+        <Col xs={24} lg={8}>
+          <Card className="admin-shortcuts-card" title="常用操作" extra={<PlusOutlined className="admin-card-caption" />}>
+            <Link to="/products" className="admin-shortcut"><span className="admin-shortcut-icon"><ShoppingOutlined /></span><span><strong>打理商品</strong><small>上架、定价与库存补充</small></span><ArrowRightOutlined /></Link>
+            <Link to="/orders" className="admin-shortcut"><span className="admin-shortcut-icon"><FileTextOutlined /></span><span><strong>查看订单</strong><small>确认付款，管理交付</small></span><ArrowRightOutlined /></Link>
+            <Link to="/articles" className="admin-shortcut"><span className="admin-shortcut-icon"><PlusOutlined /></span><span><strong>更新公告</strong><small>发布教程与商城消息</small></span><ArrowRightOutlined /></Link>
+          </Card>
         </Col>
       </Row>
-
-      <Card title="近 7 天收入" size="small">
-        <RevenueBars labels={data.chart_labels} data={data.chart_data} />
-      </Card>
-
-      <Card title="最近订单" size="small" extra={<Link to="/orders">全部订单</Link>}>
-        <Table
-          rowKey="id"
-          size="small"
-          columns={columns}
-          dataSource={data.recent_orders || []}
-          pagination={false}
-          locale={{ emptyText: <Empty description="还没有订单" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
-        />
+      <Card className="admin-recent-orders" title="最近订单" extra={<Link to="/orders" className="admin-card-more">全部订单 <ArrowRightOutlined /></Link>}>
+        <Table rowKey="id" size="small" columns={columns} dataSource={data.recent_orders || []} pagination={false} scroll={{ x: 820 }} locale={{ emptyText: <Empty description="还没有订单" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }} />
       </Card>
     </div>
   );

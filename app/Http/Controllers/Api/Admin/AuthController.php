@@ -27,7 +27,7 @@ class AuthController extends Controller
 
         $admin = Admin::where('username', $request->input('username'))->first();
 
-        if (!$admin || !Hash::check($request->input('password'), $admin->password)) {
+        if (!$admin || !$admin->is_active || !Hash::check($request->input('password'), $admin->password)) {
             RateLimiter::hit($key, 60);
             return response()->json(['message' => '用户名或密码错误。'], 422);
         }
@@ -80,7 +80,9 @@ class AuthController extends Controller
     {
         $request->validate([
             'current_password' => ['required', 'string'],
-            'new_password' => ['required', 'string', 'min:12', 'confirmed'],
+            'new_password' => ['bail', 'required', 'string', 'min:12', 'max:72', 'confirmed', function ($attribute, $value, $fail) {
+                if (strlen($value) > 72) { $fail('新密码最多 72 字节，请缩短密码。'); }
+            }],
         ], [
             'current_password.required' => '请输入当前密码。',
             'new_password.required' => '请输入新密码。',
@@ -127,6 +129,7 @@ class AuthController extends Controller
             'username' => $admin->username,
             'last_login_at' => $admin->last_login_at,
             'last_login_ip' => $admin->last_login_ip,
+            'role' => $admin->role, 'permissions' => $admin->permissions,
         ]);
     }
 }

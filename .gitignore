@@ -1,5 +1,8 @@
 /vendor/
 /node_modules/
+/admin-frontend/node_modules/
+/.local/
+/.tools/
 /.env
 /.env.backup
 /.env.production
@@ -10,17 +13,22 @@
 # scripts/update.sh 产生的：回滚点和更新前的数据库备份
 /storage/.update-rollback
 /storage/backups/
+/storage/app/private/shop-backups/
+/storage/app/private/asset-quarantine/
+/storage/app/private/record-archives/
 /storage/app/public/uploads/
 /storage/framework/cache/data/*
 /storage/framework/cache/purifier/*
 /storage/framework/sessions/*
 /storage/framework/views/*
+/storage/framework/testing/
 /storage/logs/*.log
 /public/hot
 /public/storage
 /bootstrap/cache/*
 !.gitkeep
 .phpunit.result.cache
+/.phpunit.cache/
 Homestead.json
 Homestead.yaml
 npm-debug.log

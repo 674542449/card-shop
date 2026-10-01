@@ -336,6 +336,21 @@ fi
 $DC restart app || die "重启 app 容器失败"
 ok "app 容器已重启（entrypoint 会重跑迁移、view:cache 和编译预检）"
 
+# 常驻 CLI 进程不会重新加载已载入的 PHP 类。等迁移完成后重启，避免仍用旧代码发送通知。
+APP_READY=0
+for ((attempt=0; attempt<180; attempt++)); do
+    APP_CID=$($DC ps -q app 2>/dev/null | head -1)
+    if [ -n "$APP_CID" ] && [ "$(docker inspect -f '{{.State.Health.Status}}' "$APP_CID" 2>/dev/null)" = "healthy" ]; then
+        APP_READY=1
+        break
+    fi
+    sleep 2
+done
+[ "$APP_READY" = "1" ] || die "app 启动后未恢复健康" "$DC logs --tail=80 app"
+$DC up -d --no-deps scheduler notifications || die "启动后台任务进程失败"
+$DC restart scheduler notifications || die "重启后台任务进程失败"
+ok "调度与通知进程已加载新代码"
+
 $DC restart nginx || warn "重启 nginx 失败" "如果站点 502，手动跑一次 $DC restart nginx"
 ok "nginx 已重启（避免 app 换 IP 后 502）"
 

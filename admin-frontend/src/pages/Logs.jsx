@@ -40,6 +40,7 @@ export default function Logs() {
       actionRef={actionRef}
       rowKey="id"
       columns={columns}
+      form={{ name: 'logs-search' }}
       search={{ labelWidth: 'auto' }}
       request={async (params) => {
         const { current, pageSize, ...rest } = params;

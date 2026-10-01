@@ -4,4 +4,4 @@
 docker/php/entrypoint.sh text eol=lf
 
 # Built admin assets are generated artifacts: store them byte-for-byte.
-public/admin-assets/** -text
+public/admin-assets/** -text -whitespace linguist-generated=true

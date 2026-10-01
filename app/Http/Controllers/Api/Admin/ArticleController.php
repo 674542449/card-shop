@@ -7,12 +7,27 @@ use App\Models\Article;
 use App\Models\ArticleCategory;
 use App\Models\OperationLog;
 use App\Support\SlugGenerator;
+use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
 
 class ArticleController extends Controller
 {
+    public function productOptions(Request $request)
+    {
+        $data = $request->validate(['q' => 'nullable|string|max:200']);
+        $products = \App\Models\Product::active()->when(filled($data['q'] ?? null),
+            fn ($q) => $q->where('name', 'ilike', '%'.$data['q'].'%'))
+            ->ordered()->limit(30)->get(['id', 'name']);
+        return response()->json(['data' => $products]);
+    }
     public function index(Request $request)
     {
+        $pageSize = AdminListQuery::pageSize($request, 20, [
+            'article_category_id' => 'nullable|integer',
+            'is_published' => 'nullable|boolean',
+            'keyword' => 'nullable|string|max:200',
+            'title' => 'nullable|string|max:200',
+        ]);
         $query = Article::with('articleCategory');
 
         if ($request->filled('article_category_id')) {
@@ -27,7 +42,7 @@ class ArticleController extends Controller
             $query->where('title', 'ilike', '%' . $keyword . '%');
         }
 
-        $articles = $query->recent()->paginate($request->get('pageSize', 20));
+        $articles = $query->recent()->paginate($pageSize);
         $categories = ArticleCategory::ordered()->get(['id', 'name']);
 
         return response()->json([
@@ -41,7 +56,7 @@ class ArticleController extends Controller
     {
         $data = $request->validate([
             'title' => 'required|string|max:200',
-            'slug' => 'nullable|string|max:200|unique:articles,slug',
+            'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:articles,slug',
             // articles.article_category_id is NOT NULL in the schema, so accepting null
             // here turns a missing category into a Postgres violation and a 500.
             'article_category_id' => 'required|exists:article_categories,id',
@@ -74,7 +89,7 @@ class ArticleController extends Controller
     {
         $data = $request->validate([
             'title' => 'required|string|max:200',
-            'slug' => 'nullable|string|max:200|unique:articles,slug,' . $article->id,
+            'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:articles,slug,' . $article->id,
             // articles.article_category_id is NOT NULL in the schema, so accepting null
             // here turns a missing category into a Postgres violation and a 500.
             'article_category_id' => 'required|exists:article_categories,id',

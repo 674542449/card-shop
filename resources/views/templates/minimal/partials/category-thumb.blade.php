@@ -1,0 +1,1 @@
+@if($category->image)<img class="n-category-thumb" src="{{ $category->image }}" alt="" width="{{ $size ?? 20 }}" height="{{ $size ?? 20 }}" loading="lazy" decoding="async">@endif

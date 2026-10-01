@@ -1,3 +1,4 @@
+import useWritePermission from '../hooks/useWritePermission';
 import React, { useRef, useState } from 'react';
 import {
   ProTable,
@@ -14,6 +15,7 @@ import { getCategories, createCategory, updateCategory, deleteCategory } from '.
 import ImageUploader from '../components/ImageUploader';
 
 export default function Categories() {
+  const canWrite = useWritePermission('catalog');
   const actionRef = useRef();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
@@ -35,10 +37,12 @@ export default function Categories() {
     { title: '名称', dataIndex: 'name', copyable: true },
     { title: 'Slug', dataIndex: 'slug', search: false },
     { title: '排序', dataIndex: 'sort_order', search: false, width: 80 },
+    { title: '商品数', dataIndex: 'products_count', search: false, width: 90 },
     {
       title: '状态',
       dataIndex: 'is_active',
-      search: false,
+      valueType: 'select',
+      valueEnum: { 1: { text: '启用' }, 0: { text: '禁用' } },
       width: 80,
       render: (_, record) =>
         record.is_active ? <Tag color="green">启用</Tag> : <Tag color="red">禁用</Tag>,
@@ -47,8 +51,8 @@ export default function Categories() {
       title: '操作',
       valueType: 'option',
       width: 150,
-      render: (_, record) => [
-        <a
+      render: (_, record) => canWrite ? [
+        <Button type="link" htmlType="button" style={{ padding: 0, height: 'auto' }}
           key="edit"
           onClick={() => {
             setEditingRecord(record);
@@ -56,7 +60,7 @@ export default function Categories() {
           }}
         >
           编辑
-        </a>,
+        </Button>,
         <Popconfirm
           key="delete"
           title="确认删除此分类？"
@@ -70,9 +74,9 @@ export default function Categories() {
             }
           }}
         >
-          <a style={{ color: '#ff4d4f' }}>删除</a>
+          <Button type="link" htmlType="button" danger style={{ padding: 0, height: 'auto' }}>删除</Button>
         </Popconfirm>,
-      ],
+      ] : [],
     },
   ];
 
@@ -82,6 +86,7 @@ export default function Categories() {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        form={{ name: 'categories-search' }}
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getCategories({ page: params.current, per_page: params.pageSize, ...params });
@@ -93,7 +98,7 @@ export default function Categories() {
             success: true,
           };
         }}
-        toolBarRender={() => [
+        toolBarRender={() => canWrite ? [
           <Button
             key="add"
             type="primary"
@@ -105,9 +110,11 @@ export default function Categories() {
           >
             新增分类
           </Button>,
-        ]}
+        ] : []}
       />
       <ModalForm
+        name="category-editor"
+        key={editingRecord?.id || 'new'}
         title={editingRecord ? '编辑分类' : '新增分类'}
         open={modalVisible}
         onOpenChange={setModalVisible}
@@ -118,7 +125,7 @@ export default function Categories() {
             // ProForm's omitNil strips null values out of `values` entirely, so clearing
             // the thumbnail would submit no `image` key at all and the old URL would
             // survive the save. Put it back explicitly.
-            const payload = { ...values, image: values.image ?? null };
+            const payload = { ...values, image: values.image ?? null, description: values.description ?? null, sort_order: values.sort_order ?? 0 };
 
             if (editingRecord) {
               await updateCategory(editingRecord.id, payload);
@@ -139,9 +146,8 @@ export default function Categories() {
         <ProFormText
           name="slug"
           label="Slug"
-          rules={[{ required: true, message: '请输入 Slug' }]}
-          placeholder="分类页网址，用英文和连字符，如 digital-goods"
-          extra="中文名称无法自动生成 Slug，请手动填写一个便于搜索引擎收录的英文标识。"
+          placeholder="留空自动生成，或填写 digital-goods"
+          extra="建议使用英文、数字和连字符，便于分享分类页网址。"
         />
         <ProFormTextArea
           name="description"

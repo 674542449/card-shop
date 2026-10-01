@@ -1,36 +1,14 @@
 @extends(theme_view_path('layout'))
-
 @section('title', $seoTitle)
 @section('meta_description', $seoDescription)
 @section('meta_keywords', $seoKeywords)
 @section('canonical', url('/category/' . $category->slug))
-
 @section('content')
-    <blockquote class="site-quote cat-quote">
-        @themeInclude('partials.category-thumb', ['category' => $category, 'size' => 40, 'modifier' => 'cat-thumb-lg'])
-        <span class="cat-quote-text">
-            <strong>{{ $category->name }}</strong>
-            @if($category->description)
-             — {{ $category->description }}
-            @endif
-        </span>
-    </blockquote>
-
-    @if($products->count() > 0)
-    {{-- 与首页同一个卡片 partial。首页那边按分类分组，这里是单分类的一整页，
-         所以不需要 .cat-heading，卡片直接铺开。 --}}
-    <div class="card-grid">
-        @foreach($products as $product)
-        @themeInclude('partials.product-card', ['product' => $product])
-        @endforeach
-    </div>
-
-    <div class="pagination-wrap">{{ $products->links() }}</div>
-    @else
-    <div class="empty-state text-center">
-        @themeInclude('partials.image-placeholder', ['class' => 'empty-state-glyph'])
-        <p>该分类暂无商品</p>
-        <a href="/" class="btn-buy-sm">返回首页</a>
-    </div>
-    @endif
+<form method="GET" action="{{ request()->url() }}" class="n-catalog-search-form" role="search">
+ <label for="global-product-search">搜索全部商品</label><div class="n-catalog-search-controls"><input id="global-product-search" type="search" name="q" value="{{ request('q') }}" maxlength="200" placeholder="商品名称"><button class="n-button n-button-primary" type="submit">搜索</button>@if(request()->filled('q'))<a href="{{ request()->url() }}">清空</a>@endif</div>
+ </form>
+<nav class="n-breadcrumb" aria-label="面包屑"><a href="/">商品目录</a><span aria-hidden="true">/</span><span aria-current="page">{{ $category->name }}</span></nav>
+<header class="n-page-header"><div><span class="n-kicker">COLLECTION</span><h1>{{ $category->name }}</h1>@if($category->description)<p>{{ $category->description }}</p>@endif</div><a href="/" class="n-button n-button-secondary">全部商品 →</a></header>
+<div class="n-list-caption"><span>{{ $products->total() }} 件商品</span><span>付款后自动交付</span></div>
+@if($products->isNotEmpty())<div class="n-catalog-grid">@foreach($products as $product)@themeInclude('partials.product-card', ['product' => $product])@endforeach</div>{{ $products->links() }}@else<div class="n-empty">@themeInclude('partials.image-placeholder')<h2>这个分类还没有商品</h2><p>返回目录，看看其他分类。</p><a href="/" class="n-button n-button-secondary">返回商品目录</a></div>@endif
 @endsection

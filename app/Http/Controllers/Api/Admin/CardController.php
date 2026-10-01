@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Card;
 use App\Models\Product;
 use App\Models\OperationLog;
+use App\Support\AdminListQuery;
+use App\Services\CardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -13,13 +15,21 @@ class CardController extends Controller
 {
     public function index(Request $request, Product $product)
     {
+        $pageSize = AdminListQuery::pageSize($request, 50, [
+            'status' => 'nullable|in:unsold,locked,sold',
+            'content' => 'nullable|string|max:500',
+        ]);
         $query = $product->cards()->with('order');
+
+        if ($request->filled('content')) {
+            $query->where('content', 'ilike', '%' . $request->input('content') . '%');
+        }
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
-        $cards = $query->orderByDesc('id')->paginate($request->get('pageSize', 50));
+        $cards = $query->orderByDesc('id')->paginate($pageSize);
 
         $total = $product->cards()->count();
         $unsold = $product->cards()->where('status', 'unsold')->count();
@@ -37,11 +47,11 @@ class CardController extends Controller
         ]);
     }
 
-    public function import(Request $request, Product $product)
+    public function import(Request $request, Product $product, CardService $cardService)
     {
         $request->validate([
-            'content' => 'required_without:file',
-            'file' => 'required_without:content|file|mimes:txt,csv',
+            'content' => 'required_without:file|nullable|string',
+            'file' => 'required_without:content|nullable|file|mimes:txt,csv|max:10240',
         ]);
 
         if ($request->hasFile('file')) {
@@ -50,40 +60,17 @@ class CardController extends Controller
             $content = $request->input('content');
         }
 
-        // \r stripped too: a file saved on Windows arrives with CRLF, and trim() alone
-        // left a trailing \r on every secret — invisible in the admin, and delivered
-        // to the buyer inside the card content.
-        $lines = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $content))));
-        $count = count($lines);
-
-        if ($count === 0) {
+        if (!is_string($content)) {
+            return response()->json(['message' => '无法读取导入文件。'], 422);
+        }
+        $result = $cardService->importCardsWithResult($product->id, $content);
+        if ($result['total'] === 0) {
             return response()->json(['message' => '没有可导入的卡密。'], 422);
         }
+        $message = "成功导入 {$result['count']} 张卡密，跳过 {$result['skipped']} 条重复卡密。";
+        OperationLog::log('导入卡密', 'product', $product->id, "{$message} 商品：{$product->name}");
 
-        $now = now();
-        $rows = array_map(fn (string $line) => [
-            'product_id' => $product->id,
-            'content' => $line,
-            'status' => 'unsold',
-            'created_at' => $now,
-            'updated_at' => $now,
-        ], $lines);
-
-        // One transaction, chunked inserts. It used to issue one INSERT per line with
-        // no transaction, so a 5,000-card import was 5,000 round trips: slow enough to
-        // hit the request timeout, and every row before the cut was already committed.
-        // The operator saw a failure, imported the same file again, and the shop ended
-        // up with duplicates of every secret that had made it in — two buyers sold the
-        // same card.
-        DB::transaction(function () use ($rows) {
-            foreach (array_chunk($rows, 500) as $chunk) {
-                Card::insert($chunk);
-            }
-        });
-
-        OperationLog::log('导入卡密', 'product', $product->id, "导入 {$count} 张卡密到 {$product->name}");
-
-        return response()->json(['message' => "成功导入 {$count} 张卡密。", 'count' => $count]);
+        return response()->json(array_merge(['message' => $message], $result));
     }
 
     /**

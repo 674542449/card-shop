@@ -1,27 +1,24 @@
 import React, { Suspense, useMemo } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { canVisit, permittedMenu } from '../permissions';
 import { ProLayout, PageContainer } from '@ant-design/pro-components';
-import { LogoutOutlined, UserOutlined, ShopOutlined } from '@ant-design/icons';
-import { Dropdown, Skeleton, Space, Typography, message } from 'antd';
+import { LogoutOutlined, UserOutlined, ExportOutlined, SettingOutlined, MenuOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Skeleton, Space, message } from 'antd';
 import { logout } from '../services/api';
 import { ADMIN_BASE } from '../base';
 import { menuTree, leafPaths, preloadPage, pageMeta } from '../navigation';
 
-/**
- * Shown in the content area while a page's chunk loads.
- *
- * A skeleton in the content area, not a full-screen spinner. The Suspense boundary
- * used to sit above <Routes>, so every navigation replaced the whole application —
- * sidebar, header and all — with a centred spinner on white, then rebuilt it. That
- * is what read as "每次点击栏目都白屏重新加载": nothing was actually reloading, but
- * the entire frame was being thrown away and redrawn on every click.
- *
- * The boundary lives around <Outlet /> now, so the frame stays put and only the
- * content changes. In practice this is rarely seen at all — the sidebar prefetches
- * the chunk on hover, so it has usually arrived before the click does.
- */
+function ShopMark() {
+  return (
+    <svg className="admin-shop-mark" width="28" height="32" viewBox="0 0 28 32" fill="none" aria-hidden="true">
+      <path d="M6 2.5h12l5.5 5.5v20A1.5 1.5 0 0 1 22 29.5H6A1.5 1.5 0 0 1 4.5 28V4A1.5 1.5 0 0 1 6 2.5Z" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M17.5 3v6H23M9 15h10M9 20h7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const PageSkeleton = () => (
-  <div style={{ padding: 24, background: '#fff', borderRadius: 8 }}>
+  <div className="admin-page-skeleton">
     <Skeleton active paragraph={{ rows: 2 }} title={{ width: 180 }} />
     <Skeleton active paragraph={{ rows: 6 }} title={false} style={{ marginTop: 24 }} />
   </div>
@@ -30,121 +27,142 @@ const PageSkeleton = () => (
 export default function AdminLayout({ admin }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const visibleMenu = useMemo(() => permittedMenu(admin, menuTree), [admin]);
 
-  // Paths here are relative to the router's basename (the ADMIN_PATH segment), so
-  // every route starts with '/' and the 概览 entry would stay highlighted everywhere
-  // if matched naively. Take the longest leaf that actually matches, which also keeps
-  // 商品管理 lit on /products/3/cards and 订单管理 on /orders/9.
+  // Resolve detail pages to their closest leaf so their parent stays selected.
   const selectedKey = useMemo(() => {
     const path = location.pathname.replace(/\/+$/, '') || '/';
     return leafPaths.find((p) => path === p || path.startsWith(`${p}/`)) || '/';
   }, [location.pathname]);
-
   const meta = pageMeta[selectedKey] || {};
 
   const handleLogout = async () => {
     try {
       await logout();
     } catch (err) {
-      // `finally` used to navigate to the login page whether or not the server
-      // actually ended the session, so a failed request showed the operator a login
-      // screen while their session cookie stayed valid — on a shared machine that
-      // reads as "logged out" and is not. Stay put and say so instead.
+      // A failed request must not show a login screen while the session is valid.
       message.error(err.response?.data?.message || '退出登录失败，请重试。您仍处于登录状态。');
       return;
     }
-
     message.success('已退出登录');
     navigate('/login', { replace: true });
   };
 
+  if (!canVisit(admin, location.pathname)) {
+    const first = ['/', ...leafPaths].find(p => canVisit(admin, p)) || '/account';
+    return <Navigate to={first} replace />;
+  }
+
   return (
     <ProLayout
+      className="claude-admin"
       layout="side"
-      siderWidth={216}
+      siderWidth={236}
       fixSiderbar
       fixedHeader
-      title="卡密商城"
-      logo={<ShopOutlined style={{ fontSize: 20, color: '#4db6ac' }} />}
-      {...menuTree}
+      title="CardShop"
+      logo={<ShopMark />}
+      {...visibleMenu}
       location={{ pathname: location.pathname }}
-      menuProps={{ selectedKeys: [selectedKey] }}
-      // The sidebar wears the storefront's own header colour (#393d49) rather than a
-      // generic dark grey, so the console reads as part of the same product as the
-      // shop it runs. The content area stays on the shop's warm paper tone.
+      menuProps={{ selectedKeys: [selectedKey], defaultOpenKeys: ['/catalog', '/trade', '/content', '/system'] }}
       token={{
-        bgLayout: '#f5f2ee',
+        bgLayout: '#faf9f5',
         sider: {
-          colorMenuBackground: '#393d49',
-          colorTextMenu: 'rgba(255,255,255,0.72)',
-          colorTextMenuSelected: '#ffffff',
-          colorTextMenuItemHover: '#ffffff',
-          colorBgMenuItemSelected: 'rgba(0,150,136,0.28)',
-          colorBgMenuItemHover: 'rgba(255,255,255,0.08)',
-          colorTextMenuTitle: '#ffffff',
-          colorTextMenuSecondary: 'rgba(255,255,255,0.45)',
-          colorMenuItemDivider: 'rgba(255,255,255,0.08)',
+          colorMenuBackground: '#f4f2eb',
+          colorTextMenu: '#666257',
+          colorTextMenuSelected: '#914128',
+          colorTextMenuItemHover: '#302e28',
+          colorBgMenuItemSelected: '#f0e4d9',
+          colorBgMenuItemHover: '#ebe7dd',
+          colorTextMenuTitle: '#302e28',
+          colorTextMenuSecondary: '#878174',
+          colorMenuItemDivider: '#e4ded2',
         },
-        header: { colorBgHeader: '#ffffff' },
+        header: { colorBgHeader: '#faf9f5', colorHeaderTitle: '#302e28' },
+        pageContainer: { colorBgPageContainer: '#faf9f5' },
       }}
+      headerContentRender={(props) => (
+        <div className="admin-workspace-label">
+          {props.isMobile && (
+            <button
+              type="button"
+              className="admin-mobile-nav-toggle"
+              aria-label={props.collapsed ? '打开导航菜单' : '关闭导航菜单'}
+              aria-expanded={!props.collapsed}
+              onClick={() => props.onCollapse?.(!props.collapsed)}
+            >
+              <MenuOutlined aria-hidden="true" />
+            </button>
+          )}
+          <span className="admin-workspace-dot" />
+          <span>商城工作台</span>
+          <span className="admin-header-divider">/</span>
+          <span className="admin-workspace-page">{meta.title || '管理后台'}</span>
+        </div>
+      )}
+      actionsRender={() => [
+        <Button key="storefront" className="admin-storefront-link" href="/" target="_blank" rel="noopener noreferrer" icon={<ExportOutlined />}>
+          查看商城
+        </Button>,
+      ]}
+      menuExtraRender={(props) => !props.collapsed && <div className="admin-sidebar-caption">你的商城，井然有序。</div>}
+      menuFooterRender={(props) => !props?.collapsed && (
+        <div className="admin-sidebar-note">
+          <span className="admin-sidebar-note-label">经营工作台</span>
+          <p>管理商品、订单与内容，<br />让每一次交付都顺畅。</p>
+          <a href="/" target="_blank" rel="noopener noreferrer">打开前台 <ExportOutlined /></a>
+        </div>
+      )}
       menuItemRender={(item, dom) => (
         <a
-          // href 要带 basename。item.path 是路由内的路径（'/orders'），浏览器不认
-          // basename —— 直接拿它当 href，中键和「在新标签页打开」会跳到站点根下的
-          // /orders，那里没有任何路由，结果是 404。而这个 href 存在的唯一理由正是
-          // 支持这两种操作（见下面的 onClick 注释），不带前缀等于白写。
           href={item.path === '/' ? ADMIN_BASE || '/' : `${ADMIN_BASE}${item.path}`}
-          // Warm the page's chunk before the click. Hover for pointers, focus for
-          // keyboard — a keyboard user must not be the only one who waits.
           onMouseEnter={() => preloadPage(item.path)}
           onFocus={() => preloadPage(item.path)}
           onClick={(e) => {
-            // A real href keeps middle-click and "open in new tab" working; this
-            // stops the plain left click from doing a full document load.
             if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
             e.preventDefault();
+            if (item.isMobile) item.onClick?.();
             navigate(item.path);
           }}
         >
           {dom}
         </a>
       )}
-      // ProLayout builds these from the menu tree, so with the grouped sidebar a
-      // breadcrumb finally says something ("交易 / 订单管理"). On the old flat menu
-      // it could only ever repeat the page title.
       breadcrumbRender={(routes = []) => routes}
       avatarProps={{
-        // `dom` already contains the avatar and the name that these props describe —
-        // wrapping it next to a second <Avatar> is what put two user icons in the
-        // corner. The render only adds the dropdown around it.
         icon: <UserOutlined />,
         size: 'small',
         title: admin?.username || '管理员',
         render: (_, dom) => (
           <Dropdown
-            placement="topRight"
+            placement="bottomRight"
+            trigger={['click']}
             menu={{
-              items: [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout }],
+              items: [
+                { key: 'account', icon: <SettingOutlined />, label: '账户与密码', onClick: () => navigate('/account') },
+                { type: 'divider' },
+                { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: handleLogout },
+              ],
             }}
           >
-            <Space style={{ cursor: 'pointer' }}>{dom}</Space>
+            <button type="button" className="admin-user-menu" aria-label={`${admin?.username || '管理员'}的账户菜单`}>
+              <Space size={8}>{dom}</Space>
+            </button>
           </Dropdown>
         ),
       }}
       footerRender={() => (
-        <Typography.Text type="secondary" style={{ display: 'block', textAlign: 'center', padding: '16px 0', fontSize: 12 }}>
-          卡密商城管理后台
-        </Typography.Text>
+        <footer className="admin-footer"><span>CardShop</span><span>专注每一笔订单，照顾每一次交付。</span></footer>
       )}
     >
-      {/*
-        One PageContainer here rather than one in each of the twelve pages: it gives
-        every screen the same heading, subtitle and breadcrumb, and makes it
-        impossible for a page's heading to drift away from its menu entry.
-      */}
-      <PageContainer title={meta.title} content={meta.desc} breadcrumbRender={false}>
+      <PageContainer
+        className="admin-page-container"
+        title={meta.title}
+        content={meta.desc}
+        breadcrumbRender={false}
+      >
         <Suspense fallback={<PageSkeleton />}>
-          <Outlet />
+          <Outlet context={admin} />
         </Suspense>
       </PageContainer>
     </ProLayout>

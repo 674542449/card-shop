@@ -19,39 +19,70 @@ const Coupons = lazyPage('/coupons');
 const Blacklists = lazyPage('/blacklists');
 const Logs = lazyPage('/logs');
 const Settings = lazyPage('/settings');
+const ApiTokens = lazyPage('/api-tokens');
+const Account = lazyPage('/account');
+const Notifications = lazyPage('/notifications');
+const Refunds = lazyPage('/refunds');
+const AdminAccounts = lazyPage('/admins');
+const Operations = lazyPage('/operations');
 
-/**
- * The console's visual identity, in one place.
- *
- * Sourced from the storefront's own tokens rather than picked fresh, so the shop and
- * the console it is run from look like one product: #00796b is the storefront's
- * --teal-dark, #ffb800 its --warm-btn, #ff4400 its --price-color.
- *
- * The primary is the DARK teal, not the #009688 the shop uses for buttons. antd puts
- * white text on colorPrimary, and #009688 gives 3.67:1 against white — under the
- * 4.5:1 WCAG AA needs for normal text. #00796b measures 5.34:1 and passes. The exact
- * shade is an accessibility result, not a preference.
- */
+/** Warm paper, clay accents, and quiet contrast shared with the modern storefront. */
 const theme = {
   token: {
-    colorPrimary: '#00796b',
-    colorLink: '#00796b',
-    colorSuccess: '#16a34a',
-    colorWarning: '#ffb800',
-    colorError: '#dc2626',
-    borderRadius: 6,
-    colorBgLayout: '#f5f2ee',
+    colorPrimary: '#ac5033',
+    colorLink: '#ac5033',
+    colorLinkHover: '#914128',
+    colorSuccess: '#496447',
+    colorWarning: '#9a7134',
+    colorError: '#a34439',
+    colorInfo: '#ac5033',
+    colorText: '#302e28',
+    colorTextSecondary: '#757167',
+    colorBgLayout: '#faf9f5',
+    colorBgContainer: '#fffefa',
+    colorBgElevated: '#fffefa',
+    colorBorder: '#d8d2c5',
+    colorBorderSecondary: '#e7e3d9',
+    colorFillAlter: '#f5f2eb',
+    borderRadius: 8,
+    borderRadiusLG: 12,
+    controlHeight: 36,
     fontSize: 14,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif',
+    boxShadow: '0 8px 28px rgba(48, 46, 40, 0.08)',
+    boxShadowSecondary: '0 12px 40px rgba(48, 46, 40, 0.1)',
   },
   components: {
-    // Dense by default: this is a console for reading tables of orders and card
-    // stock, where rows per screen is the thing that matters most.
-    Table: { headerBg: '#f2f2f2', headerColor: '#333', cellPaddingBlock: 10 },
-    Card: { headerFontSize: 15 },
-    Menu: { itemMarginInline: 8 },
+    Table: {
+      headerBg: '#f5f2eb',
+      headerColor: '#757167',
+      rowHoverBg: '#faf7f0',
+      borderColor: '#e7e3d9',
+      cellPaddingBlock: 12,
+      headerBorderRadius: 8,
+    },
+    Card: { headerFontSize: 16, headerHeight: 56 },
+    Button: { fontWeight: 500, primaryShadow: 'none', defaultShadow: 'none' },
+    Input: { activeShadow: '0 0 0 2px rgba(172, 80, 51, 0.1)' },
+    InputNumber: { activeShadow: '0 0 0 2px rgba(172, 80, 51, 0.1)' },
+    Select: { optionSelectedBg: '#f3e7de', optionSelectedColor: '#914128' },
+    Menu: {
+      itemMarginInline: 10,
+      itemBorderRadius: 7,
+      itemSelectedBg: '#f0e8de',
+      itemSelectedColor: '#914128',
+      itemHoverBg: '#f1eee6',
+      itemHeight: 38,
+      subMenuItemBg: 'transparent',
+    },
+    Tabs: { inkBarColor: '#ac5033', itemSelectedColor: '#914128' },
+    Tag: { defaultBg: '#f2efe7', defaultColor: '#757167' },
+    Tooltip: { colorBgSpotlight: '#302e28' },
+    Modal: { headerBg: '#fffefa', contentBg: '#fffefa', footerBg: '#fffefa' },
+    Drawer: { colorBgElevated: '#fffefa' },
+    Skeleton: { color: '#f2efe7', colorGradientEnd: '#e7e3d9' },
   },
 };
-
 const FullPageSpin = () => (
   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>
     <Spin size="large" />
@@ -125,6 +156,12 @@ export default function App() {
           <Route path="blacklists" element={<Blacklists />} />
           <Route path="logs" element={<Logs />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="api-tokens" element={<ApiTokens />} />
+          <Route path="account" element={<Account />} />
+          <Route path="notifications" element={<Notifications />} />
+                <Route path="refunds" element={<Refunds />} />
+                <Route path="admins" element={<AdminAccounts />} />
+                <Route path="operations" element={<Operations />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

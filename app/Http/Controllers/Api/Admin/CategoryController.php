@@ -6,13 +6,23 @@ use App\Http\Controllers\Controller;
 use App\Models\Category;
 use App\Models\OperationLog;
 use App\Support\SlugGenerator;
+use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
 
 class CategoryController extends Controller
 {
     public function index(Request $request)
     {
+        $pageSize = AdminListQuery::pageSize($request, 20, [
+            'keyword' => 'nullable|string|max:100',
+            'name' => 'nullable|string|max:100',
+            'is_active' => 'nullable|boolean',
+        ]);
         $query = Category::withCount('products');
+
+        if ($request->filled('is_active')) {
+            $query->where('is_active', $request->boolean('is_active'));
+        }
 
         // The table ships a 名称 search box and this method took no Request at all, so
         // every keyword was discarded and the operator got the full list back looking
@@ -22,14 +32,22 @@ class CategoryController extends Controller
             $query->where('name', 'ilike', '%' . $keyword . '%');
         }
 
-        return response()->json(['data' => $query->ordered()->get()]);
+        // Selectors request the complete category list without `page`. Tables pass
+        // a page, so each page must contain only its own rows.
+        if (!$request->has('page')) {
+            return response()->json(['data' => $query->ordered()->get()]);
+        }
+
+        $categories = $query->ordered()->paginate($pageSize);
+        return response()->json(['data' => $categories->items(), 'total' => $categories->total()]);
     }
 
     public function store(Request $request)
     {
+        $request->merge(['sort_order' => $request->input('sort_order') ?? 0]);
         $data = $request->validate([
             'name' => 'required|string|max:100',
-            'slug' => 'nullable|string|max:100|unique:categories,slug',
+            'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:categories,slug',
             'description' => 'nullable|string|max:500',
             'image' => 'nullable|string|max:500',
             'sort_order' => 'nullable|integer',
@@ -48,9 +66,12 @@ class CategoryController extends Controller
 
     public function update(Request $request, Category $category)
     {
+        if ($request->has('sort_order') && $request->input('sort_order') === null) {
+            $request->merge(['sort_order' => 0]);
+        }
         $data = $request->validate([
             'name' => 'required|string|max:100',
-            'slug' => 'nullable|string|max:100|unique:categories,slug,' . $category->id,
+            'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:categories,slug,' . $category->id,
             'description' => 'nullable|string|max:500',
             'image' => 'nullable|string|max:500',
             'sort_order' => 'nullable|integer',

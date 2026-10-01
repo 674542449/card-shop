@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ProTable } from '@ant-design/pro-components';
-import { Tag, Button, message } from 'antd';
+import { Tag, Button, message, Space } from 'antd';
 import { ExportOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getOrders, exportOrders } from '../services/api';
@@ -35,7 +35,10 @@ export default function Orders() {
   const actionRef = useRef();
   // The filter set behind the rows currently displayed.
   const filtersRef = useRef({});
-  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedStatus = searchParams.get('status');
+  const initialStatus = Object.prototype.hasOwnProperty.call(statusMap, requestedStatus) ? requestedStatus : undefined;
+  const paymentReviewOnly = searchParams.get('payment_review') === '1';
 
   const handleExport = async () => {
     try {
@@ -56,18 +59,20 @@ export default function Orders() {
   };
 
   const columns = [
+    { title: '付款待核对', dataIndex: 'payment_review', hideInTable: true, valueType: 'select', valueEnum: { 1: { text: '仅待核对' }, 0: { text: '全部' } } },
     { title: '订单号', dataIndex: 'order_no', copyable: true, width: 200 },
     {
       title: '商品',
       dataIndex: 'product_name',
       search: false,
-      render: (_, record) => record.product?.name || '-',
+      render: (_, record) => record.product_name || record.product?.name || '-',
     },
     { title: '邮箱', dataIndex: 'email', width: 200 },
     { title: '数量', dataIndex: 'quantity', search: false, width: 60 },
     {
       title: '总金额',
       dataIndex: 'total_amount',
+      sorter: true,
       search: false,
       width: 100,
       render: (_, record) => `¥${record.total_amount}`,
@@ -85,7 +90,7 @@ export default function Orders() {
     {
       title: '状态',
       dataIndex: 'status',
-      width: 100,
+      width: 140,
       valueType: 'select',
       valueEnum: {
         pending: { text: '待支付' },
@@ -95,12 +100,18 @@ export default function Orders() {
       },
       render: (_, record) => {
         const s = statusMap[record.status];
-        return s ? <Tag color={s.color}>{s.text}</Tag> : record.status;
+        return (
+          <Space size={4} wrap>
+            {s ? <Tag color={s.color}>{s.text}</Tag> : record.status}
+            {record.status !== 'paid' && record.payment_no && <Tag color="orange">待核对</Tag>}
+          </Space>
+        );
       },
     },
     {
       title: '创建时间',
       dataIndex: 'created_at',
+      sorter: true,
       valueType: 'dateRange',
       width: 180,
       render: (_, record) => fmt(record.created_at),
@@ -120,26 +131,31 @@ export default function Orders() {
         // 拼成 {basename}/admin/orders/5，匹配不到任何路由，落到 <Route path="*"> 被
         // 重定向回概览页 —— 表现就是「点查看没反应，跳回首页」。
         // 同一个目的地在 Dashboard.jsx 的最近订单里用的就是这种写法。
-        <a key="detail" onClick={() => navigate(`/orders/${record.id}`)}>
+        <Link key="detail" to={`/orders/${record.id}`}>
           查看
-        </a>,
+        </Link>,
       ],
     },
   ];
 
   return (
     <ProTable
+      // Remount only when the URL's valid filter changes, so browser navigation
+      // updates both the search field and its first request without pinning edits.
+      key={`orders-${initialStatus || 'all'}-${paymentReviewOnly}`}
       actionRef={actionRef}
       rowKey="id"
       columns={columns}
       search={{ labelWidth: 'auto' }}
-      request={async (params) => {
+      form={{ name: 'orders-search', initialValues: { status: initialStatus, payment_review: paymentReviewOnly ? '1' : undefined } }}
+      request={async (params, sort = {}) => {
         const { current, pageSize, ...rest } = params;
         // Keep the active filters so 导出订单 can export what is on screen. Without
         // this it posted {} and always downloaded every order in the shop, which
         // looks identical to a working export until you open the file.
         filtersRef.current = rest;
-        const res = await getOrders({ page: current, per_page: pageSize, ...rest });
+        const [sortBy, sortOrder] = Object.entries(sort)[0] || [];
+        const res = await getOrders({ page: current, per_page: pageSize, ...rest, ...(sortBy ? { sort: sortBy, dir: sortOrder === 'ascend' ? 'asc' : 'desc' } : {}) });
         const body = res.data ?? {};
         const list = Array.isArray(body) ? body : (body.data ?? []);
         return {

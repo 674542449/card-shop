@@ -46,7 +46,7 @@ const EXCLUDED_MENUS = ['group-video', 'insertVideo', 'uploadVideo', 'emotion', 
  * Controlled rich text field. `value` / `onChange` carry an HTML string, so the
  * component sits directly inside a ProForm.Item / Form.Item.
  */
-export default function RichTextEditor({ value, onChange, placeholder = '请输入内容', height = 300 }) {
+export default function RichTextEditor({ value, onChange, placeholder = '请输入内容', height = 300, disabled = false }) {
   const [editor, setEditor] = useState(null);
   const [html, setHtml] = useState(value || '');
   // What we last handed to (or took from) the form. Guards the sync effect so a
@@ -73,6 +73,12 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
 
   const toolbarConfig = useMemo(() => ({ excludeKeys: EXCLUDED_MENUS }), []);
 
+  useEffect(() => {
+    if (!editor) return;
+    if (disabled) editor.disable();
+    else editor.enable();
+  }, [editor, disabled]);
+
   const editorConfig = useMemo(
     () => ({
       placeholder,
@@ -83,6 +89,7 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
       MENU_CONF: {
         uploadImage: {
           async customUpload(file, insertFn) {
+            if (disabled) return;
             try {
               const res = await uploadImage(file);
               const url = res.data?.url;
@@ -97,10 +104,11 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
         },
       },
     }),
-    [placeholder]
+    [placeholder, disabled]
   );
 
   const handleChange = (ed) => {
+    if (disabled) return;
     const raw = ed.getHtml();
     // Keep the raw html for the editor itself, but report an empty string upwards
     // when there is nothing in it, so `required` rules behave as an operator expects.
@@ -112,7 +120,7 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
   return (
     <div className="rte-wrapper">
       <style>{EDITOR_CSS}</style>
-      <Toolbar editor={editor} defaultConfig={toolbarConfig} mode="default" />
+      {!disabled && <Toolbar editor={editor} defaultConfig={toolbarConfig} mode="default" />}
       <Editor
         defaultConfig={editorConfig}
         value={html}

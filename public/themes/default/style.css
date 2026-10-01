@@ -232,3 +232,10 @@
     :root:not([data-ui-theme="light"]) .theme-toggle .icon-moon { display: none; }
     :root:not([data-ui-theme="light"]) .theme-toggle .icon-sun { display: block; }
 }
+/* Keyboard users can bypass the repeated header on every page. */
+.skip-link { position: fixed; left: 16px; top: -100px; z-index: 9999; padding: 12px 18px; border-radius: 6px; background: var(--card-bg, #fff); color: var(--text-primary, #38332d); box-shadow: 0 4px 16px #0002; }
+.skip-link:focus { top: 12px; }
+
+.catalog-search-form,.refund-panel{margin:24px 0;padding:20px;border:1px solid var(--border-color);border-radius:10px;background:var(--card-bg)}
+ .catalog-search-controls{display:flex;gap:12px;align-items:center;margin-top:10px}
+ .catalog-search-controls input{flex:1;min-width:0} .refund-panel form{display:grid;gap:12px;margin-top:12px} .refund-panel label{display:grid;gap:6px} .refund-panel textarea{min-height:80px} .refund-panel input,.refund-panel textarea,.catalog-search-controls input{padding:10px;border:1px solid var(--border-color);border-radius:6px;background:transparent;color:inherit;font:inherit} .refund-panel button{justify-self:start}

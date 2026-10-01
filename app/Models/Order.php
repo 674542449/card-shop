@@ -14,6 +14,7 @@ class Order extends Model
     protected $fillable = [
         'order_no',
         'product_id',
+        'product_name', 'product_slug', 'query_password_key', 'gateway_trade_no', 'reconciled_at', 'reconciliation_error',
         'email',
         'query_password',
         'quantity',
@@ -27,11 +28,39 @@ class Order extends Model
         'ip',
         'paid_at',
         'expires_at',
+        'api_token_id',
+        'payment_received_amount',
+        'payment_received_at',
+        'payment_review_reason',
     ];
 
     protected $hidden = [
-        'query_password',
+        'query_password', 'query_password_key',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Order $order) {
+            $product = $order->product;
+            $order->product_name ??= $product?->name;
+            $order->product_slug ??= $product?->slug;
+        });
+    }
+
+    public static function passwordKey(string $email, string $password): string
+    {
+        return hash_hmac('sha256', mb_strtolower($email)."\0".$password, (string) config('app.key'));
+    }
+
+    public function displayName(): string { return $this->product_name ?: ($this->product?->name ?? '商品'); }
+
+    public function scopePaymentReview(Builder $query): Builder
+    {
+        return $query->where(fn ($q) => $q->where(fn ($p) => $p->where('status', '!=', 'paid')->whereNotNull('payment_no'))
+            ->orWhereHas('paymentReceipts', fn ($r) => $r->whereNotNull('review_reason')->whereNull('review_resolved_at')));
+    }
+
+    public function refunds(): HasMany { return $this->hasMany(OrderRefund::class); }
 
     protected function casts(): array
     {
@@ -42,6 +71,8 @@ class Order extends Model
             'paid_at' => 'datetime',
             'expires_at' => 'datetime',
             'quantity' => 'integer',
+            'payment_received_at' => 'datetime',
+            'reconciled_at' => 'datetime',
         ];
     }
 
@@ -58,6 +89,16 @@ class Order extends Model
     public function cards(): HasMany
     {
         return $this->hasMany(Card::class);
+    }
+
+    public function paymentReceipts(): HasMany
+    {
+        return $this->hasMany(PaymentReceipt::class);
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(NotificationDelivery::class)->orderByDesc('id');
     }
 
     /**

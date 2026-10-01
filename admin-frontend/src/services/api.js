@@ -159,6 +159,23 @@ export const deleteCategory = (id) =>
 export const getProducts = (params) =>
   api.get('/products', { params });
 
+// Coupon selectors must include products beyond the first 200 rows, including
+// inactive products already referenced by an existing coupon.
+export const getAllProducts = async () => {
+  const products = [];
+  for (let page = 1; ; page += 1) {
+    const res = await getProducts({ page, per_page: 200 });
+    const body = res.data ?? {};
+    const rows = Array.isArray(body) ? body : (body.data ?? []);
+    products.push(...rows);
+    if (rows.length === 0 || products.length >= (body.total ?? rows.length)) break;
+  }
+  return products;
+};
+
+export const getProduct = (id) =>
+  api.get(`/products/${id}`);
+
 export const createProduct = (data) =>
   api.post('/products', data);
 
@@ -252,6 +269,9 @@ export const getBlacklists = (params) =>
 export const createBlacklist = (data) =>
   api.post('/blacklists', data);
 
+export const updateBlacklist = (id, data) =>
+  api.put(`/blacklists/${id}`, data);
+
 export const deleteBlacklist = (id) =>
   api.delete(`/blacklists/${id}`);
 
@@ -269,4 +289,12 @@ export const updateSettings = (data) =>
 export const sendTestEmail = (email) =>
   api.post('/settings/test-email', { email });
 
+// API access tokens. Only createApiToken returns a one-time plaintext secret.
+export const getApiTokens = (params) => api.get('/api-tokens', { params });
+export const createApiToken = (data) => api.post('/api-tokens', data);
+export const updateApiToken = (id, data) => api.put(`/api-tokens/${id}`, data);
+export const deleteApiToken = (id) => api.delete(`/api-tokens/${id}`);
+
 export default api;
+export const getNotifications = (params) => api.get('/notifications', { params });
+export const retryNotification = (id) => api.post(`/notifications/${id}/retry`);

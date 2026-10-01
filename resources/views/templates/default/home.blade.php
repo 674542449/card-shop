@@ -29,6 +29,9 @@
 @endphp
 
 @section('content')
+<form method="GET" action="{{ request()->url() }}" class="catalog-search-form" role="search">
+ <label for="global-product-search">搜索全部商品</label><div class="catalog-search-controls"><input id="global-product-search" type="search" name="q" value="{{ request('q') }}" maxlength="200" placeholder="商品名称或分类"><button class="btn-buy-sm" type="submit">搜索</button>@if(request()->filled('q'))<a href="{{ request()->url() }}">清空</a>@endif</div>
+ </form>
     @if($siteAnnouncement)
     {{-- The announcement is authored in the admin's rich text editor, so it arrives as
          HTML. ContentRenderer sanitises it with the same allowlist used for product
@@ -76,6 +79,11 @@
         @endif
     @endforeach
 
+    @if($groupedProducts->has(null))
+    <section class="product-table-section"><h2>其他商品</h2><table class="product-table"><tbody>@foreach($groupedProducts->get(null) as $product)@themeInclude('partials.product-row', ['product' => $product])@endforeach</tbody></table></section>
+    @endif
+    @if($products->isEmpty())<p>没有找到商品，请更换关键词。</p>@endif
+    <div class="pagination-wrap">{{ $products->links() }}</div>
     {{-- Articles: Two Column --}}
     @if($latestArticles->isNotEmpty() || $recommendedArticles->isNotEmpty())
     <section class="two-col-section mt-3">

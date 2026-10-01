@@ -6,12 +6,17 @@ use App\Http\Controllers\Controller;
 use App\Models\ArticleCategory;
 use App\Models\OperationLog;
 use App\Support\SlugGenerator;
+use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
 
 class ArticleCategoryController extends Controller
 {
     public function index(Request $request)
     {
+        $pageSize = AdminListQuery::pageSize($request, 20, [
+            'keyword' => 'nullable|string|max:100',
+            'name' => 'nullable|string|max:100',
+        ]);
         $query = ArticleCategory::withCount('articles');
 
         // The table ships a 名称 search box and this method took no Request at all, so
@@ -22,14 +27,20 @@ class ArticleCategoryController extends Controller
             $query->where('name', 'ilike', '%' . $keyword . '%');
         }
 
-        return response()->json(['data' => $query->ordered()->get()]);
+        if (!$request->has('page')) {
+            return response()->json(['data' => $query->ordered()->get()]);
+        }
+
+        $categories = $query->ordered()->paginate($pageSize);
+        return response()->json(['data' => $categories->items(), 'total' => $categories->total()]);
     }
 
     public function store(Request $request)
     {
+        $request->merge(['sort_order' => $request->input('sort_order') ?? 0]);
         $data = $request->validate([
             'name' => 'required|string|max:100',
-            'slug' => 'nullable|string|max:100|unique:article_categories,slug',
+            'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:article_categories,slug',
             'sort_order' => 'nullable|integer',
         ]);
 
@@ -45,9 +56,12 @@ class ArticleCategoryController extends Controller
 
     public function update(Request $request, ArticleCategory $articleCategory)
     {
+        if ($request->has('sort_order') && $request->input('sort_order') === null) {
+            $request->merge(['sort_order' => 0]);
+        }
         $data = $request->validate([
             'name' => 'required|string|max:100',
-            'slug' => 'nullable|string|max:100|unique:article_categories,slug,' . $articleCategory->id,
+            'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:article_categories,slug,' . $articleCategory->id,
             'sort_order' => 'nullable|integer',
         ]);
 

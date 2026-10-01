@@ -1,3 +1,4 @@
+import useWritePermission from '../hooks/useWritePermission';
 import React, { useRef, useState, useEffect } from 'react';
 import {
   ProTable,
@@ -13,9 +14,12 @@ import { PlusOutlined } from '@ant-design/icons';
 import { getArticles, createArticle, updateArticle, deleteArticle, getArticleCategories } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
+import ProductEmbedPicker from '../components/ProductEmbedPicker';
 
 export default function Articles() {
+  const canWrite = useWritePermission('content');
   const actionRef = useRef();
+  const articleFormRef = useRef();
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [categoryOptions, setCategoryOptions] = useState([]);
@@ -56,7 +60,8 @@ export default function Articles() {
     {
       title: '发布状态',
       dataIndex: 'is_published',
-      search: false,
+      valueType: 'select',
+      valueEnum: { 1: { text: '已发布' }, 0: { text: '草稿' } },
       width: 100,
       render: (_, record) =>
         record.is_published ? <Tag color="green">已发布</Tag> : <Tag color="default">草稿</Tag>,
@@ -67,8 +72,8 @@ export default function Articles() {
       title: '操作',
       valueType: 'option',
       width: 150,
-      render: (_, record) => [
-        <a
+      render: (_, record) => canWrite ? [
+        <Button type="link" htmlType="button" style={{ padding: 0, height: 'auto' }}
           key="edit"
           onClick={() => {
             setEditingRecord(record);
@@ -76,7 +81,7 @@ export default function Articles() {
           }}
         >
           编辑
-        </a>,
+        </Button>,
         <Popconfirm
           key="delete"
           title="确认删除此文章？"
@@ -90,9 +95,9 @@ export default function Articles() {
             }
           }}
         >
-          <a style={{ color: '#ff4d4f' }}>删除</a>
+          <Button type="link" htmlType="button" danger style={{ padding: 0, height: 'auto' }}>删除</Button>
         </Popconfirm>,
-      ],
+      ] : [],
     },
   ];
 
@@ -102,6 +107,7 @@ export default function Articles() {
         actionRef={actionRef}
         rowKey="id"
         columns={columns}
+        form={{ name: 'articles-search' }}
         search={{ labelWidth: 'auto' }}
         request={async (params) => {
           const res = await getArticles({ page: params.current, per_page: params.pageSize, ...params });
@@ -113,7 +119,7 @@ export default function Articles() {
             success: true,
           };
         }}
-        toolBarRender={() => [
+        toolBarRender={() => canWrite ? [
           <Button
             key="add"
             type="primary"
@@ -125,9 +131,12 @@ export default function Articles() {
           >
             新增文章
           </Button>,
-        ]}
+        ] : []}
       />
       <DrawerForm
+        name="article-editor"
+        formRef={articleFormRef}
+        key={editingRecord?.id || 'new'}
         title={editingRecord ? '编辑文章' : '新增文章'}
         open={drawerVisible}
         onOpenChange={setDrawerVisible}
@@ -137,7 +146,14 @@ export default function Articles() {
           try {
             // omitNil would drop a cleared cover image from the payload, leaving the
             // old one in place while the toast reports success.
-            const payload = { ...values, cover_image: values.cover_image ?? null };
+            const payload = {
+              ...values,
+              cover_image: values.cover_image ?? null,
+              summary: values.summary ?? null,
+              seo_title: values.seo_title ?? null,
+              seo_description: values.seo_description ?? null,
+              seo_keywords: values.seo_keywords ?? null,
+            };
 
             if (editingRecord) {
               await updateArticle(editingRecord.id, payload);
@@ -155,7 +171,7 @@ export default function Articles() {
         }}
       >
         <ProFormText name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]} />
-        <ProFormText name="slug" label="Slug" rules={[{ required: true, message: '请输入 Slug' }]} />
+        <ProFormText name="slug" label="网址标识（Slug）" placeholder="留空自动生成" />
         <ProFormSelect
           name="article_category_id"
           label="分类"
@@ -163,6 +179,7 @@ export default function Articles() {
           rules={[{ required: true, message: '请选择分类' }]}
         />
         <ProFormTextArea name="summary" label="摘要" fieldProps={{ rows: 3 }} />
+        <ProductEmbedPicker formRef={articleFormRef} />
         <ProForm.Item name="content" label="内容" rules={[{ required: true, message: '请输入内容' }]}>
           <RichTextEditor placeholder="请输入文章内容" height={360} />
         </ProForm.Item>

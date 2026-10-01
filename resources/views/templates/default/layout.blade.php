@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#38332D" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#26221D" media="(prefers-color-scheme: dark)">
 
-    {{-- front.css 是三套模板共用的基座；default 自己的配色和深色模式叠在它之后，
+    {{-- front.css 是 default 的样式基座；其配色和深色模式叠在它之后，
          顺序不能反。theme_asset('style.css') 对 default 主题解析到 themes/default/style.css。 --}}
     <link href="{{ asset_versioned('css/front.css') }}" rel="stylesheet">
     <link href="{{ theme_asset('style.css') }}" rel="stylesheet">
@@ -33,6 +33,8 @@
     @yield('head')
 </head>
 <body>
+
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
 
     <h1 class="seo-h1">{{ setting('site_name', 'CardShop') }} - {{ setting('site_description', '自动发卡平台') }}</h1>
 
@@ -88,7 +90,7 @@
         </ul>
     </div>
 
-    <main class="main-container">
+    <main class="main-container" id="main-content" tabindex="-1">
         <div class="container">
             @if($errors->any())
             <div class="alert alert-danger" role="alert">
@@ -156,6 +158,7 @@
             });
         })();
     </script>
+    <script src="{{ asset_versioned('js/checkout.js') }}"></script>
     @yield('scripts')
 </body>
 </html>

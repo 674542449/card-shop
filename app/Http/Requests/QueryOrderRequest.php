@@ -17,8 +17,9 @@ class QueryOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'email' => ['required', 'email'],
-            'query_password' => ['required', 'string'],
+            'email' => ['required', 'email', 'max:200'],
+            'query_password' => ['required', 'string', 'max:50'],
+            'order_no' => ['nullable', 'string', 'max:30'],
         ];
     }
 

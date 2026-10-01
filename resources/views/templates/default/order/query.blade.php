@@ -8,12 +8,13 @@
         <div class="page-card-body">
             <form action="/order/query" method="POST" data-guard>
                 @csrf
+            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="form-input" id="lookup-order-no" name="order_no" value="{{ old('order_no') }}" maxlength="30" placeholder="留空查询历史订单"></div>
 
                 <div class="pd-form">
                     <div class="form-group">
                         <label class="form-label" for="email">邮箱</label>
                         <input type="email" name="email" id="email" class="form-input @error('email') is-invalid @enderror"
-                               value="{{ old('email') }}" required placeholder="购买时使用的邮箱">
+                               value="{{ old('email') }}" maxlength="200" autocomplete="email" required placeholder="购买时使用的邮箱">
                     </div>
                     @error('email')
                     <div class="form-error">{{ $message }}</div>
@@ -22,7 +23,7 @@
                     <div class="form-group">
                         <label class="form-label" for="query_password">查询密码</label>
                         <input type="password" name="query_password" id="query_password" class="form-input @error('query_password') is-invalid @enderror"
-                               required placeholder="购买时设置的查询密码">
+                               maxlength="50" autocomplete="current-password" required placeholder="购买时设置的查询密码">
                     </div>
                     @error('query_password')
                     <div class="form-error">{{ $message }}</div>

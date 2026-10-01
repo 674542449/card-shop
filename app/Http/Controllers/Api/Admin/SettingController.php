@@ -7,6 +7,7 @@ use App\Models\Setting;
 use App\Models\OperationLog;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class SettingController extends Controller
 {
@@ -26,6 +27,7 @@ class SettingController extends Controller
         'turnstile_secret_key',
         'telegram_bot_token',
         'mail_password',
+        'baidu_push_token',
     ];
 
     /** Sent in place of a stored secret, and refused as an incoming value. */
@@ -57,10 +59,12 @@ class SettingController extends Controller
                 'site_announcement', 'popup_announcement', 'popup_interval_hours',
                 'contact_text', 'contact_url', 'contact_qr_image',
                 'footer_powered_by',
+                'site_url',
             ],
             'payment' => [
                 'epay_api_url', 'epay_merchant_id', 'epay_merchant_key',
                 'epusdt_api_url', 'epusdt_api_token', 'usdt_gateway',
+                'payment_reconciliation_enabled',
             ],
             'email' => [
                 'email_template_subject', 'email_template_body',
@@ -84,45 +88,74 @@ class SettingController extends Controller
             ],
         ];
 
-        foreach ($settingGroups as $group => $keys) {
+        $rules = [];
+        foreach ($settingGroups as $keys) {
             foreach ($keys as $key) {
-                if (!$request->has($key)) {
-                    continue;
-                }
-
-                $value = $request->input($key);
-
-                // The form posts back whatever index() sent it, so a secret the
-                // operator did not touch arrives as the mask. Writing that would
-                // replace a working credential with eight asterisks — and the failure
-                // would surface later as payments silently breaking.
-                if (in_array($key, self::SECRET_KEYS, true) && $value === self::MASK) {
-                    continue;
-                }
-
-                // The settings column is text and the readers compare against '0'/'1'.
-                // A switch in the admin posts a real boolean, and PHP casts false to
-                // the empty string — which reads back as "not set" rather than "off",
-                // a distinction that matters for a default of '1'.
-                if (is_bool($value)) {
-                    $value = $value ? '1' : '0';
-                }
-
-                // 支付时限是买家付款窗口，直接决定订单存活多久。消费方读它是
-                // (int) setting('order_expire_minutes', 30)：存进 0、负数或非数字时
-                // (int) 会得到 0 或负值，now()->addMinutes() 得到一个「已经过去」的
-                // 到期时间，于是每一笔订单一建好就是过期状态、锁定的卡立刻被释放，
-                // 而迟到的网关回调仍可能发货——整条下单链路被一个手滑的设置搞瘫。
-                // 后台是可信的，但可信不等于不会填错，所以在写库前夹到合理区间：
-                // 最短 5 分钟（够走完一次支付），最长 7 天。非数字回落到默认 30。
-                if ($key === 'order_expire_minutes') {
-                    $minutes = is_numeric($value) ? (int) $value : 30;
-                    $value = (string) max(5, min(10080, $minutes));
-                }
-
-                Setting::set($key, $value, $group);
+                $rules[$key] = ['nullable', function (string $attribute, mixed $value, \Closure $fail) {
+                    if (!is_scalar($value)) {
+                        $fail('设置值必须是文本、数字或开关值。');
+                    }
+                }];
             }
         }
+        $rules['mail_port'] = ['nullable', 'integer', 'min:1', 'max:65535'];
+        $rules['site_url'] = ['nullable', 'url:http,https', 'max:255'];
+        $rules['bing_indexnow_key'] = ['nullable', 'regex:/^[A-Za-z0-9-]{8,128}$/D'];
+        $rules['payment_reconciliation_enabled'] = ['nullable', 'boolean'];
+        $rules['mail_encryption'] = ['nullable', 'in:ssl,tls,none'];
+        $rules['usdt_gateway'] = ['nullable', 'in:epusdt,bepusdt'];
+        $rules['site_theme'] = ['nullable', \Illuminate\Validation\Rule::in(themes_available())];
+        $rules['order_expire_minutes'] = ['nullable', 'integer', 'min:5', 'max:10080'];
+        $rules['popup_interval_hours'] = ['nullable', 'integer', 'min:0', 'max:8760'];
+        $rules['honeypot_ban_minutes'] = ['nullable', 'integer', 'min:0', 'max:525600'];
+        foreach (['telegram_enabled', 'honeypot_enabled', 'honeypot_skip_reserved_ips'] as $key) {
+            $rules[$key] = ['nullable', 'boolean'];
+        }
+        $rules['honeypot_whitelist'] = ['nullable', 'string', function (string $attribute, mixed $value, \Closure $fail) {
+            if (!is_string($value)) {
+                return;
+            }
+            foreach (array_filter(array_map('trim', explode(',', $value))) as $ip) {
+                if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
+                    $fail('白名单必须是用逗号分隔的有效 IP 地址。');
+                    return;
+                }
+            }
+        }];
+        $request->validate($rules);
+
+        DB::transaction(function () use ($settingGroups, $request) {
+            foreach ($settingGroups as $group => $keys) {
+                foreach ($keys as $key) {
+                    if (!$request->has($key)) {
+                        continue;
+                    }
+
+                    $value = $request->input($key);
+
+                    // Posting the displayed mask must preserve the saved credential.
+                    if (in_array($key, self::SECRET_KEYS, true) && $value === self::MASK) {
+                        continue;
+                    }
+
+                    if (is_bool($value)) {
+                        $value = $value ? '1' : '0';
+                    }
+                    if ($key === 'order_expire_minutes' && $value === null) {
+                        $value = '30';
+                    }
+                    if ($key === 'honeypot_ban_minutes' && $value === null) {
+                        $value = '10080';
+                    }
+                    if ($key === 'popup_interval_hours' && $value === null) {
+                        $value = '24';
+                    }
+
+                    Setting::set($key, $value, $group);
+                }
+            }
+        });
+        settings_forget();
 
         OperationLog::log('更新设置', 'setting', null, '更新系统设置');
 

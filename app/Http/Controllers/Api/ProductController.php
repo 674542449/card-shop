@@ -19,12 +19,12 @@ class ProductController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $perPage = min((int) $request->input('per_page', 15), 100);
+        $request->validate(['per_page' => 'sometimes|integer|min:1|max:100', 'page' => 'sometimes|integer|min:1']);
+        $perPage = (int) $request->input('per_page', 15);
 
-        $products = Product::with('category')
-            ->where('is_active', true)
+        $products = Product::active()->withStock()->with('category')
             ->orderBy('sort_order')
-            ->orderByDesc('created_at')
+            ->orderByDesc('created_at')->orderByDesc('id')
             ->paginate($perPage);
 
         $products->getCollection()->transform(function (Product $product) {
@@ -41,7 +41,7 @@ class ProductController extends Controller
                     'name' => $product->category->name,
                     'slug' => $product->category->slug,
                 ] : null,
-                'stock' => $this->cardService->getStockCount($product->id),
+                'stock' => $product->stockCount(),
                 'created_at' => $product->created_at->toIso8601String(),
             ];
         });
@@ -54,9 +54,8 @@ class ProductController extends Controller
      */
     public function show(int $id): JsonResponse
     {
-        $product = Product::with(['category', 'wholesalePrices'])
+        $product = Product::active()->withStock()->with(['category', 'wholesalePrices'])
             ->where('id', $id)
-            ->where('is_active', true)
             ->first();
 
         if (!$product) {
@@ -83,7 +82,7 @@ class ProductController extends Controller
                     'min_quantity' => $wp->min_quantity,
                     'price' => $wp->price,
                 ])->toArray(),
-                'stock' => $this->cardService->getStockCount($product->id),
+                'stock' => $product->stockCount(),
                 'created_at' => $product->created_at->toIso8601String(),
                 'updated_at' => $product->updated_at->toIso8601String(),
             ],

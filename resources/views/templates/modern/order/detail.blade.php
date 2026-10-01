@@ -3,198 +3,67 @@
 @section('title', '订单详情 - ' . setting('site_name', 'CardShop'))
 
 @php
-    $methodLabels = [
-        'alipay'       => '支付宝',
-        'wechat'       => '微信支付',
-        'usdt_trc20'   => 'USDT(TRC20)',
-        'usdt_bep20'   => 'USDT(BEP20)',
-        'usdt_polygon' => 'USDT(Polygon)',
-    ];
+    $methodLabels = ['alipay' => '支付宝', 'wechat' => '微信支付', 'usdt_trc20' => 'USDT (TRC20)', 'usdt_bep20' => 'USDT (BEP20)', 'usdt_polygon' => 'USDT (Polygon)', 'manual' => '人工确认'];
     $methodLabel = $methodLabels[$order->payment_method] ?? ($order->payment_method ?: '—');
-
-    // 状态图标是内联 SVG。原来是 &#9989; / &#9200; 这类字符实体——同一个码位在
-    // Windows、macOS、Android 上画出来是三个不同的东西，尺寸也不受 CSS 控制；
-    // 读屏还会把它念成「白色重对勾」。四个状态的形状彼此不同，不只靠颜色区分。
-    //
-    // cls 里放的是样式表里已有的徽章类，不是新造的名字：
-    // .badge-auto 是绿色成功胶囊；叠上 .badge-stock.out-of-stock（更高specificity）
-    // 会把配色翻成红色，同时保留 .badge-auto 的 inline-flex + gap ——
-    // 这一点是必须的，因为全局重置里 svg 是 display:block，
-    // 放进一个普通 inline 元素里会自己另起一行。
-    $states = [
-        'paid' => [
-            'title' => '支付成功',
-            'note'  => '卡密已发放，同一份内容也发到了下单邮箱',
-            'cls'   => 'badge-auto',
-            'icon'  => '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
-        ],
-        'expired' => [
-            'title' => '订单已过期',
-            'note'  => '此订单已超过支付时限',
-            'cls'   => 'badge-auto badge-stock out-of-stock',
-            'icon'  => '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-        ],
-        'closed' => [
-            'title' => '订单已关闭',
-            'note'  => '此订单已被关闭',
-            'cls'   => 'badge-auto badge-stock out-of-stock',
-            'icon'  => '<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>',
-        ],
-        'pending' => [
-            'title' => '待支付',
-            'note'  => '请尽快完成支付，超时订单会自动关闭',
-            'cls'   => 'pd-guarantee-item',
-            'icon'  => '<circle cx="12" cy="12" r="9"/><path d="M12 8v4.5"/><path d="M12 16h.01"/>',
-        ],
-    ];
-
-    $stateKey = $order->isPaid() ? 'paid'
-        : (($order->isExpired() || $order->status === 'expired') ? 'expired'
-        : ($order->status === 'closed' ? 'closed' : 'pending'));
-
-    $state = $states[$stateKey];
+    $stateKey = $order->isPaid() ? 'paid' : (($order->isExpired() || $order->status === 'expired') ? 'expired' : ($order->status === 'closed' ? 'closed' : 'pending'));
+    $canReadCards = ($verified ?? false) && $order->isPaid() && $cards->isNotEmpty();
+    $stateTitles = ['paid' => $canReadCards ? '购买完成，卡密已就绪。' : '支付完成，查看这份购买。', 'pending' => '订单已创建，等待付款。', 'expired' => '这笔订单已过期。', 'closed' => '这笔订单已关闭。'];
+    $stateNotes = ['paid' => $canReadCards ? '在这里保存卡密，也可以随时通过订单查询再次取回。' : '支付已经完成，订单信息见下方。', 'pending' => '请在支付有效期内完成付款，卡密将在支付成功后发放。', 'expired' => '已超过支付有效期。若已付款，请先查询订单或联系客服核对，请勿重复支付；尚未付款可重新下单。', 'closed' => '此订单已关闭。你可以重新挑选商品并下单。'];
+    $paymentReview = !$order->isPaid() && !empty($order->payment_no);
+    if ($paymentReview) {
+        $stateTitles[$stateKey] = '付款待核对';
+        $stateNotes[$stateKey] = '收到付款回执，订单暂未发货，请联系客服核对，请勿重复支付。';
+    }
 @endphp
 
 @section('content')
-<div class="delivery-page-wrap">
-
-    {{-- 状态排成一行，而不是模板 delivery 页那种「68px 圆标 + 1.85rem 大标题 + 副标题」
-         的居中横幅：那一版要吃掉约 160px 首屏高度，只为重复一遍下面订单信息里
-         还会再写一次的状态词，把卡密挤到折线以下。
-         行内的两个分组用 .step-flow-item / .query-input-group ——
-         样式表里没有通用的「一行控件」类，这两个是现成的零外边距 flex 行，
-         比再造一个类名或者写 inline style 都稳。 --}}
-    <div class="section-header">
-        <div class="step-flow-item">
-            <span class="{{ $state['cls'] }}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                     aria-hidden="true">{!! $state['icon'] !!}</svg>
-                {{ $state['title'] }}
-            </span>
-            <span class="badge-stock">{{ $state['note'] }}</span>
-        </div>
-        <div class="query-input-group">
-            @if($stateKey === 'pending')
-            <a href="/order/pay/{{ $order->order_no }}" class="btn-buy">继续支付</a>
-            @endif
-            <a href="/order/query" class="btn-copy-sm">返回订单查询</a>
-        </div>
-    </div>
-
-    {{-- 卡密排在订单信息之前。这是买家付钱换来的唯一东西，此前它排在一张订单信息
-         表格之后，而且是全页最小的字。 --}}
-    @if($order->isPaid() && $cards->count() > 0)
-    <div class="card-keys-container">
-        <div class="card-keys-header">
-            <span class="card-keys-title">卡密信息 <span class="section-count">{{ $cards->count() }} 条</span></span>
-            <span class="query-input-group">
-                {{-- 真链接而不是 JS 生成的下载：卡密和这一页走同一道会话校验，
-                     服务端能用同样的方式守住这个文件，而且 JS 关掉时它照样能用。 --}}
-                <a href="/order/cards/{{ $order->order_no }}/download" class="btn-copy-sm">下载 TXT</a>
-                {{-- .btn-copy 是 front.js 的委托监听认的类，data-target 指向取值元素。
-                     按钮里不能放图标：复制成功后 front.js 直接改 textContent，
-                     子元素会被一次性抹掉，再也回不来。
-                     并挂 .btn-copy-sm 只为拿它的 flex-shrink:0，别的属性都被
-                     后写的 .btn-copy 覆盖掉了。 --}}
-                <button type="button" class="btn-copy-sm btn-copy" data-target="card-content-text">复制全部</button>
-            </span>
-        </div>
-
-        @foreach($cards as $card)
-        <div class="card-item-box">
-            <span class="step-flow-item">
-                {{-- 序号放在 .card-item-text 外面：那个类是 user-select:all，
-                     点一下整块选中，序号混在里面会被一起复制走。 --}}
-                <span class="step-flow-num">{{ $loop->iteration }}</span>
-                <span class="card-item-text" id="card-content-{{ $loop->iteration }}">{{ $card->content }}</span>
-            </span>
-            <button type="button" class="btn-copy-sm btn-copy" data-target="card-content-{{ $loop->iteration }}">复制</button>
-        </div>
-        @endforeach
-    </div>
-
-    {{-- 「复制全部」的取值来源。移出屏幕的表单控件默认仍在 Tab 焦点序列里——键盘用户
-         走到这里会掉进一个看不见的多行文本框，而且读屏会把整段卡密念一遍。
-         aria-hidden + tabindex="-1" 把它同时移出这两条路径；readonly 防止误改。
-         不能改成 hidden 属性：front.js 要读它的 .value。
-         class="od-card-source" 是唯一把它挪出视口的东西，丢了整页卡密就明文铺在页面上。 --}}
-    <textarea id="card-content-text" class="od-card-source" readonly tabindex="-1"
-              aria-hidden="true">@foreach($cards as $card){{ $card->content }}
-@endforeach</textarea>
-
-    <div class="notice-callout">
-        <div class="notice-callout-header">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                 stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
-            </svg>
-            卡密保存提示
-        </div>
-        <ul>
-            <li>支付成功后卡密由系统自动发放，同一份内容也发送到了你下单时填写的邮箱。</li>
-            <li>建议现在就用「复制全部」或「下载 TXT」保存一份。</li>
-            <li>之后随时可以用下单邮箱和查询密码回到这一页重新查看。</li>
-        </ul>
-    </div>
-    @endif
-
-    <div class="order-result-card">
-        <div class="order-result-header">
-            <div class="order-sn-text">订单号：<strong>{{ $order->order_no }}</strong></div>
-            @themeInclude('partials.order-status', ['status' => $order->status])
-        </div>
-
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">商品名称</span>
-            <span class="pay-detail-val">{{ $order->product->name ?? '—' }}</span>
-        </div>
-
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">购买数量</span>
-            <span class="pay-detail-val">{{ $order->quantity }} 件</span>
-        </div>
-
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">单价</span>
-            <span class="pay-detail-val">¥{{ number_format($order->unit_price, 2) }}</span>
-        </div>
-
-        @if($order->discount_amount > 0)
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">优惠金额</span>
-            <span class="pay-detail-val">-¥{{ number_format($order->discount_amount, 2) }}</span>
-        </div>
-        @endif
-
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">支付金额</span>
-            <span class="pay-detail-val">
-                <span class="summary-total-price">¥{{ number_format($order->total_amount, 2) }}</span>
-            </span>
-        </div>
-
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">支付方式</span>
-            <span class="pay-detail-val">{{ $methodLabel }}</span>
-        </div>
-
-        @if($order->paid_at)
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">支付时间</span>
-            <span class="pay-detail-val">{{ $order->paid_at->format('Y-m-d H:i:s') }}</span>
-        </div>
-        @endif
-
-        <div class="pay-detail-item">
-            <span class="pay-detail-label">下单时间</span>
-            <span class="pay-detail-val">{{ $order->created_at->format('Y-m-d H:i:s') }}</span>
-        </div>
-    </div>
-
-    <div class="query-input-group">
-        <a href="/" class="btn-buy">返回首页</a>
-        <a href="/order/query" class="btn-copy-sm">返回订单查询</a>
-    </div>
+<nav class="m-breadcrumb" aria-label="当前位置"><a href="/">首页</a><span aria-hidden="true">/</span><a href="/order/query">订单查询</a><span aria-hidden="true">/</span><span>订单详情</span></nav>
+<div class="m-order-page-top">
+    <div><p class="m-eyebrow">{{ $order->isPaid() ? 'YOUR DELIVERY · 卡密交付' : 'ORDER DETAILS · 订单详情' }}</p><h1 class="m-page-heading">{{ $stateTitles[$stateKey] }}</h1><p class="m-lead">{{ $stateNotes[$stateKey] }}</p></div>
+    @themeInclude('partials.order-status', ['status' => $order->status])
 </div>
+<div class="m-order-layout m-order-delivery-layout">
+    <div class="m-order-delivery-main">
+        @if($canReadCards)
+        <section class="m-panel m-order-delivery-panel" aria-labelledby="m-delivery-heading">
+            <div class="m-order-delivery-heading"><div><p class="m-eyebrow">READY TO USE</p><h2 class="m-section-title" id="m-delivery-heading">你的卡密 <span class="m-order-key-count">{{ $cards->count() }} 条</span></h2></div><div class="m-order-actions"><button type="button" class="m-button m-button-secondary btn-copy" data-target="card-content-text">复制全部</button><a href="/order/cards/{{ $order->order_no }}/download" class="m-button m-button-primary">下载 TXT <span aria-hidden="true">↓</span></a></div></div>
+            <ol class="m-order-keys">
+                @foreach($cards as $card)
+                <li class="m-order-key"><div class="m-order-key-top"><span>卡密 {{ str_pad((string) $loop->iteration, 2, '0', STR_PAD_LEFT) }}</span><button type="button" class="m-button m-button-quiet btn-copy" data-target="card-content-{{ $loop->iteration }}">复制</button></div><code id="card-content-{{ $loop->iteration }}">{{ $card->content }}</code></li>
+                @endforeach
+            </ol>
+            <textarea id="card-content-text" class="m-order-copy-source" readonly tabindex="-1" aria-hidden="true" hidden>{{ $cards->pluck("content")->implode("\n") . "\n" }}</textarea>
+        </section>
+        <aside class="m-order-note"><span class="m-order-note-mark" aria-hidden="true">i</span><div><h2>给这份购买留个备份</h2><p>建议复制或下载卡密并妥善保存。下次使用下单邮箱和查询密码，还能回到这里查看。</p></div></aside>
+        @else
+        <section class="m-panel m-order-awaiting">
+            <span class="m-order-state-symbol" aria-hidden="true"><svg width="36" height="36" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="7" y="9" width="26" height="22" rx="3"/><path d="M7 16h26m-20 8h6"/></svg></span>
+            <h2 class="m-section-title">{{ $stateKey === 'pending' ? '完成付款，即可获取卡密' : ($stateKey === 'paid' ? '暂无可展示的卡密' : '这笔订单没有发放卡密') }}</h2>
+            <p class="m-muted">{{ $paymentReview ? $stateNotes[$stateKey] : ($stateKey === 'pending' ? '这份订单还在等待付款。支付成功后，卡密会显示在这里。' : ($stateKey === 'paid' ? '请稍后重新查看；如果仍未显示，请联系站点客服并提供订单编号。' : '你可以重新挑选商品，创建一份新的订单。')) }}</p>
+            <div class="m-order-actions">@if($stateKey === 'pending' && empty($order->payment_no))<a href="/order/pay/{{ $order->order_no }}" class="m-button m-button-primary">继续支付 <span aria-hidden="true">↗</span></a>@else<a href="/" class="m-button m-button-primary">浏览商品 <span aria-hidden="true">↗</span></a>@endif<a href="/order/query" class="m-button m-button-secondary">返回订单查询</a></div>
+        </section>
+        @endif
+        <div class="m-order-bottom-links"><a href="/" class="m-order-text-link">继续浏览商品 <span aria-hidden="true">↗</span></a><a href="/order/query" class="m-order-text-link">查询其他订单</a></div>
+    </div>
+    <aside class="m-panel m-order-receipt m-order-delivery-receipt" aria-labelledby="m-detail-receipt-heading">
+        <div class="m-order-receipt-heading"><div><p class="m-eyebrow">ORDER RECEIPT</p><h2 class="m-section-title" id="m-detail-receipt-heading">这份购买</h2></div></div>
+        <div class="m-order-receipt-product"><span class="m-order-product-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18m-13 5h4"/></svg></span><div><h3>{{ $order->displayName() ?? '商品已下架' }}</h3><p class="m-muted">{{ $order->quantity }} 件 <span aria-hidden="true">·</span> ¥{{ number_format($order->unit_price, 2) }}/件</p></div></div>
+        <dl class="m-details">
+            <div><dt>订单编号</dt><dd class="m-order-code">{{ $order->order_no }}</dd></div>
+            @if($verified ?? false)<div><dt>下单邮箱</dt><dd>{{ $order->email }}</dd></div>@endif
+            <div><dt>支付方式</dt><dd>{{ $methodLabel }}</dd></div>
+            @if($order->discount_amount > 0)<div><dt>优惠金额</dt><dd class="m-order-discount">−¥{{ number_format($order->discount_amount, 2) }}</dd></div>@endif
+            <div><dt>下单时间</dt><dd>{{ $order->created_at->format('Y-m-d H:i') }}</dd></div>
+            @if($order->paid_at)<div><dt>支付时间</dt><dd>{{ $order->paid_at->format('Y-m-d H:i') }}</dd></div>@endif
+            @if($stateKey === 'pending' && empty($order->payment_no))<div><dt>支付截止</dt><dd>{{ $order->expires_at->format('Y-m-d H:i') }}</dd></div>@endif
+        </dl>
+        <div class="m-order-total"><span>{{ $order->isPaid() ? '实付金额' : '订单金额' }}</span><strong><small>¥</small>{{ number_format($order->total_amount, 2) }}</strong></div>
+    </aside>
+</div>
+@if($verified ?? false)
+ <section class="m-refund-panel" aria-label="退款与售后">@if($order->isPaid() && \App\Models\Order::paymentReview()->whereKey($order->id)->exists())<p role="status">购买已完成，另有付款回执等待店主核对。请联系客服处理额外付款，请勿重复付款。</p>@endif<h2>退款与售后</h2>
+ @if($order->refunds->isNotEmpty())<ul>@foreach($order->refunds as $refund)<li>¥{{ $refund->amount }} · {{ ['requested'=>'待审核','approved'=>'待退款','completed'=>'已退款','rejected'=>'已拒绝'][$refund->status] ?? $refund->status }} · {{ $refund->created_at->format('Y-m-d H:i') }}</li>@endforeach</ul>@endif
+ @if($order->isPaid())<details><summary>申请退款</summary><p>提交后由店主审核，实际退款完成后将更新记录。</p><form method="POST" action="/order/refund/{{ $order->order_no }}">@csrf<label>退款金额（元）<input type="number" name="amount" min="0.01" max="{{ $order->total_amount }}" step="0.01" value="{{ $order->total_amount }}" required></label><label>申请原因<textarea name="reason" maxlength="2000" required></textarea></label><button class="m-button m-button-primary" type="submit">提交申请</button></form></details>@else<p>异常付款请联系客服，并提供订单编号。</p>@endif
+ </section>@endif
+@themeInclude('partials.order-cancel')
 @endsection

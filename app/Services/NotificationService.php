@@ -9,6 +9,14 @@ use Illuminate\Support\Facades\Mail;
 
 class NotificationService
 {
+    private array $baseMailConfig;
+    private bool $configuredSmtp = false;
+
+    public function __construct()
+    {
+        $this->baseMailConfig = config('mail');
+    }
+
     /**
      * Point the mailer at the SMTP server configured in the admin.
      *
@@ -25,6 +33,13 @@ class NotificationService
         $host = trim((string) setting('mail_host', ''));
 
         if ($host === '') {
+            // A durable worker can see the host cleared after a previous send.
+            // Restore the environment configuration instead of retaining old credentials.
+            if ($this->configuredSmtp) {
+                config(['mail' => $this->baseMailConfig]);
+                Mail::purge('smtp');
+                $this->configuredSmtp = false;
+            }
             return;
         }
 
@@ -53,6 +68,7 @@ class NotificationService
         // until the PHP worker was recycled — which looks exactly like "saving the
         // form does nothing".
         Mail::purge('smtp');
+        $this->configuredSmtp = true;
     }
 
     /**
@@ -117,7 +133,7 @@ class NotificationService
             );
             $siteName = (string) setting('site_name', '卡密商城');
 
-            $cards = $order->cards->pluck('content')->implode("\n");
+            $cards = $order->cards->where('status', 'sold')->pluck('content')->implode("\n");
 
             $amount = number_format((float) $order->total_amount, 2, '.', '');
 
@@ -126,7 +142,7 @@ class NotificationService
             $values = [
                 '{{site_name}}' => $siteName,
                 '{{order_no}}' => $order->order_no,
-                '{{product_name}}' => $order->product->name ?? '',
+                '{{product_name}}' => $order->displayName(),
                 '{{quantity}}' => (string) $order->quantity,
                 '{{amount}}' => $amount,
                 '{{total_amount}}' => $amount,
@@ -175,18 +191,25 @@ class NotificationService
     /**
      * Send a Telegram notification message.
      */
-    public function sendTelegramNotification(string $message): void
+    public function telegramConfigured(): bool
+    {
+        return in_array((string) setting('telegram_enabled', '0'), ['1', 'true'], true)
+            && trim((string) setting('telegram_bot_token', '')) !== ''
+            && trim((string) setting('telegram_chat_id', '')) !== '';
+    }
+
+    public function sendTelegramNotification(string $message): bool
     {
         $enabled = setting('telegram_enabled', '0');
         if (!$enabled || $enabled === '0' || $enabled === 'false') {
-            return;
+            return false;
         }
 
         $token = (string) setting('telegram_bot_token', '');
         $chatId = (string) setting('telegram_chat_id', '');
 
         if (empty($token) || empty($chatId)) {
-            return;
+            return false;
         }
 
         try {
@@ -203,17 +226,19 @@ class NotificationService
                     'body' => $response->body(),
                 ]);
             }
+            return $response->successful() && $response->json('ok') === true;
         } catch (\Throwable $e) {
             Log::error('Telegram notification exception', [
-                'error' => $e->getMessage(),
+                'error_type' => get_class($e),
             ]);
+            return false;
         }
     }
 
     /**
      * Send Telegram notification for a new paid order.
      */
-    public function notifyNewOrder(Order $order): void
+    public function notifyNewOrder(Order $order): bool
     {
         $order->loadMissing('product');
 
@@ -231,7 +256,7 @@ class NotificationService
         // A product named "<VIP>" or an email containing < made Telegram reject the
         // whole message with a 400, so the operator got no notification at all for
         // exactly those sales — a silent gap, since the send failure only logs.
-        $name = e($order->product->name ?? '');
+        $name = e($order->displayName());
         $email = e($order->email);
 
         $message = "<b>新订单通知</b>\n\n"
@@ -242,7 +267,7 @@ class NotificationService
             . "支付方式: " . e($method) . "\n"
             . "邮箱: {$email}";
 
-        $this->sendTelegramNotification($message);
+        return $this->sendTelegramNotification($message);
     }
 
 
