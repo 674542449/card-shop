@@ -4,7 +4,7 @@
 
 后端采用 **Laravel 12 + PostgreSQL + Redis**，管理后台采用 **React + Ant Design**。支持易支付（支付宝/微信）、EPUSDT / BEpusdt USDT 收款，提供 Docker Compose 部署与独立的 `default`、`modern`、`minimal` 三套前台模板。
 
-[部署指南](DEPLOY.md) · [模板介绍](#前台模板) · [API 接口](#api-接口) · [回归检查](tests/README.md) · [演示数据](database/seeders/DEMO.md)
+[部署指南](DEPLOY.md) · [版本发布](RELEASING.md) · [模板介绍](#前台模板) · [API 接口](#api-接口) · [回归检查](tests/README.md) · [演示数据](database/seeders/DEMO.md)
 
 > **要在新服务器上部署？** 直接看 **[DEPLOY.md](DEPLOY.md)** —— 从空机器和新域名开始，
 > 一步一步到店铺能收单，每一步都带「怎么确认这步成功了」。本文件是功能与配置参考，
@@ -503,21 +503,19 @@ git clone https://github.com/674542449/card-shop.git && cd card-shop
 ```
 
 脚本会问你域名，直接填新域名即可（不用带 `https://`），它会写进 `APP_URL`。这个值决定
-会话 cookie 的 `Secure` 标志、资源链接的协议、canonical 和发给买家的订单链接——填错的
+会话 cookie 的 `Secure` 标志、资源链接的协议、canonical、支付回调和发给买家的订单链接——填错的
 典型症状是后台登不进去，或者 HTTPS 页面加载不到 CSS。
 
 然后 `docker compose up -d --build`。首次启动要装 PHP 依赖，慢的机器上可能几分钟。
 
-### 3. 别用 IP 直接下测试单
+### 3. 核对支付回调使用的新域名
 
-这是搬站最容易踩的一个坑，而且症状完全指不到原因。
+支付回调与返回链接固定使用 `.env` 的 `APP_URL`，客户端请求的 Host 不会改变发给网关的地址。
+搬站后必须将 `APP_URL` 更新为实际可访问的 `https://新域名`，清除已有配置缓存并重启应用、
+调度器和通知进程，同时核对支付网关的域名白名单。填错或仍保留旧域名时，网关可能无法把付款结果通知到新站。
 
-支付回调地址是 `url('/payment/epay/notify')` 拼的，Laravel 的 `url()` 取的是**当前请求
-的 Host**，不是 `APP_URL`。你用 `http://新服务器IP/` 下一笔测试单，回调地址就被写成
-`https://新服务器IP/payment/epay/notify` 发给了支付网关——网关回调打不进来（源站没有
-对应证书，防火墙也只放行 Cloudflare），订单永远停在未支付，而下单流程本身一切正常。
-
-**所有测试都走 `https://新域名/`。** DNS 还没生效就先等，或者在本机 hosts 里临时指过去。
+**测试订单走 `https://新域名/`。** 除了回调可达性，还要验证正式域名下的证书、会话和人机验证。
+DNS 还没生效就先等；本机 hosts 只能帮助本机访问，无法让支付网关解析到新服务器。
 
 ### 4. 迁数据（如果要保留旧站的订单和卡密）
 
@@ -727,6 +725,9 @@ docker compose exec -T postgres psql -U cardshop -d cardshop -v ON_ERROR_STOP=1 
 ```
 
 ## 更新升级
+
+代码统一在 `main` 维护，正式版本使用递增的 `v1.0.0`、`v1.0.1` 等标签。
+旧服务器仍在 `master` 时，请先按 [版本发布与分支迁移](RELEASING.md#旧部署从-master-迁移) 切换分支。
 
 ```bash
 cd ~/card-shop && ./scripts/update.sh

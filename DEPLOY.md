@@ -420,13 +420,15 @@ docker compose exec app php artisan admin:password --password='新密码'
 正确做法：Cloudflare 面板 → **Turnstile** → 添加小组件 → 域名填**新域名** → 把新的
 Site Key 和 Secret Key 填进后台。
 
-### 支付回调：别用 IP 下测试单
+### 支付回调：核对 APP_URL
 
-支付回调地址是用 `url()` 拼的，Laravel 的 `url()` 取的是**当前请求的 Host**，不是 `APP_URL`。
-你用 `http://服务器IP/` 下一笔测试单，回调地址就被写成 `https://服务器IP/payment/...`
-发给支付网关——网关回调打不进来，**订单永远停在未支付**，而下单流程本身一切正常。
+支付回调与返回链接固定使用 `.env` 的 `APP_URL`，客户端请求的 Host 不会改变发给网关的地址。
+请确认它是实际可访问的正式 HTTPS 域名，并核对网关的回调域名白名单。
+修改 `.env` 后须重新加载应用配置。若曾使用配置缓存，先执行
+`docker compose exec app php artisan config:clear`，然后重启应用、调度器和通知进程。
+若域名填错、仍指向旧站，或网关无法访问回调路径，付款结果就无法正常通知到新站。
 
-**所有测试都走 `https://shop.example.com/`。**
+**所有测试都走 `https://shop.example.com/`。** 同时验证证书、会话和 Turnstile 的正式域名配置。
 
 ---
 
@@ -516,6 +518,9 @@ SEO 里可能写死的旧域名），直接搬库过来它们全是旧值。
 
 ### 升级
 
+项目统一使用 `main` 分支。旧服务器仍在 `master` 时，先按
+[分支迁移步骤](RELEASING.md#旧部署从-master-迁移) 切换，再运行更新脚本。
+
 一条命令：
 
 ```bash
@@ -549,7 +554,7 @@ docker compose restart nginx                  # ⑤ 避免 502
 ```
 
 **① `git status --porcelain` 必须为空。** `composer.lock` 是被跟踪的文件，而 entrypoint
-在 `composer install` 失败时会兜底跑 `composer update`（会改写它）。一旦它变脏，`git pull`
+早期版本曾在 `composer install` 失败时运行 `composer update` 改写它，手工更新依赖也可能留下修改。一旦它变脏，`git pull`
 直接 abort；如果你把命令用 `&&` 串成一行，链子就断在这里，你只看到一行报错，很容易以为
 整条跑完了。所以这几条**分开执行**，不要串成一行。
 
@@ -560,13 +565,17 @@ docker compose restart nginx                  # ⑤ 避免 502
 被 PHP 解析」的预检，一条都不会跑；命令返回 0，日志里什么都没有。
 （同样的道理见第 4 步那条注记：配置没变时 `up -d` 不会重建容器。）
 
-**什么时候需要 `--build`：** 只有 `docker/` 目录或 `composer.json` 变过时才需要，此时把 ③ 换成
+**什么时候需要 `--build`：** `docker/` 目录、`composer.json` 或 `composer.lock` 变过时需要，此时把 ③ 换成
 `docker compose up -d --build`。判断方法：
 ```bash
-git diff --name-only HEAD@{1} HEAD -- docker/ composer.json
+git diff --name-only HEAD@{1} HEAD -- docker/ composer.json composer.lock
 ```
 有输出才加 `--build`。特别注意 `docker/php/entrypoint.sh`：它是构建时 COPY 进镜像的，
 容器执行的是镜像里那一份，**光 restart 不会生效，必须 build**。
+
+启动脚本同时检查 `composer.json` 和已提交的 `composer.lock`；任一变化都会重新执行
+`composer install --no-dev`，安装该版本锁定的依赖。安装失败会中止启动，不自动执行
+`composer update`，也不会记录成功标记；先排查日志、网络、PHP 扩展及文件一致性，再重试启动。
 
 **⑤ `restart nginx`** 是因为 nginx 启动时就把 `app:9000` 解析成了一个固定 IP。app 容器一旦
 被重建就会换 IP，而 nginx 还握着旧地址 —— 表现是升级后整站 502，而 `docker compose ps` 里
@@ -676,7 +685,7 @@ cd ~/card-shop && sudo ./scripts/cf-only-firewall.sh --apply --yes
 | HTTPS 页面没样式 | `APP_URL` 不是 `https://` 开头 |
 | 后台登不进去（密码是对的） | 同上，`APP_URL` 决定会话 cookie 的 `Secure` 标志 |
 | 下单提示「人机验证失败」 | Turnstile 的 key 是别的域名的，见第 7 步 |
-| 订单一直停在未支付 | 用 IP 下的单，回调地址是错的。改用域名重下一单 |
+| 订单一直停在未支付 | 核对 APP_URL、网关流水、回调可达性和支付核对记录；已付款先查单或联系客服，避免重复支付 |
 | USDT 跳转不过去 / 通知不发 | 容器出站被切了。跑第 6 步的验证 ① |
 | 访客 IP 都一样 | Cloudflare 的橙云没开 |
 | 防火墙脚本报「解析不到任何 IP」 | `--domain=` 填的主机名没有 DNS 记录。只加了 `www` 记录就要写 `www.shop.example.com`，别写裸域 |

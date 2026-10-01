@@ -20,8 +20,8 @@
 #     所以除了 up -d，还必须显式 restart app。
 #   · docker/php/entrypoint.sh 是构建时 COPY 进镜像的，容器跑的是镜像里那一份 ——
 #     它变了就必须 build，光 restart 不生效，而且同样没有任何报错。
-#   · composer.lock 是被跟踪的文件，而 entrypoint 在 composer install 失败时会兜底跑
-#     composer update 改写它。一旦变脏，git pull 直接 abort。
+#   · composer.lock 是被跟踪的文件，早期 entrypoint 曾在 install 失败后运行 update
+#     改写它；手工依赖变更也可能留下修改。一旦变脏，git pull 直接 abort。
 #   · nginx 启动时把 app:9000 解析成固定 IP，app 容器一旦被重建就换 IP —— 表现是
 #     全站 502，而 docker compose ps 里所有容器都是 Up。
 #   · 验证必须抓页面内容。Laravel 的 500 错误页也是一个完整的 HTML 页面，
@@ -134,13 +134,13 @@ if [ -n "$DIRTY" ]; then
     echo "$DIRTY" | sed 's/^/      /'
     echo ""
     # redeploy 不跑 git pull，脏工作区拦不住它。而「上次部署跑了一半」正是
-    # redeploy 要救的场景之一 —— 那时 entrypoint 的兜底 composer update 很可能
+    # redeploy 要救的场景之一 —— 早期 entrypoint 的兜底 composer update 很可能
     # 已经把 composer.lock 改脏了。在这一档拦下来，等于恰好在需要它的时候不可用；
     # 更糟的是提示里的 git checkout -- . 会把人正在跑的手工热修一起抹掉。
     if [ "$ACTION" = "redeploy" ]; then
         warn "工作区不干净，但 --redeploy 不拉代码，继续" "这些改动会原样保留。"
     else
-        echo "  ${DIM}常见原因：entrypoint 在 composer install 失败时会兜底跑 composer update，${RST}"
+        echo "  ${DIM}常见原因：早期启动脚本或手工 composer update 改写了依赖锁文件，${RST}"
         echo "  ${DIM}把被跟踪的 composer.lock 改脏。确认这些改动可以丢弃后：${RST}"
         echo "      git checkout -- ."
         die "工作区不干净，git pull 会失败"

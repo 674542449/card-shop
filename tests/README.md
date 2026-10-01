@@ -2,6 +2,19 @@
 
 检查日期：2026-10-01。服务端安全修复后，完整 PHP 回归：284 个测试、2732 项断言全部通过；其中本轮新增安全测试 91 个、855 项断言。4 项 Node 回归通过。下方较早各轮检查记录保留原有范围与结果。
 
+## 版本发布与依赖升级检查
+
+Docker 依赖安装指纹同时覆盖 `composer.json` 和 `composer.lock`，仅锁文件变化也会重装。
+安装失败或锁文件缺失时停止启动，不自动执行 `composer update`，也不记录成功标记。
+
+对应回归直接提取真实启动脚本的 Composer 段，在忽略目录 `.local` 建立隔离文件与 Composer 替身，覆盖首次安装、未修改跳过、仅锁文件变化、仅清单变化、旧指纹迁移、安装失败和锁文件缺失共 7 类场景，全部通过。旧版本隔离基线在仅锁文件变化场景按预期失败，证明测试能捕获原问题。不会安装真实依赖或访问数据库。
+
+```bash
+bash tests/shell/composer-install.test.sh
+```
+
+完整 Docker 容器启动仍须在具备 Docker 的目标环境验证。
+
 ## 服务端校验、权限与常见漏洞检查
 
 本轮用实际 HTTP 控制器测试检查前台、后台及 API 的服务端边界。新增 `AdminRequestSecurityTest`、`BuyerServerValidationSecurityTest`、`ContentUploadSecurityTest` 和 `RequestOriginSecurityTest`；使用专用 `cardshop_testing` 数据库及 Redis 10/11，外部网关使用替身，不修改开发商城数据。
