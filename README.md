@@ -4,11 +4,19 @@
 
 后端采用 **Laravel 12 + PostgreSQL + Redis**，管理后台采用 **React + Ant Design**。支持易支付（支付宝/微信）、EPUSDT / BEpusdt USDT 收款，提供 Docker Compose 部署与独立的 `default`、`modern`、`minimal` 三套前台模板。
 
-[部署指南](DEPLOY.md) · [版本发布](RELEASING.md) · [模板介绍](#前台模板) · [API 接口](#api-接口) · [回归检查](tests/README.md) · [演示数据](database/seeders/DEMO.md)
+[最新版本](https://github.com/674542449/card-shop/releases/latest) · [部署指南](DEPLOY.md) · [版本发布](RELEASING.md) · [模板介绍](#前台模板) · [API 接口](#api-接口) · [回归检查](tests/README.md) · [演示数据](database/seeders/DEMO.md)
 
 > **要在新服务器上部署？** 直接看 **[DEPLOY.md](DEPLOY.md)** —— 从空机器和新域名开始，
 > 一步一步到店铺能收单，每一步都带「怎么确认这步成功了」。本文件是功能与配置参考，
 > 不是部署手册。
+
+## 当前版本
+
+当前正式版本为 **[v1.0.0](https://github.com/674542449/card-shop/releases/tag/v1.0.0)**，发布于 **2026-10-01**。代码统一在 `main` 维护；本说明按当前实现核对，固定版本源码可从对应 Release 获取。
+
+此版本包含三套完整前台、重新设计的管理后台、退款与异常付款核对、权限及令牌管理、通知队列和维护工具，以及服务端计价、支付与权限校验修复。升级兼容性变化见 [发布说明](https://github.com/674542449/card-shop/releases/tag/v1.0.0)。
+
+每次发布使用新的递增标签，默认下一版为 `v1.0.1`。旧 `master` 部署需先按 [分支迁移步骤](RELEASING.md#旧部署从-master-迁移) 切换到 `main`。
 
 ## 你可以用它做什么
 
@@ -16,11 +24,11 @@
 | --- | --- |
 | 开设数字商品店铺 | 分类与全目录搜索、商品说明、阶梯价、优惠码、移动端页面及深色模式 |
 | 完成购买和交付 | 服务端计价、预留库存、支付验签、幂等发卡、复制与 TXT 下载、凭邮箱与密码找回订单 |
-| 处理异常交易 | 超时释放、取消订单、迟到或重复付款待核对、主动对账、退款申请与凭证登记 |
+| 处理异常交易 | 超时释放、取消订单、迟到付款自动恢复或人工核对、重复付款核对、主动对账、退款申请与凭证登记 |
 | 管理日常经营 | 商品与卡密导入、销售和退款统计、低库存提醒、通知队列与失败重试、权限管理 |
 | 对接和维护 | 可限制范围的 API 令牌、SEO 推送队列、备份恢复、素材归档、记录保留与运行健康 |
 
-后台构建产物随仓库提交，部署时不需要安装 Node.js。只有修改后台源码时才需要重新构建。
+后台构建产物随仓库提交，服务器宿主机无需安装 Node.js。修改后台源码时，需要在构建机器重新构建并提交完整产物；PHP Docker 镜像自带 Node.js，供资源缺失时的构建回退使用。
 
 ## 界面预览
 
@@ -50,40 +58,45 @@
 ## 功能概览
 
 ### 前台
-- **商品展示** — 分类浏览、全文目录搜索、独立的 default / modern / minimal 页面，商品说明支持安全渲染的富文本和 Markdown
-- **下单试算** — 阶梯单价、优惠码校验和预计实付；试算不占库存或优惠次数
-- **自动发卡** — 支付成功后自动发送卡密到页面和邮箱
+
+- **商品展示** — 分类浏览、全目录商品与分类名称搜索、独立的 default / modern / minimal 页面，商品说明支持安全渲染的富文本和 Markdown
+- **下单试算** — 阶梯单价、优惠码校验和预计实付；试算不占库存或优惠次数，最终实付最低 ¥0.01
+- **自动发卡** — 服务端核验有效付款后交付卡密，邮件进入持久队列发送；异常付款按库存与订单状态进入人工核对
 - **订单查询** — 凭邮箱 + 查询密码查看历史订单和卡密，取消未付款订单、提交退款申请
 - **文章栏目** — 富文本与 Markdown 内容，支持文章内嵌商品卡片引流
 - **SEO 优化** — 独立 TDK、Sitemap 自动生成、JSON-LD 结构化数据、百度推送、Bing IndexNow
 
 ### 支付
+
 - **易支付** — 支付宝、微信扫码支付
 - **USDT 链上支付** — BEpusdt 支持指定 TRC20 / BEP20 / Polygon，原版 EPUSDT 使用网关默认网络。网关可选
   [epusdt](https://github.com/assimon/epusdt) 或
   [BEpusdt](https://github.com/v03413/BEpusdt)
 
-  两者接口地址和签名算法完全相同，在**系统设置 → USDT 支付 → 网关类型**里选择即可。
-  区别只有一处：只有 BEpusdt 支持 `trade_type` 参数，也就是**把收款锁定到买家选的那条链**；
-  原版 epusdt 收到这个参数会因签名不匹配而拒绝下单，所以必须按实际部署的版本选对。
+  在**系统设置 → USDT 支付 → 网关类型**里按实际网关选择。BEpusdt 可通过 `trade_type`
+  指定网络，原版 EPUSDT 使用网关默认网络。主动对账还要求网关返回可核对的订单、流水与金额；
+  不兼容的网关版本使用签名回调或人工核对，详见 [部署指南](DEPLOY.md#运行健康与主动对账)。
 
 ### 后台管理
+
 - 仪表盘（销售统计、退款与净销售额、待审核退款、趋势图、库存预警）
 - 商品管理（分类、批量导入卡密、批发价设置）
 - 订单管理（筛选、手动补发、掉单处理、CSV 导出）
 - 文章管理（富文本编辑器、商品卡片、封面图、SEO 字段）
 - 优惠码管理（固定/百分比折扣、有效期、使用限制）
-- 黑名单管理（IP / 邮箱拉黑）
+- 黑名单管理（IP / 邮箱、扫描来源与到期时间、人工解除临时封禁）
 - 操作日志（全部关键操作审计记录）
 - 系统设置（站点、支付、邮件、Telegram、SEO、安全）
 - 管理账户与功能权限、API 令牌、退款审核、通知重试、素材归档与运行健康
 
 ### 通知与集成
-- **Telegram Bot** — 新订单、库存预警实时推送
+
+- **Telegram Bot** — 已付款订单、异常付款核对与库存预警通知，通过持久队列投递并重试失败任务
 - **邮件通知** — SMTP 发送卡密，自定义邮件模板
 - **RESTful API** — Token 鉴权，支持第三方对接
 
 ### 安全
+
 - Cloudflare Turnstile 人机验证
 - Redis 请求限流按下单、试算、付款轮询、查单等操作分别计数，避免正常付款等待耗尽下单额度
 - 网页每 IP 最多保留 3 笔待付款订单，事务锁防止并发突破；到期订单实际释放库存后才恢复额度
@@ -94,26 +107,33 @@
 - 数量、金额、外键与文件类型在服务端校验；价格、折扣、令牌归属、付款状态与卡密由服务器决定
 - 查询密码同时限制字符数及 bcrypt 的 72 字节边界；网页与 API 共享猜密额度，已验证的 API 订单轮询单独处理
 - 富文本和 Markdown 统一白名单净化，联系及支付链接只接受允许的协议；支付回调地址固定使用 `APP_URL`
-- IP / 邮箱黑名单
+- IP / 邮箱黑名单；敏感路径扫描防护可配置临时封禁、白名单和启停
 
 ## 技术栈
 
-| 组件 | 版本 |
+| 组件 | v1.0.0 锁定版本或部署配置 |
 |------|------|
-| PHP | 8.3 |
-| Laravel | 12 |
+| PHP | Docker 镜像使用 8.3；应用要求 ^8.3 |
+| Laravel | 12.69.3 |
+| CommonMark / HTMLPurifier | 2.10.3 / 4.19.0 |
+| React / Ant Design | 18.3.1 / 5.29.3 |
+| React Router / Vite | 7.18.4 / 7.3.6 |
 | PostgreSQL | 17 |
 | Redis | 7 |
-| Nginx | stable |
-| Docker Compose | 最新 |
+| Nginx | stable 镜像标签 |
+| Docker Compose | `docker compose` CLI 插件，需支持 `up --wait` |
+
+PHP 与前端包版本由 `composer.lock` 和 `admin-frontend/package-lock.json` 锁定；容器镜像标签见 `docker-compose.yml` 与 `docker/php/Dockerfile`。
 
 ## 验证与开发
 
 2026-10-01 本地完整 PHP 回归通过 **284 个测试、2732 项断言**；后台权限与设置保存的 **4 项 Node 测试**通过。此前三套模板完成客户下单、优惠、库存、查单、下载、取消、超时、迟到付款和退款的实际界面检查，详见 [测试记录](tests/README.md)。
 
+发布前补修 Docker 依赖安装检查，**7 类 Shell 启动回归全部通过**；旧版隔离基线能捕获仅修改锁文件却跳过安装的问题。
+
 已覆盖客户端价格篡改、零元与不足额回调、签名伪造、重复通知、并发库存及额度、越权查单，以及常见 SQL/XSS 输入。界面测试使用隔离数据库和本地支付替身；真实网关到账、外部通知投递与 Docker 运行仍需在目标环境验证。
 
-修改后台源码时，使用 Node.js 20.19+ 或 22.12+（推荐当前支持的 LTS）运行：
+修改后台源码时，使用满足 Vite 要求的 Node.js 20.19+ 或 22.12+ 运行：
 
 ```bash
 cd admin-frontend
@@ -134,11 +154,11 @@ sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
 
 | | 最低 | 推荐 | 说明 |
 |---|---|---|---|
-| 内存 | 1 GB | 2 GB | 空闲约 400–550 MB；1 GB 机器建议加 2 GB swap，首次部署时 composer 解析依赖是内存峰值 |
+| 内存 | 1 GB | 2 GB | 1 GB 机器建议配置 swap；首次安装依赖和构建是峰值，实际占用随流量、库存和配置变化 |
 | CPU | 1 核 | 2 核 | 订单查询要跑 bcrypt，属 CPU 密集 |
-| 磁盘 | 20 GB | 40 GB | 镜像约 2 GB |
+| 磁盘 | 20 GB | 40 GB | 为镜像、数据库、上传素材与备份预留空间 |
 
-- 操作系统：Debian 13 / Ubuntu 22.04+ / CentOS 8+（推荐 Debian 13）
+- Linux 宿主机以 Debian 12/13 或 Ubuntu 22.04/24.04/26.04 LTS 为参考，Docker 安装按 [Debian 官方步骤](https://docs.docker.com/engine/install/debian/) 或 [Ubuntu 官方步骤](https://docs.docker.com/engine/install/ubuntu/) 选择与系统匹配的软件源。
 - 开放端口：80、443 —— **建议只对 Cloudflare 回源网段开放**，不要对公网全开。
   注意 `ufw` 挡不住 Docker 发布的端口（Docker 直接往 nat 表写规则），必须走 iptables
   的 `DOCKER-USER` 链或云控制台的安全列表。仓库里的 `scripts/cf-only-firewall.sh`
@@ -146,7 +166,8 @@ sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
 
 **配置越好不等于跑得越快** —— 镜像里 PHP-FPM 的默认值只有 5 个工作进程，也就是同时
 只能处理 5 个请求，跟机器多大无关。部署时跑一次 `./install.sh`，它会读取本机的 CPU
-和内存算出推荐值并让你选，写进 `.env`，重启生效（不需要重新构建镜像）：
+和内存算出推荐值并让你选，写进 `.env`。新环境运行 `docker compose up -d` 应用参数；
+已有部署运行 `./scripts/update.sh --redeploy`，让容器重新读取 Compose 环境参数并重载应用与常驻任务。
 
 ```bash
 ./install.sh              # 交互选择
@@ -161,47 +182,31 @@ sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
 
 | 软件 | 版本 | 安装方式 |
 |------|------|----------|
-| Docker | 20.10+ | 见下方安装命令 |
-| Docker Compose | v2+ | Docker 自带 |
+| Docker Engine | 与宿主机发行版匹配的受支持版本 | Docker 官方软件源 |
+| Docker Compose | 支持本项目参数的 CLI 插件 | 安装 `docker-compose-plugin`，详见 [官方步骤](https://docs.docker.com/compose/install/linux/) |
 | Git | 2.x | 系统包管理器 |
 
-**Debian 13 / Ubuntu 一键安装：**
+先按上面的官方步骤安装 Docker Engine 与 Compose 插件，再安装 Git 并验证：
 
 ```bash
-# 更新系统
-apt update && apt upgrade -y
-
-# 安装 Git
-apt install -y git curl
-
-# 安装 Docker
-curl -fsSL https://get.docker.com | sh
-
-# 将当前用户加入 docker 组（免 sudo）
-usermod -aG docker $USER
-
-# 验证安装
+sudo apt update
+sudo apt install -y git curl
 docker --version
 docker compose version
 ```
 
-**CentOS 8+ 安装：**
-
-```bash
-yum install -y git curl
-curl -fsSL https://get.docker.com | sh
-systemctl enable --now docker
-usermod -aG docker $USER
-```
+Docker 命令需由有 Docker 权限的用户执行；普通用户的权限配置与重新登录步骤见官方安装文档。
 
 ### 容器内自动安装的依赖
 
-以下依赖在 `docker compose up --build` 时由 Dockerfile 自动安装，无需手动操作：
+系统包与 PHP 扩展由 Dockerfile 在镜像构建时安装；Composer 包在容器启动时按锁文件安装，无需在宿主机手工安装：
 
 **系统包：**
+
 - libpq-dev（PostgreSQL 客户端库）
 - libzip-dev（ZIP 压缩支持）
 - libicu-dev（国际化支持）
+- PostgreSQL 17 客户端（数据库备份与恢复）
 - unzip、git、curl
 
 **PHP 扩展：**
@@ -220,8 +225,13 @@ usermod -aG docker $USER
 
 | 包名 | 用途 |
 |------|------|
-| laravel/framework ^12.0 | Laravel 框架 |
-| league/commonmark ^2.0 | Markdown 渲染（文章和商品描述） |
+| laravel/framework 12.69.3 | Laravel 框架 |
+| league/commonmark 2.10.3 | Markdown 渲染（文章和商品描述） |
+| ezyang/htmlpurifier 4.19.0 | 商品与文章 HTML 白名单净化 |
+
+PHP 包由容器启动时执行 `composer install --no-dev` 按锁文件安装。启动检查同时覆盖
+`composer.json` 与 `composer.lock`，任一变化都会重装；安装失败停止启动，不自动执行
+`composer update` 或写入成功标记。
 
 ### 外部服务（按需配置）
 
@@ -240,7 +250,7 @@ usermod -aG docker $USER
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/674542449/card-shop.git
+git clone --branch main https://github.com/674542449/card-shop.git
 cd card-shop
 ```
 
@@ -297,9 +307,10 @@ docker compose logs -f app
 - 后台：`https://你的域名/admin`（路径可改，见 `.env` 的 `ADMIN_PATH`）
 
 如果按下面「HTTPS 与源站防护」配了防火墙，用 IP 直连源站是**故意封掉的**，
-访问不通不是故障。另外 `APP_URL` 必须是 `https://` 开头，否则会话 cookie 拿不到
-`Secure` 标志（见 `config/session.php`），后台可能登不进去。
+访问不通不是故障。`APP_URL` 应与实际访问协议和域名一致：生产使用 `https://`，
+本机纯 HTTP 开发使用 `http://`。会话 cookie 的 `Secure` 标志默认跟随该协议，见 `config/session.php`。
 
+默认管理员用户名为 `admin`，可在首次启动前通过 `.env` 的 `ADMIN_USERNAME` 修改。
 **管理员密码没有固定默认值。** 首次启动时生成随机密码，保存在容器内的受限文件中；通过有权限的终端读取，不写入启动日志：
 
 ```bash
@@ -338,7 +349,7 @@ docker compose exec app php artisan admin:password
 
 ```
 resources/views/templates/你的模板名/
-    layout.blade.php          必需，其余都可以不写
+    layout.blade.php          建议提供独立布局
     home.blade.php            想改哪页就放哪页
     product/list.blade.php
     partials/xxx.blade.php
@@ -348,8 +359,7 @@ public/themes/你的模板名/
 
 三条规矩：
 
-1. **没提供的视图会自动回落到 `default`。** 所以一套模板只需要覆盖它真想改的页面，
-   剩下的自动可用——不用把 17 个文件全抄一遍，抄漏一个的表现是白屏而不是提示。
+1. **没提供的视图会自动回落到 `default`。** 新模板可以逐页覆盖；需要完整独立风格时，应同时覆盖所有页面及相关 partial，避免回落导致风格混用。
 2. **页面用 `@extends(theme_view_path('layout'))`**，不要写死 `templates.xxx.layout`。
    这样回落过来的页面会套在**你的**布局里，而不是默认布局。
 3. **互相引用用 `@themeInclude('partials.x')`** 而不是 `@include`。它同样走回落，
@@ -357,7 +367,7 @@ public/themes/你的模板名/
 
 可以复制现有模板作为起点，再修改布局、视图与主题资产。`minimal` 和 `modern` 各自有独立样式及脚本；复制时一并检查商品、订单和文章页面，避免遗漏后自动回落产生风格混用。
 
-模板名只允许字母数字和 `-` `_`，最长 32 位——这个值会拼进视图路径，所以 `theme()`
+模板名只允许小写字母、数字和 `-` `_`，最长 32 位——这个值会拼进视图路径，所以 `theme()`
 会校验它真实存在，不存在就回落 `default`。
 
 ---
@@ -376,8 +386,9 @@ public/themes/你的模板名/
 都信它自称的 IP"，任何人直连源站伪造 `X-Forwarded-For` 就能绕过限流、绕过每 IP 最多
 3 笔未支付订单的限制、绕过 IP 黑名单。
 
-前提是 Cloudflare 面板里那条 A 记录必须开着橙云代理。不开的话这套方案静默失效 ——
-不报错，只是所有访客 IP 又变成一个。
+使用本文的 Cloudflare 源站防护方案时，DNS 记录需开启橙云代理。灰云流量直接访问源站，
+不会经过 Cloudflare 防护；已限制仅 Cloudflare 回源时会无法访问。直连时 nginx 保留连接方 IP，
+不会因为没有橙云而把所有访客 IP 合并。
 
 ### 2. 源站证书（回源加密）
 
@@ -469,7 +480,7 @@ cd ~/card-shop && sudo ./scripts/doctor.sh --fix  # 顺便修能安全修的
 
 ### 维护
 
-Cloudflare 的回源网段一年会变几次。`cf-only-firewall.sh` 每次运行都会重新拉取最新列表，
+Cloudflare 的回源网段可能调整。`cf-only-firewall.sh` 每次运行都会重新拉取最新列表，
 建议每月跑一次：
 
 ```bash
@@ -492,8 +503,8 @@ sudo ./scripts/cf-only-firewall.sh --apply --yes
 然后 `https://新域名` 打不开——因为 DNS 还解析到旧机器，或者根本没解析。这时候人会去
 查 nginx、查防火墙、查 APP_URL，而真正缺的只是一条 DNS 记录。
 
-橙云也必须开：不开的话 `docker/nginx/default.conf` 里那 22 条 `set_real_ip_from` 永远
-匹配不上，真实 IP 还原**静默失效**，所有按 IP 的限流和黑名单退化成全站一个桶。
+使用 Cloudflare 源站防护时需开启橙云；灰云会绕过 CDN，且无法通过仅允许 Cloudflare 回源的防火墙。
+nginx 只对可信 Cloudflare 来源还原访客 IP；直连流量保留连接方 IP。
 
 ### 2. 部署代码，设好新域名
 
@@ -519,13 +530,19 @@ DNS 还没生效就先等；本机 hosts 只能帮助本机访问，无法让支
 
 ### 4. 迁数据（如果要保留旧站的订单和卡密）
 
+优先按 [完整备份与恢复](DEPLOY.md#备份与恢复) 操作，包含数据库、`.env`、上传素材及私有归档。
+迁移窗口须暂停 Web、调度器和通知进程，避免旧、新站同时处理订单。保留旧站 `APP_KEY`，
+数据库连接和域名配置按目标环境调整；完整恢复只有显式使用 `--include-config` 才覆盖 `.env`。
+
+下面是**仅迁移数据库**的手工方案，不包含密钥与文件。在迁移期间保持业务进程暂停。
+
 在**旧**服务器上导出：
 
 ```bash
 cd ~/card-shop && docker compose exec -T postgres pg_dump -U cardshop --clean --if-exists cardshop | gzip > backup.sql.gz
 ```
 
-传到新服务器后导入（新站容器要先起来，让它建好库结构，再覆盖）：
+传到新服务器后，确认目标 PostgreSQL 已启动、目标库已创建，再导入：
 
 ```bash
 gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d cardshop -v ON_ERROR_STOP=1
@@ -535,7 +552,9 @@ gunzip -c backup.sql.gz | docker compose exec -T postgres psql -U cardshop -d ca
 错误）；`-v ON_ERROR_STOP=1` 让 psql 遇错即停并返回非零 —— **默认它会跳过错误跑完并
 返回 0**，于是你以为导成功了，实际只导进去一半。
 
-上传的图片在 `storage/app/public/uploads/`，一并 rsync 过去。
+手工方案还需迁移 `storage/app/public/uploads/`、私有素材及记录归档，并确认 `APP_KEY` 与原站一致。
+导入后执行数据库迁移、清理配置与应用缓存，再恢复应用、调度和通知服务；Docker 部署可按
+[升级步骤](DEPLOY.md#升级) 使用 `./scripts/update.sh --redeploy --build` 完成重载，随后核对订单、库存与素材。
 
 ### 5. 换域名后必须在后台重新设置的东西
 
@@ -578,30 +597,38 @@ sudo ./scripts/cf-only-firewall.sh --apply --persist
 登录后台「系统设置」完成以下配置：
 
 ### 支付设置
+
 - **易支付**：填写 API 地址、商户 ID、商户密钥
 - **EPUSDT**：填写 API 地址和 Token（需要单独部署 [epusdt](https://github.com/assimon/epusdt) 或 [BEpusdt](https://github.com/v03413/BEpusdt)，两者的 trade_type 不同，部署了哪个就在后台选哪个网关类型）
 
 ### 邮件设置
-SMTP 参数在 `.env` 文件中配置，邮件模板在后台设置。
+
+在后台**系统设置 → 邮件发送**配置 SMTP 主机、端口、加密方式、用户名、密码和发件人，
+保存后使用「发送测试邮件」验证。邮件主题与正文模板同样在后台配置。
+未填写后台 SMTP 主机时，兼容回退到部署环境的 `MAIL_*` 配置。
 
 支持的模板变量：
+
 - `{{site_name}}` — 站点名称
 - `{{order_no}}` — 订单号
 - `{{product_name}}` — 商品名称
 - `{{quantity}}` — 数量
-- `{{amount}}` — 金额
+- `{{total_amount}}` / `{{amount}}` — 实付金额，两个名称兼容
 - `{{cards}}` — 卡密内容
 
 ### Telegram 通知
+
 1. 通过 [@BotFather](https://t.me/BotFather) 创建 Bot，获取 Token
 2. 获取 Chat ID（可通过 [@userinfobot](https://t.me/userinfobot) 查询）
 3. 在后台填入 Bot Token 和 Chat ID，开启通知
 
 ### Turnstile 验证码
+
 1. 在 [Cloudflare Dashboard](https://dash.cloudflare.com/turnstile) 创建 Turnstile 站点
 2. 在后台填入 Site Key 和 Secret Key
 
 ### SEO 设置
+
 - 填写默认 TDK（标题、描述、关键词）
 - 填写百度推送 Token（可选）
 - 填写 Bing IndexNow Key（可选）
@@ -610,9 +637,23 @@ SMTP 参数在 `.env` 文件中配置，邮件模板在后台设置。
 
 API 使用 Bearer Token 鉴权。在后台「API 令牌」中创建、停用和配置额度。
 默认每令牌每分钟 120 次请求、20 次下单，同时最多占用 3 笔待付订单、100 张卡密。
-额度按令牌统计，换 IP 不会重置；后台可调整。下单和查单还分别受每 IP 20、30 次/分钟限制。首次凭据验证与错误猜测另共享网页/API 的 15 分钟额度：同邮箱与 IP 5 次、同邮箱 50 次、同 IP 20 次。成功不会清空猜密计数。
+额度按令牌统计，换 IP 不会重置；后台可调整。下单、查单、取消还分别受每 IP 20、30、10 次/分钟限制。首次凭据验证与错误猜测另共享网页/API 的 15 分钟额度：同邮箱与 IP 5 次、同邮箱 50 次、同 IP 20 次。成功不会清空猜密计数。
 
 API 订单成功创建并发起支付，或首次通过密码验证后，服务器保存 10 分钟的验证证明，绑定创建令牌、订单、邮箱、密码 HMAC 和当前密码哈希，不缓存明文密码。正常批量下单查状态和重复轮询仍受上述请求额度限制，不继续消耗猜密次数；错密码、换令牌和密码变更不能复用证明。创建失败不产生证明，也不清空猜密次数。
+
+### 权限范围
+
+| 范围 | 对应操作 |
+| --- | --- |
+| `products:read` | 商品列表与详情 |
+| `orders:create` | 创建订单 |
+| `orders:query` | 查询本令牌创建的订单 |
+| `orders:cancel` | 取消本令牌创建的未付款订单 |
+
+后台新建令牌默认勾选前三项，需要取消功能时额外勾选 `orders:cancel`。
+历史令牌的 `scopes=null` 兼容全部已映射接口；`scopes=[]` 表示无接口权限，不能把两者当作同一种空值。
+
+### 接口与下单
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
@@ -629,6 +670,31 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
      https://你的域名/api/v1/products
 ```
 
+创建订单正文：
+
+| 字段 | 要求 |
+| --- | --- |
+| `product_id` | 商品 ID；商品及分类须允许购买 |
+| `quantity` | 正整数，须满足商品购买数量上下限、库存和令牌额度 |
+| `email` | 合法邮箱，最多 200 个字符 |
+| `query_password` | 6–50 个字符，且不超过 72 字节 |
+| `payment_method` | `alipay`、`wechat`、`usdt_trc20`；BEpusdt 另支持 `usdt_bep20`、`usdt_polygon` |
+| `coupon_code` | 可选优惠码，最多 50 个字符；服务端校验有效期、名额和商品范围 |
+
+原版 EPUSDT 的 `usdt_trc20` 是兼容入口，实际使用网关默认网络；须在后台配置对应的支付网关。
+价格和折扣由服务器计算，客户端提交的金额或付款状态不作为计价、付款或交付依据。
+
+```bash
+curl -X POST -H "Authorization: Bearer YOUR_TOKEN" \
+     -H "Content-Type: application/json" -H "Accept: application/json" \
+     --data '{"product_id":1,"quantity":1,"email":"buyer@example.test","query_password":"YOUR_QUERY_PASSWORD","payment_method":"alipay"}' \
+     https://你的域名/api/v1/orders
+```
+
+成功返回 HTTP 201，`data` 包含 `order_no`、`total_amount`、`discount_amount`、`payment_method`、
+`expires_at`、`payment_url` 和 `trade_id`。`payment_url` 为支付链接，`trade_id` 随网关返回，可能为 `null` 或空字符串。201 表示订单创建及支付发起成功，
+卡密交付以服务端确认有效付款后的查单结果为准。
+
 查单示例（仅示例凭据）：
 
 ```bash
@@ -643,7 +709,7 @@ curl -X POST -H "Authorization: Bearer YOUR_TOKEN" \
 升级后，分开的创建令牌和查询令牌不能共享订单；同一令牌可调整为包含所需范围。删除令牌会解除历史订单的令牌关联，新建令牌不能查询这些旧订单；关联为空的历史订单仍可使用前台邮箱与密码查单，或由后台处理。
 Nginx 访问日志不记录查询参数、Referer、请求正文或 Authorization。
 
-取消接口需要 `orders:cancel` 范围；旧令牌的空范围仍按原有全部接口处理。取消凭据使用与查单相同的 JSON 正文，URL 查询参数不接受密码。只有创建订单的令牌可以取消该订单，已付款或已有付款回执的订单会被拒绝。取消与支付回调使用订单行锁，释放库存和优惠次数仅执行一次；若网关已经收款但有效回调稍后才到，仍按实际付款处理并在需要时进入人工核对。
+取消接口需要 `orders:cancel` 范围；兼容历史 `scopes=null` 令牌。取消凭据使用与查单相同的 JSON 正文，URL 查询参数不接受密码。只有创建订单的令牌可以取消该订单，已付款或已有付款回执的订单会被拒绝。取消与支付回调使用订单行锁，释放库存和优惠次数仅执行一次；若网关已经收款但有效回调稍后才到，仍按实际付款处理并在需要时进入人工核对。
 
 ### 通知队列与库存预警
 
@@ -677,8 +743,8 @@ docker compose exec -T app php artisan notifications:send --limit=10
 card-shop/
 ├── app/
 │   ├── Http/Controllers/
-│   │   ├── Admin/          # 后台入口
-│   │   ├── Api/            # API 控制器
+│   │   ├── Api/            # 对外 API 控制器
+│   │   │   └── Admin/      # 后台 API 控制器
 │   │   └── Front/          # 前台控制器
 │   ├── Models/             # Eloquent 模型
 │   ├── Services/           # 业务服务层
@@ -712,15 +778,15 @@ docker compose logs -f app
 # 进入 PHP 容器
 docker compose exec app bash
 
-# 清理缓存
+# 清理应用与配置缓存，并重新预编译视图
 docker compose exec app php artisan cache:clear
 docker compose exec app php artisan config:clear
-docker compose exec app php artisan view:clear
+docker compose exec app php artisan view:cache
 
-# 数据库备份
+# 仅数据库备份；完整备份与恢复见 DEPLOY.md
 docker compose exec -T postgres pg_dump -U cardshop --clean --if-exists cardshop > backup.sql
 
-# 数据库恢复
+# 数据库恢复（覆盖目标数据，先暂停业务进程并确认备份）
 docker compose exec -T postgres psql -U cardshop -d cardshop -v ON_ERROR_STOP=1 < backup.sql
 ```
 
@@ -738,12 +804,16 @@ cd ~/card-shop && ./scripts/update.sh
 
 详细说明见 [DEPLOY.md](DEPLOY.md) 的「升级」一节。
 
+更新脚本拉取当前 `main` 的最新提交；发布标签用于固定版本定位。`docker/`、`composer.json`
+或 `composer.lock` 变更时会重建镜像，启动时按锁文件安装依赖。手工拉代码、迁数据或调整配置后，
+可使用 `./scripts/update.sh --redeploy --build` 强制重建与重载，避免提交相同而提前退出。
+
 ## 订单、权限与维护功能
 
 - 三个前台模板均支持全目录服务器搜索与分页；订单查询支持可选订单号精确查找，以及每批 60 条的继续查询。查询密码保留哈希，下一批凭据加密保存在短期会话中，不进入 URL。旧哈希匹配后自动补齐查询索引。新查询密码最多 50 个字符且不超过 72 字节，避免 bcrypt 静默截断中文等多字节密码。
 - 新订单保存下单时商品名称，改名不会改变历史订单。升级时旧订单只能用升级当时的名称补齐，无法推断过去已经修改的名称。轮换 `APP_KEY` 前应保留备份；轮换后需将 `orders.query_password_key` 置空重新建立索引，或用订单号精确查询。
 - 停用商品分类会同时隐藏并停止该分类商品的新购买，已购订单仍可查单。支付回调按服务端订单金额校验，拒绝零金额、少付款、错渠道及重复流水跨订单使用。
-- 三个模板均可校验优惠码并试算当前数量的阶梯价。试算接口不创建订单、不占库存、不消耗优惠次数；数量或优惠码改变后旧报价失效，最终提交重新校验服务端价格、库存和优惠条件。原版 EPUSDT 不接受指定 BEP20/Polygon 的订单，使用 BEpusdt 后才开放这些选项。
+- 三个模板均可校验优惠码并试算当前数量的阶梯价。试算接口不创建订单、不占库存、不消耗优惠次数；数量或优惠码改变后旧报价失效，最终提交重新校验服务端价格、库存和优惠条件。全额优惠仍最低实付 ¥0.01，当前不支持免费自动发货。原版 EPUSDT 不接受指定 BEP20/Polygon 的订单，使用 BEpusdt 后才开放这些选项。
 - 买家验证订单后可取消未付款订单，立即释放占用库存与优惠次数；已有付款回执的订单须先核对。API 客户端可通过正文凭据和专用范围取消自己创建的订单。
 - 付款回执分别记录人民币订单金额、签名回调中的实际 USDT 金额、网络和交易哈希。额外付款进入待核对列表，店主可登记处理结果或退款。API 查单返回付款核对状态和退款摘要。
 - 前台可提交退款申请；后台完成审核、退款额度控制和实际退款凭证登记。**批准申请不会调用网关转账**：操作员应在原支付渠道完成实际退款后登记流水。重复付款按各自回执控制退款余额，已交付卡密不会重新入库。
@@ -755,4 +825,4 @@ cd ~/card-shop && ./scripts/update.sh
 
 ## License
 
-MIT
+采用 [MIT License](LICENSE)。项目代码与依赖各自保留其版权及许可证声明。

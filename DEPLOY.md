@@ -14,7 +14,7 @@ Cloudflare 的防火墙）都建立在这个前提上。
 
 | 需要什么 | 说明 |
 |---|---|
-| 一台服务器 | Ubuntu 22.04+ / Debian 12+。最低 1 核 1G，推荐 2 核 2G 起。磁盘 20G 以上 |
+| 一台服务器 | Ubuntu 22.04/24.04/26.04 LTS 或 Debian 12/13。最低 1 核 1G，推荐 2 核 2G 起。磁盘 20G 以上 |
 | 一个域名 | 已经加进 Cloudflare 账号（域名在哪注册的都行，NS 指到 Cloudflare 即可） |
 | SSH 能登进服务器 | 后面所有命令都在服务器上跑 |
 
@@ -90,10 +90,9 @@ Cloudflare 的防火墙）都建立在这个前提上。
 2. 代理状态必须是**橙色云朵**，不能是「仅限 DNS」（灰色）
 3. **SSL/TLS** → 概述 → 加密模式暂时选 **灵活 (Flexible)**（第 5 步做完再改成 Full strict）
 
-**橙云一定要开。** 不开的话 nginx 里那 22 条 `set_real_ip_from` 永远匹配不上，真实访客 IP
-的还原会**静默失效**——不报错，只是所有访客的 IP 都变成同一个，于是按 IP 的限流、
-「每 IP 最多 3 笔未支付订单」、IP 黑名单全部退化成全站共用一个桶。同时你的源站 IP 也会
-直接暴露在 DNS 里。
+**本文方案需要开启橙云。** 灰云流量直接访问源站，会绕过 Cloudflare 防护，并被后续仅允许
+Cloudflare 回源的防火墙拒绝；源站 IP 也会直接出现在 DNS 中。nginx 只对可信 Cloudflare
+来源还原访客 IP，直连时保留连接方 IP，灰云本身不会让所有访客共用一个 IP。
 
 **怎么确认成功**（在你自己电脑上跑，不是服务器）：
 
@@ -108,9 +107,10 @@ curl -sI https://shop.example.com/ | grep -i "cf-ray\|server:"
 
 ## 第 2 步：装 Docker
 
-```bash
-curl -fsSL https://get.docker.com | sh
-```
+按目标发行版的 Docker 官方软件源步骤安装 Engine 和 Compose 插件：
+[Ubuntu](https://docs.docker.com/engine/install/ubuntu/) 或
+[Debian](https://docs.docker.com/engine/install/debian/)。确认安装了 `docker-compose-plugin`，
+插件安装说明见 [Docker Compose 官方文档](https://docs.docker.com/compose/install/linux/)。
 
 **怎么确认成功**：
 
@@ -400,16 +400,16 @@ docker compose exec app php artisan admin:password --password='新密码'
 # 用户名要在首次部署前设，写进 .env 的 ADMIN_USERNAME=你的用户名
 ```
 
-后台菜单：概览 / 商品 / 交易 / 内容 / 系统。下面这些都在**系统 → 系统设置**这一页里，
-分卡片排列。
+后台菜单：概览 / 商品 / 交易 / 内容 / 系统。站点、支付、邮件和人机验证在
+**系统 → 系统设置**分卡片配置；个人密码在**我的账户**修改，用户名由店主在**管理账户**修改。
 
 | 配置项 | 不配的后果 |
 |---|---|
-| **修改密码**（页面底部那张卡片） | 随机密码在日志里，而日志有 10MB × 3 的轮转上限，迟早被冲掉 |
+| **修改初始密码**（我的账户） | 初始密码文件仍留在服务器上；登录后更换密码并删除该文件 |
 | **站点名称、SEO** | 标题栏和搜索结果里显示的是默认值 |
 | **支付网关**（易支付 / USDT） | 收不了款 |
 | **SMTP 邮件** | 买家收不到卡密邮件。填完用同一张卡片上的「发送测试邮件」验证 |
-| **Turnstile 人机验证** | 不配等于下单和订单查询没有任何验证，刷单和撞库畅通 |
+| **Turnstile 人机验证** | 下单和订单查询缺少人机挑战；已有服务端业务校验与限流仍生效 |
 
 ### Turnstile 要为新域名单独建
 
