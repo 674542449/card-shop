@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\Coupon;
 use App\Models\Product;
-use RuntimeException;
+use App\Exceptions\CheckoutException;
 
 /** Server-side pricing shared by web and API checkout. Call inside a transaction. */
 class CheckoutPricingService
@@ -14,16 +14,20 @@ class CheckoutPricingService
     /** @return array{unit_price:string,total_amount:string,discount_amount:string,coupon:?Coupon} */
     public function calculate(Product $product, int $quantity, ?string $couponCode, bool $lockCoupon = true): array
     {
+        if ($couponCode !== null && (! mb_check_encoding($couponCode, 'UTF-8')
+            || preg_match('/[\x00-\x1F\x7F]/', $couponCode) || mb_strlen($couponCode) > 50)) {
+            throw new CheckoutException('优惠码格式无效。');
+        }
         if ($quantity < 1) {
-            throw new RuntimeException('购买数量必须为正整数');
+            throw new CheckoutException('购买数量必须为正整数');
         }
         $unitPrice = $product->getEffectivePrice($quantity);
         if (! $this->validMoney($unitPrice) || bccomp($unitPrice, '0.01', 2) < 0) {
-            throw new RuntimeException('商品价格配置无效，请联系站点客服');
+            throw new CheckoutException('商品价格配置无效，请联系站点客服');
         }
         $subtotal = bcmul($unitPrice, (string) $quantity, 2);
         if (bccomp($subtotal, self::MAX_AMOUNT, 2) > 0) {
-            throw new RuntimeException('订单金额超出允许范围，请减少购买数量');
+            throw new CheckoutException('订单金额超出允许范围，请减少购买数量');
         }
 
         $coupon = null;
@@ -35,21 +39,21 @@ class CheckoutPricingService
             $couponQuery = Coupon::where('code', $couponCode);
             $coupon = ($lockCoupon ? $couponQuery->lockForUpdate() : $couponQuery)->first();
             if (! $coupon) {
-                throw new RuntimeException('优惠码不存在');
+                throw new CheckoutException('优惠码不存在');
             }
             if (! $coupon->isValid()) {
-                throw new RuntimeException('优惠码已过期或已达使用上限');
+                throw new CheckoutException('优惠码已过期或已达使用上限');
             }
             if ($coupon->product_id && $coupon->product_id !== $product->id) {
-                throw new RuntimeException('该优惠码不适用于此商品');
+                throw new CheckoutException('该优惠码不适用于此商品');
             }
             if (! $this->validMoney($coupon->min_amount) || bccomp($subtotal, $coupon->min_amount, 2) < 0) {
-                throw new RuntimeException('订单金额不满足该优惠码的最低消费 ¥'.$coupon->min_amount.' 的要求');
+                throw new CheckoutException('订单金额不满足该优惠码的最低消费 ¥'.$coupon->min_amount.' 的要求');
             }
             if (! $this->validMoney($coupon->value) || bccomp($coupon->value, '0.00', 2) <= 0
                 || ! in_array($coupon->type, ['fixed', 'percent'], true)
                 || ($coupon->type === 'percent' && bccomp($coupon->value, '100.00', 2) > 0)) {
-                throw new RuntimeException('优惠码折扣配置无效，请联系站点客服');
+                throw new CheckoutException('优惠码折扣配置无效，请联系站点客服');
             }
 
             if ($coupon->type === 'fixed') {

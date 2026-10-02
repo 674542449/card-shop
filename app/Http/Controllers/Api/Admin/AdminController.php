@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
 use App\Models\OperationLog;
+use App\Rules\BcryptPassword;
+use App\Rules\Utf8Text;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -18,12 +20,10 @@ class AdminController extends Controller
 
     private function rules(?Admin $admin = null): array
     {
-        return ['username' => ['required', 'string', 'max:50', Rule::unique('admins')->ignore($admin?->id)],
-            'password' => ['bail', $admin ? 'nullable' : 'required', 'string', 'min:12', 'max:72', function ($attribute, $value, $fail) {
-                if (strlen($value) > 72) { $fail('密码最多 72 字节，请缩短密码。'); }
-            }],
+        return ['username' => ['bail', 'required', 'string', 'max:50', new Utf8Text, Rule::unique('admins')->ignore($admin?->id)],
+            'password' => ['bail', $admin ? 'nullable' : 'required', 'string', 'min:12', 'max:72', new BcryptPassword],
             'role' => 'required|in:owner,staff', 'permissions' => 'nullable|array',
-            'permissions.*' => 'string|regex:/^(overview|catalog|cards|payments|orders|refunds|content|coupons|blacklists|logs|settings|tokens|notifications|maintenance):(read|write)$/D',
+            'permissions.*' => ['string', 'regex:/^(overview|catalog|cards|payments|orders|refunds|content|coupons|blacklists|logs|settings|tokens|notifications|maintenance):(read|write)$/D'],
             'is_active' => 'required|boolean'];
     }
 

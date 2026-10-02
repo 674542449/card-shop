@@ -6,14 +6,17 @@ use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\PaymentReceipt;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
+use App\Exceptions\CheckoutException;
 
 class RefundService
 {
     public function request(Order $order, string $amount, string $reason, ?int $receiptId = null, string $source = 'admin'): OrderRefund
     {
+        if (! mb_check_encoding($reason, 'UTF-8') || str_contains($reason, "\0")) {
+            throw new CheckoutException('退款原因不能包含无效编码或空字符。');
+        }
         if (! preg_match('/^\d{1,16}(?:\.\d{1,2})?$/D', $amount)) {
-            throw new RuntimeException('退款金额格式无效。');
+            throw new CheckoutException('退款金额格式无效。');
         }
 
         return DB::transaction(function () use ($order, $amount, $reason, $receiptId, $source) {
@@ -21,7 +24,7 @@ class RefundService
             $receipt = $receiptId ? PaymentReceipt::where('order_id', $locked->id)->whereKey($receiptId)->firstOrFail()
                 : ($locked->payment_no ? PaymentReceipt::where('order_id', $locked->id)->where('trade_no', $locked->payment_no)->first() : null);
             if (! $receipt && ! $locked->isPaid()) {
-                throw new RuntimeException('未付款订单不能申请订单退款；异常付款请指定对应回执。');
+                throw new CheckoutException('未付款订单不能申请订单退款；异常付款请指定对应回执。');
             }
             $maximum = $receipt?->amount ?? $locked->total_amount;
             $existingQuery = $locked->refunds()->whereIn('status', ['requested', 'approved', 'completed']);
@@ -34,7 +37,7 @@ class RefundService
             }
             $existing = $existingQuery->sum('amount');
             if (bccomp($amount, '0', 2) <= 0 || bccomp(bcadd($amount, (string) $existing, 2), $maximum, 2) > 0) {
-                throw new RuntimeException('退款金额超出可退款余额。');
+                throw new CheckoutException('退款金额超出可退款余额。');
             }
 
             return OrderRefund::create(['order_id' => $locked->id, 'payment_receipt_id' => $receipt?->id, 'amount' => $amount,
@@ -49,10 +52,10 @@ class RefundService
             $locked = OrderRefund::whereKey($refund->id)->lockForUpdate()->firstOrFail();
             $allowed = ['requested' => ['approved', 'rejected'], 'approved' => ['completed', 'rejected']];
             if (! in_array($status, $allowed[$locked->status] ?? [], true)) {
-                throw new RuntimeException('退款状态已变化，不能重复处理。');
+                throw new CheckoutException('退款状态已变化，不能重复处理。');
             }
             if ($status === 'completed' && ! $reference) {
-                throw new RuntimeException('请填写实际退款流水或转账凭证编号。');
+                throw new CheckoutException('请填写实际退款流水或转账凭证编号。');
             }
             $locked->update(['status' => $status, 'reference' => $reference, 'note' => $note, 'admin_id' => $adminId,
                 'completed_at' => $status === 'completed' ? now() : null]);

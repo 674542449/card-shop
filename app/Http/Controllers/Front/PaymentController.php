@@ -311,8 +311,9 @@ class PaymentController extends Controller
 
             return true;
         } catch (\Throwable $e) {
-            Log::error('Payment processing failed for order ' . $orderNo . ': ' . $e->getMessage(), [
-                'exception' => $e,
+            Log::error('Payment processing failed', [
+                'order_no' => $orderNo,
+                'exception_class' => $e::class,
             ]);
 
             return false;

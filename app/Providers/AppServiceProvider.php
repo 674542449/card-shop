@@ -14,7 +14,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // MailManager constructs failover/roundrobin children directly, rather
+        // than reusing Mail::mailer('smtp'). Enforce TLS at this shared factory.
+        $this->callAfterResolving('mail.manager', function ($manager) {
+            if ($manager instanceof \Illuminate\Mail\MailManager) {
+                $manager->extend('smtp', fn (array $config) => \App\Mail\SmtpTransportFactory::create($config));
+                $manager->forgetMailers();
+            }
+        });
     }
 
     /**

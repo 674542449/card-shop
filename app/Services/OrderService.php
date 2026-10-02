@@ -9,7 +9,7 @@ use App\Models\Product;
 use App\Models\ApiToken;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use RuntimeException;
+use App\Exceptions\CheckoutException;
 
 class OrderService
 {
@@ -37,16 +37,19 @@ class OrderService
      *     ip: string
      * } $data
      *
-     * @throws RuntimeException On validation failure or insufficient stock.
+     * @throws CheckoutException On validation failure or insufficient stock.
      */
     public function createOrder(array $data): Order
     {
         if (!in_array($data['payment_method'], \App\Support\PaymentMethods::supported(), true)) {
-            throw new RuntimeException('当前支付网关不支持所选支付方式或网络。');
+            throw new CheckoutException('当前支付网关不支持所选支付方式或网络。');
         }
         // bcrypt ignores bytes beyond 72; reject them before reserving any stock.
+        if (str_contains($data['query_password'], "\0") || ! mb_check_encoding($data['query_password'], 'UTF-8')) {
+            throw new CheckoutException('查询密码不能包含无效编码或空字符。');
+        }
         if (strlen($data['query_password']) > 72) {
-            throw new RuntimeException('查询密码不能超过72字节，中文等字符会占用多个字节');
+            throw new CheckoutException('查询密码不能超过72字节，中文等字符会占用多个字节');
         }
 
         // 1. Validate product exists and is active
@@ -54,14 +57,14 @@ class OrderService
             ->first();
 
         if (!$product) {
-            throw new RuntimeException('商品不存在或已下架');
+            throw new CheckoutException('商品不存在或已下架');
         }
 
         $quantity = (int) $data['quantity'];
 
         // Validate quantity within product limits
         if ($quantity < $product->min_quantity || $quantity > $product->max_quantity) {
-            throw new RuntimeException(
+            throw new CheckoutException(
                 "购买数量必须在 {$product->min_quantity} - {$product->max_quantity} 之间"
             );
         }
@@ -69,12 +72,12 @@ class OrderService
         // 2. Check stock before attempting lock
         $stockCount = $this->cardService->getStockCount($product->id);
         if ($stockCount < $quantity) {
-            throw new RuntimeException("库存不足，当前库存: {$stockCount}");
+            throw new CheckoutException("库存不足，当前库存: {$stockCount}");
         }
 
         // 3. Check blacklist
         if (\App\Models\Blacklist::isBlocked($data['ip'], $data['email'])) {
-            throw new RuntimeException('访问被拒绝');
+            throw new CheckoutException('访问被拒绝');
         }
 
         return DB::transaction(function () use ($product, $data, $quantity) {
@@ -84,7 +87,7 @@ class OrderService
                 // requests across products/IPs cannot both claim the final allowance.
                 $token = ApiToken::whereKey($tokenId)->where('is_active', true)->lockForUpdate()->first();
                 if (!$token || $token->expires_at?->isPast() || ($token->scopes !== null && !in_array('orders:create', $token->scopes, true)) || ($token->allowed_ips && !\Symfony\Component\HttpFoundation\IpUtils::checkIp($data['ip'], $token->allowed_ips))) {
-                    throw new RuntimeException('API 令牌已失效');
+                    throw new CheckoutException('API 令牌已失效');
                 }
                 // A deadline alone does not release card rows. Count reservations
                 // until the expiry transaction actually changes the order status.
@@ -92,7 +95,7 @@ class OrderService
                     ->selectRaw('count(*) as orders, COALESCE(sum(quantity), 0) as quantity')->first();
                 if ((int) $held->orders >= $token->max_pending_orders
                     || (int) $held->quantity + $quantity > $token->max_pending_quantity) {
-                    throw new RuntimeException('API 未付款订单或库存占用已达额度，请先完成支付或等待过期资源释放');
+                    throw new CheckoutException('API 未付款订单或库存占用已达额度，请先完成支付或等待过期资源释放');
                 }
             }
             $quote = $this->pricing->calculate($product, $quantity, $data['coupon_code'] ?? null);
@@ -148,7 +151,7 @@ class OrderService
                         ->increment('used_count');
 
                     if ($claimed === 0) {
-                        throw new RuntimeException('优惠券已达使用上限');
+                        throw new CheckoutException('优惠券已达使用上限');
                     }
                 }
 
@@ -165,19 +168,19 @@ class OrderService
      * Process payment for an order and return payment URL/data.
      *
      * @return array{url: string, trade_id?: string}
-     * @throws RuntimeException If the payment method is unsupported.
+     * @throws CheckoutException If the payment method is unsupported.
      */
     public function processPayment(Order $order, string $method): array
     {
         if (!$order->isPending()) {
-            throw new RuntimeException('订单状态不允许支付');
+            throw new CheckoutException('订单状态不允许支付');
         }
 
         if ($order->expires_at->isPast()) {
-            throw new RuntimeException('订单已过期');
+            throw new CheckoutException('订单已过期');
         }
         if ($order->payment_no) {
-            throw new RuntimeException('订单已有付款回执，请等待核对，不要重复支付');
+            throw new CheckoutException('订单已有付款回执，请等待核对，不要重复支付');
         }
 
         return match ($method) {
@@ -190,7 +193,7 @@ class OrderService
             'usdt_trc20' => $this->epusdtService->createPayment($order, 'trc20'),
             'usdt_bep20' => $this->epusdtService->createPayment($order, 'bep20'),
             'usdt_polygon' => $this->epusdtService->createPayment($order, 'polygon'),
-            default => throw new RuntimeException('不支持的支付方式'),
+            default => throw new CheckoutException('不支持的支付方式'),
         };
     }
 
@@ -250,12 +253,12 @@ class OrderService
     /**
      * Resend card contents to the order email.
      *
-     * @throws RuntimeException If order is not paid.
+     * @throws CheckoutException If order is not paid.
      */
     public function resendCards(Order $order): void
     {
         if (!$order->isPaid()) {
-            throw new RuntimeException('只能重发已支付订单的卡密');
+            throw new CheckoutException('只能重发已支付订单的卡密');
         }
 
         // Use the same durable resend path as the admin controller.
@@ -265,25 +268,25 @@ class OrderService
     /**
      * Close an order manually and release its cards.
      *
-     * @throws RuntimeException If the order cannot be closed.
+     * @throws CheckoutException If the order cannot be closed.
      */
     public function closeOrder(Order $order, bool $pendingOnly = false): void
     {
         if ($order->isPaid()) {
-            throw new RuntimeException('已支付的订单不能关闭');
+            throw new CheckoutException('已支付的订单不能关闭');
         }
 
         if ($order->status === 'closed') {
-            throw new RuntimeException('订单已关闭');
+            throw new CheckoutException('订单已关闭');
         }
 
         DB::transaction(function () use ($order, $pendingOnly) {
             $fresh = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             if ($pendingOnly && $fresh->status !== 'pending') {
-                throw new RuntimeException('只能取消待支付订单，请刷新查看订单状态。');
+                throw new CheckoutException('只能取消待支付订单，请刷新查看订单状态。');
             }
             if ($fresh->payment_no || $fresh->paymentReceipts()->exists()) {
-                throw new RuntimeException('订单已收到付款回执，请先完成付款核对，不能取消。');
+                throw new CheckoutException('订单已收到付款回执，请先完成付款核对，不能取消。');
             }
             $releaseCoupon = $fresh->status === 'pending';
             // Conditional, like every other status write: the checks above read a
@@ -295,7 +298,7 @@ class OrderService
                 ->update(['status' => 'closed']);
 
             if ($claimed === 0) {
-                throw new RuntimeException('订单状态已变化，请刷新后重试');
+                throw new CheckoutException('订单状态已变化，请刷新后重试');
             }
 
             $lockedCards = $order->cards()->where('status', 'locked')->get();

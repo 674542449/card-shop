@@ -29,6 +29,8 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->appendToGroup('web', \App\Http\Middleware\ValidateRouteModelIdentifiers::class);
         $middleware->appendToGroup('api', \App\Http\Middleware\ValidateRouteModelIdentifiers::class);
+        $middleware->appendToGroup('web', \App\Http\Middleware\ValidateInputText::class);
+        $middleware->appendToGroup('api', \App\Http\Middleware\ValidateInputText::class);
         // Authenticate and authorize before binding private records. Otherwise
         // missing IDs return 404 before AdminAuth, while existing IDs return 401
         // or 403, revealing which products, orders and cards exist.
@@ -37,6 +39,10 @@ return Application::configure(basePath: dirname(__DIR__))
         // Invalid key syntax still receives 404 without reaching PostgreSQL.
         $middleware->prependToPriorityList(\App\Http\Middleware\AdminAuth::class,
             \App\Http\Middleware\ValidateRouteModelIdentifiers::class);
+        // Web validation errors need StartSession; reject text before model binding.
+        // Numeric key guards retain their existing 404 behavior.
+        $middleware->prependToPriorityList(\App\Http\Middleware\AdminAuth::class,
+            \App\Http\Middleware\ValidateInputText::class);
         // This should normally be EMPTY. It is not the fix for "visitors all show the
         // CDN's IP" — that is already solved one layer down, in nginx.
         //

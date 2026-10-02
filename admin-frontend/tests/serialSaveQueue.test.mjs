@@ -46,3 +46,51 @@ test('an immediate throwing transport preserves data for retry', async () => {
   await assert.rejects(saver.flush());
   assert.deepEqual(saver.unsaved(), { mail_host: 'smtp.example.test' });
 });
+
+test('a session reset drops owner credentials and aborts in-flight saving', async () => {
+  let rejectOld;
+  let oldSignal;
+  const saver = createSerialSaveQueue((data, options) => {
+    oldSignal = options.signal;
+    return new Promise((resolve, reject) => { rejectOld = reject; });
+  });
+  saver.enqueue({ mail_password: 'DUMMY-OWNER-SECRET' }, false);
+  const oldRequest = saver.flush();
+  await Promise.resolve();
+  saver.reset();
+  assert.equal(oldSignal.aborted, true);
+  assert.deepEqual(saver.unsaved(), {});
+  assert.equal(saver.pending(), false);
+  rejectOld(new Error('late transport rejection'));
+  await assert.rejects(oldRequest);
+  assert.deepEqual(saver.unsaved(), {});
+  assert.equal(saver.pending(), false);
+});
+
+test('an old request cannot drain or clear a new account queue after reset', async () => {
+  let finishOld;
+  let finishNew;
+  const writes = [];
+  const saver = createSerialSaveQueue(data => {
+    writes.push(data);
+    return new Promise(resolve => {
+      if (writes.length === 1) finishOld = resolve;
+      else finishNew = resolve;
+    });
+  });
+  saver.enqueue({ site_name: 'old owner' }, false);
+  const oldRequest = saver.flush();
+  await Promise.resolve();
+  saver.reset();
+  saver.enqueue({ site_name: 'new owner' }, false);
+  const newRequest = saver.flush();
+  await Promise.resolve();
+  finishOld();
+  await oldRequest;
+  assert.equal(saver.pending(), true);
+  assert.deepEqual(saver.unsaved(), { site_name: 'new owner' });
+  finishNew();
+  await newRequest;
+  assert.deepEqual(writes, [{ site_name: 'old owner' }, { site_name: 'new owner' }]);
+  assert.equal(saver.pending(), false);
+});

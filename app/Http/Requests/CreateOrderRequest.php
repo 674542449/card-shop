@@ -11,6 +11,11 @@ class CreateOrderRequest extends FormRequest
         return true;
     }
 
+    public function validationData(): array
+    {
+        return \App\Support\BuyerCredentialInput::body($this);
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -21,7 +26,7 @@ class CreateOrderRequest extends FormRequest
             'email' => ['required', 'email', 'max:200'],
             'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', new \App\Rules\QueryPasswordBytes],
             'quantity' => ['required', 'integer', 'min:1'],
-            'coupon_code' => ['nullable', 'string', 'max:50'],
+            'coupon_code' => ['bail', 'nullable', 'string', 'max:50', new \App\Rules\BuyerText],
             'payment_method' => ['required', \Illuminate\Validation\Rule::in(\App\Support\PaymentMethods::supported())],
             'cf-turnstile-response' => ['nullable', 'string'],
         ];

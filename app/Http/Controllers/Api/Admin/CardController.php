@@ -64,7 +64,11 @@ class CardController extends Controller
         if (!is_string($content)) {
             return response()->json(['message' => '无法读取导入文件。'], 422);
         }
-        $result = $cardService->importCardsWithResult($product->id, $content);
+        try {
+            $result = $cardService->importCardsWithResult($product->id, $content);
+        } catch (\InvalidArgumentException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
         if ($result['total'] === 0) {
             return response()->json(['message' => '没有可导入的卡密。'], 422);
         }

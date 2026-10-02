@@ -45,7 +45,9 @@ export default function AdminLayout({ admin }) {
       return;
     }
     message.success('已退出登录');
-    navigate('/login', { replace: true });
+    // End the JavaScript lifetime as well as the server session. Lazy page modules
+    // can otherwise retain unsaved owner credentials across a second login.
+    window.location.replace(`${ADMIN_BASE}/login`);
   };
 
   if (!canVisit(admin, location.pathname)) {

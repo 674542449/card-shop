@@ -14,7 +14,7 @@ class CheckoutController extends Controller
         $data = $request->validate([
             'product_id' => 'required|integer|min:1',
             'quantity' => 'required|integer|min:1|max:100000',
-            'coupon_code' => 'nullable|string|max:50',
+            'coupon_code' => ['bail', 'nullable', 'string', 'max:50', new \App\Rules\BuyerText],
         ]);
         $product = Product::active()->with('wholesalePrices')->findOrFail($data['product_id']);
         if ($data['quantity'] < $product->min_quantity || $data['quantity'] > $product->max_quantity) {
@@ -25,7 +25,7 @@ class CheckoutController extends Controller
         }
         try {
             $quote = $pricing->calculate($product, $data['quantity'], $data['coupon_code'] ?? null, false);
-        } catch (\RuntimeException $e) {
+        } catch (\App\Exceptions\CheckoutException $e) {
             return response()->json(['message' => $e->getMessage()], 422)->header('Cache-Control', 'no-store');
         }
         return response()->json(['data' => [

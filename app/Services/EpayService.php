@@ -28,10 +28,10 @@ class EpayService
     public function createPayment(Order $order, string $payType): string
     {
         if ($this->apiUrl === '' || $this->merchantId === '' || $this->merchantKey === '') {
-            throw new \RuntimeException('支付宝/微信支付尚未配置');
+            throw new \App\Exceptions\CheckoutException('支付宝/微信支付尚未配置');
         }
         if (SafeUrl::http($this->apiUrl) === null) {
-            throw new \RuntimeException('支付宝/微信支付网关地址无效');
+            throw new \App\Exceptions\CheckoutException('支付宝/微信支付网关地址无效');
         }
         $params = [
             'pid' => $this->merchantId,

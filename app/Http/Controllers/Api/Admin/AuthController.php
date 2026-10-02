@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Middleware\AdminAuth;
 use App\Models\Admin;
 use App\Models\OperationLog;
+use App\Rules\BcryptPassword;
+use App\Rules\Utf8Text;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,10 +17,8 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'username' => 'required|string|max:50',
-            'password' => ['bail', 'required', 'string', 'max:72', function ($attribute, $value, $fail) {
-                if (strlen($value) > 72) { $fail('密码最多 72 字节。'); }
-            }],
+            'username' => ['bail', 'required', 'string', 'max:50', new Utf8Text],
+            'password' => ['bail', 'required', 'string', 'max:72', new BcryptPassword],
         ]);
 
         $keys = [
@@ -85,12 +85,8 @@ class AuthController extends Controller
     public function changePassword(Request $request)
     {
         $request->validate([
-            'current_password' => ['bail', 'required', 'string', 'max:72', function ($attribute, $value, $fail) {
-                if (strlen($value) > 72) { $fail('当前密码最多 72 字节。'); }
-            }],
-            'new_password' => ['bail', 'required', 'string', 'min:12', 'max:72', 'confirmed', function ($attribute, $value, $fail) {
-                if (strlen($value) > 72) { $fail('新密码最多 72 字节，请缩短密码。'); }
-            }],
+            'current_password' => ['bail', 'required', 'string', 'max:72', new BcryptPassword],
+            'new_password' => ['bail', 'required', 'string', 'min:12', 'max:72', 'confirmed', new BcryptPassword],
         ], [
             'current_password.required' => '请输入当前密码。',
             'new_password.required' => '请输入新密码。',

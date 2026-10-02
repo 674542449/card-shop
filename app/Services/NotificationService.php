@@ -53,7 +53,10 @@ class NotificationService
         config([
             'mail.default' => 'smtp',
             'mail.mailers.smtp.transport' => 'smtp',
+            'mail.mailers.smtp.invalid_configuration' => false,
             'mail.mailers.smtp.scheme' => $scheme,
+            'mail.mailers.smtp.auto_tls' => $encryption === 'tls',
+            'mail.mailers.smtp.require_tls' => in_array($encryption, ['ssl', 'tls'], true),
             'mail.mailers.smtp.host' => $host,
             'mail.mailers.smtp.port' => (int) setting('mail_port', 465),
             'mail.mailers.smtp.username' => (string) setting('mail_username', ''),

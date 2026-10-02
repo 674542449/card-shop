@@ -8,6 +8,7 @@ import { getSettings, updateSettings, sendTestEmail } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
 import { createSerialSaveQueue } from '../utils/serialSaveQueue';
+import { onAdminSessionChange } from '../services/sessionLifecycle';
 
 /**
  * 模板目录名 -> 显示名。没登记的模板直接显示目录名，所以别人加了模板不改这里也能用。
@@ -33,6 +34,7 @@ const OWNER_SETTINGS = new Set([
   'order_expire_minutes', 'honeypot_enabled', 'honeypot_ban_minutes', 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
 ]);
 const settingsSaver = createSerialSaveQueue(updateSettings, AUTO_SAVE_DELAY);
+onAdminSessionChange(() => settingsSaver.reset());
 // The queue outlives the settings route, so protect its in-flight saves there too.
 window.addEventListener('beforeunload', (event) => {
   if (!settingsSaver.pending()) return;
@@ -86,7 +88,8 @@ function AutoSaveStatus({ state, onRetry }) {
 
 export default function Settings() {
   const canWrite = useWritePermission('settings');
-  const canConfigurePrivate = canWrite && useOutletContext()?.role === 'owner';
+  const admin = useOutletContext();
+  const canConfigurePrivate = canWrite && admin?.role === 'owner';
   const [loading, setLoading] = useState(true);
   const [initialValues, setInitialValues] = useState({});
   const [testTo, setTestTo] = useState('');
@@ -112,7 +115,9 @@ export default function Settings() {
         if (Array.isArray(data._available_themes) && data._available_themes.length) {
           setThemes(data._available_themes);
         }
-        const normalised = { ...data, ...(canWrite ? settingsSaver.unsaved() : {}) };
+        const retained = canWrite ? Object.fromEntries(Object.entries(settingsSaver.unsaved())
+          .filter(([key]) => canConfigurePrivate || !OWNER_SETTINGS.has(key))) : {};
+        const normalised = { ...data, ...retained };
         for (const [key, defaultValue] of Object.entries({ telegram_enabled: false, honeypot_enabled: true, honeypot_skip_reserved_ips: true, payment_reconciliation_enabled: false })) {
           normalised[key] = normalised[key] == null ? defaultValue : normalised[key] === '1' || normalised[key] === true;
         }

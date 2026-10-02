@@ -349,4 +349,80 @@ class OperationalSafetyTest extends TestCase
         $this->assertSame('environment.example.test', config('mail.mailers.smtp.host'));
         $this->assertNotSame('dummy-password', config('mail.mailers.smtp.password'));
     }
+
+    public function test_invalid_environment_mail_url_is_delivery_failure_and_admin_can_replace_it(): void
+    {
+        $environment = \Illuminate\Support\Env::getRepository();
+        $original = $environment->get('MAIL_URL');
+        try {
+            $environment->set('MAIL_URL', 'unsupported://dummy-user:dummy-password@example.test');
+            $mailConfig = require config_path('mail.php');
+        } finally {
+            $original === null ? $environment->clear('MAIL_URL') : $environment->set('MAIL_URL', $original);
+        }
+        $this->assertTrue($mailConfig['mailers']['smtp']['invalid_configuration']);
+        $this->assertNull($mailConfig['mailers']['smtp']['url']);
+        $this->assertSame(['smtp'], $mailConfig['mailers']['failover']['mailers']);
+        config(['mail' => $mailConfig, 'mail.default' => 'smtp']);
+        Setting::set('mail_host', '');
+        $service = new NotificationService();
+        $result = $service->sendTestEmail('dummy@example.test');
+        $this->assertFalse($result['ok']);
+        $this->assertStringNotContainsString('dummy-password', $result['message']);
+
+        $transport = new class {
+            public int $attempts = 0;
+            public int $purges = 0;
+            public function html($body, $callback): void { $this->attempts++; }
+            public function purge(string $name): void { $this->purges++; }
+        };
+        Mail::swap($transport);
+
+        $configure = new \ReflectionMethod($service, 'configureMailer');
+        Setting::set('mail_host', 'valid.example.test');
+        $configure->invoke($service);
+        $this->assertFalse(config('mail.mailers.smtp.invalid_configuration'));
+        $this->assertSame('valid.example.test', config('mail.mailers.smtp.host'));
+        Setting::set('mail_host', '');
+        $configure->invoke($service);
+        $this->assertTrue(config('mail.mailers.smtp.invalid_configuration'));
+        $this->assertSame(0, $transport->attempts);
+        $this->assertSame(2, $transport->purges);
+    }
+
+    public function test_composite_mailers_create_required_tls_smtp_children(): void
+    {
+        config(['mail.mailers.smtp' => ['transport' => 'smtp', 'host' => '127.0.0.1', 'port' => 2525,
+            'scheme' => 'smtp', 'auto_tls' => true, 'require_tls' => true, 'timeout' => 3]]);
+        $manager = app('mail.manager');
+        $children = new \ReflectionProperty(\Symfony\Component\Mailer\Transport\RoundRobinTransport::class, 'transports');
+        foreach (['failover', 'roundrobin'] as $type) {
+            $composite = $manager->createSymfonyTransport(['transport' => $type, 'mailers' => ['smtp']]);
+            $smtp = $children->getValue($composite)[0];
+            $this->assertInstanceOf(\App\Mail\RequiredTlsSmtpTransport::class, $smtp);
+            $this->assertTrue($smtp->isTlsRequired());
+            $this->assertSame(3.0, $smtp->getStream()->getTimeout());
+        }
+    }
+
+    public function test_smtp_failure_does_not_expose_server_echo_or_debug_to_composite_logger(): void
+    {
+        $transport = new class('127.0.0.1', 2525, false) extends \App\Mail\RequiredTlsSmtpTransport {
+            protected function doSend(\Symfony\Component\Mailer\SentMessage $message): void
+            {
+                $error = new \Symfony\Component\Mailer\Exception\TransportException('550 dummy-private-server-echo');
+                $error->appendDebug('AUTH dummy-private-password');
+                throw $error;
+            }
+        };
+        try {
+            $transport->send((new \Symfony\Component\Mime\Email)->from('sender@example.test')
+                ->to('buyer@example.test')->text('dummy-private-card'));
+            $this->fail('SMTP rejection must remain a delivery failure.');
+        } catch (\Symfony\Component\Mailer\Exception\TransportExceptionInterface $error) {
+            $this->assertSame('SMTP delivery rejected.', $error->getMessage());
+            $this->assertSame('', $error->getDebug());
+            $this->assertNull($error->getPrevious());
+        }
+    }
 }

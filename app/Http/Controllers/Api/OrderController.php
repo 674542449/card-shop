@@ -24,12 +24,12 @@ class OrderController extends Controller
      */
     public function create(Request $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
+        $validator = Validator::make(\App\Support\BuyerCredentialInput::body($request), [
             'product_id' => ['required', 'integer', 'exists:products,id'],
             'email' => ['required', 'email', 'max:200'],
             'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', new \App\Rules\QueryPasswordBytes],
             'quantity' => ['required', 'integer', 'min:1'],
-            'coupon_code' => ['nullable', 'string', 'max:50'],
+            'coupon_code' => ['bail', 'nullable', 'string', 'max:50', new \App\Rules\BuyerText],
             'payment_method' => ['required', \Illuminate\Validation\Rule::in(\App\Support\PaymentMethods::supported())],
         ], [
             'product_id.required' => '请选择商品',
@@ -55,15 +55,16 @@ class OrderController extends Controller
             ], 422);
         }
 
+        $validated = $validator->validated();
         $order = null;
         try {
             $order = $this->orderService->createOrder([
-                'product_id' => (int) $request->input('product_id'),
-                'email' => $request->input('email'),
-                'query_password' => $request->input('query_password'),
-                'quantity' => (int) $request->input('quantity'),
-                'coupon_code' => $request->input('coupon_code'),
-                'payment_method' => $request->input('payment_method'),
+                'product_id' => (int) $validated['product_id'],
+                'email' => $validated['email'],
+                'query_password' => $validated['query_password'],
+                'quantity' => (int) $validated['quantity'],
+                'coupon_code' => $validated['coupon_code'] ?? null,
+                'payment_method' => $validated['payment_method'],
                 'ip' => $request->ip(),
                 'api_token_id' => $request->attributes->get('api_token')->id,
             ]);
@@ -71,7 +72,7 @@ class OrderController extends Controller
             // Process payment to get the payment URL
             $paymentData = $this->orderService->processPayment(
                 $order,
-                $request->input('payment_method')
+                $validated['payment_method']
             );
 
             // This exact order was just created from these accepted credentials.
@@ -79,7 +80,7 @@ class OrderController extends Controller
             // legitimate batch buyer query each order without spending guesses.
             app(\App\Services\ApiOrderCredentialProof::class)->remember(
                 $order, $request->attributes->get('api_token')->id,
-                $request->input('email'), $request->input('query_password'),
+                $validated['email'], $validated['query_password'],
             );
 
             return response()->json([
@@ -94,7 +95,7 @@ class OrderController extends Controller
                     'trade_id' => $paymentData['trade_id'] ?? null,
                 ],
             ], 201);
-        } catch (\RuntimeException $e) {
+        } catch (\App\Exceptions\CheckoutException $e) {
             $this->releaseFailedOrder($order);
             return response()->json([
                 'message' => $e->getMessage(),
@@ -102,8 +103,7 @@ class OrderController extends Controller
         } catch (\Throwable $e) {
             $this->releaseFailedOrder($order);
             Log::error('API order creation failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
+                'exception_class' => $e::class,
             ]);
 
             return response()->json([
@@ -131,7 +131,7 @@ class OrderController extends Controller
         }
         try {
             $this->orderService->closeOrder($order, true);
-        } catch (\RuntimeException $e) {
+        } catch (\App\Exceptions\CheckoutException $e) {
             return response()->json(['message' => $e->getMessage()], 422)->header('Cache-Control', 'no-store');
         }
         return response()->json(['message' => '订单已取消，库存和优惠次数已释放。', 'data' => ['order_no' => $order->order_no, 'status' => 'closed']])->header('Cache-Control', 'no-store');
@@ -147,7 +147,7 @@ class OrderController extends Controller
         } catch (\Throwable $e) {
             Log::warning('Could not close failed API checkout', [
                 'order_no' => $order->order_no,
-                'error' => $e->getMessage(),
+                'exception_class' => $e::class,
             ]);
         }
     }

@@ -1,5 +1,23 @@
 import axios from 'axios';
 import { ADMIN_BASE, API_BASE } from '../base';
+import { adminContextChanged, adminSessionEpoch, onAdminSessionChange, resetAdminSession } from './sessionLifecycle';
+
+const pendingRequests = new Set();
+let adminContext = '';
+onAdminSessionChange(({ remote }) => {
+  pendingRequests.forEach(controller => controller.abort());
+  pendingRequests.clear();
+  adminContext = '';
+  if (remote) window.location.reload();
+});
+const finishRequest = (config) => {
+  if (!config) return;
+  pendingRequests.delete(config._adminAbortController);
+  config._adminDetachSignal?.();
+};
+const sessionChanged = (config) => config?._adminSessionEpoch !== undefined &&
+  config._adminSessionEpoch !== adminSessionEpoch();
+const staleSessionError = () => new axios.CanceledError('管理员会话已变化，旧请求已取消。');
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -24,6 +42,18 @@ function setCsrfToken(token) {
 }
 
 api.interceptors.request.use((config) => {
+  const controller = new AbortController();
+  const upstream = config.signal;
+  const cancel = () => controller.abort();
+  if (upstream?.aborted) cancel();
+  else upstream?.addEventListener('abort', cancel, { once: true });
+  config._adminDetachSignal = () => upstream?.removeEventListener('abort', cancel);
+  config._adminAbortController = controller;
+  config._adminSessionEpoch = adminSessionEpoch();
+  config.signal = controller.signal;
+  pendingRequests.add(controller);
+  if (adminContext) config.headers['X-Admin-Context'] = adminContext;
+  else delete config.headers['X-Admin-Context'];
   if (csrfToken) {
     config.headers['X-CSRF-TOKEN'] = csrfToken;
   }
@@ -57,28 +87,46 @@ api.interceptors.request.use((config) => {
  * 外壳是 Blade 渲染的，每次响应都带一枚当前会话有效的 token（见
  * resources/views/admin/spa.blade.php）。所以拿它刷新，不需要新增接口。
  */
-async function refreshCsrfToken() {
-  const res = await fetch(ADMIN_BASE || '/', {
-    credentials: 'same-origin',
-    headers: { Accept: 'text/html' },
-  });
-  const html = await res.text();
-  const token = html.match(/name="csrf-token"\s+content="([^"]+)"/)?.[1];
-  if (!token) throw new Error('no csrf token in shell');
-  setCsrfToken(token);
-  return token;
+async function refreshCsrfToken(expectedEpoch) {
+  const controller = new AbortController();
+  pendingRequests.add(controller);
+  try {
+    const res = await fetch(ADMIN_BASE || '/', {
+      credentials: 'same-origin', signal: controller.signal,
+      headers: { Accept: 'text/html' },
+    });
+    const html = await res.text();
+    if (expectedEpoch !== adminSessionEpoch()) throw staleSessionError();
+    const token = html.match(/name="csrf-token"\s+content="([^"]+)"/)?.[1];
+    if (!token) throw new Error('no csrf token in shell');
+    setCsrfToken(token);
+    return token;
+  } finally { pendingRequests.delete(controller); }
 }
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    finishRequest(response.config);
+    if (sessionChanged(response.config)) throw staleSessionError();
+    if (response.headers['x-admin-context']) adminContext = response.headers['x-admin-context'];
+    return response;
+  },
   async (error) => {
     const status = error.response?.status;
     const config = error.config;
+    finishRequest(config);
+    if (sessionChanged(config)) return Promise.reject(staleSessionError());
 
     if (status === 401) {
+      resetAdminSession({ broadcast: false });
       if (!window.location.pathname.startsWith(`${ADMIN_BASE}/login`)) {
         window.location.href = `${ADMIN_BASE}/login`;
       }
+    }
+    if (adminContextChanged(error.response, config?.headers?.['X-Admin-Context'])) {
+      resetAdminSession({ broadcast: false });
+      window.location.reload();
+      return Promise.reject(staleSessionError());
     }
 
     // 419 = CSRF token 过期或不匹配。
@@ -93,7 +141,7 @@ api.interceptors.response.use(
     if (status === 419 && config && !config._csrfRetried) {
       config._csrfRetried = true;
       try {
-        const token = await refreshCsrfToken();
+        const token = await refreshCsrfToken(config._adminSessionEpoch);
         config.headers = { ...config.headers, 'X-CSRF-TOKEN': token };
         return api.request(config);
       } catch (e) {
@@ -107,15 +155,22 @@ api.interceptors.response.use(
 
 // Auth
 export const login = async (username, password) => {
+  resetAdminSession({ broadcast: false });
   const res = await api.post('/login', { username, password });
+  resetAdminSession();
   setCsrfToken(res.data?.csrf_token);
   return res;
 };
 
 export const logout = async () => {
-  const res = await api.post('/logout');
-  setCsrfToken(res.data?.csrf_token);
-  return res;
+  resetAdminSession({ broadcast: false });
+  let succeeded = false;
+  try {
+    const res = await api.post('/logout');
+    setCsrfToken(res.data?.csrf_token);
+    succeeded = true;
+    return res;
+  } finally { resetAdminSession({ broadcast: succeeded }); }
 };
 
 export const getMe = () =>
@@ -125,6 +180,7 @@ export const getMe = () =>
 // so the new token has to be adopted or every later write returns 419.
 export const changePassword = async (data) => {
   const res = await api.post('/password', data);
+  resetAdminSession();
   setCsrfToken(res.data?.csrf_token);
   return res;
 };
@@ -283,8 +339,8 @@ export const getLogs = (params) =>
 export const getSettings = () =>
   api.get('/settings');
 
-export const updateSettings = (data) =>
-  api.post('/settings', data);
+export const updateSettings = (data, options) =>
+  api.post('/settings', data, options);
 
 export const sendTestEmail = (email) =>
   api.post('/settings/test-email', { email });

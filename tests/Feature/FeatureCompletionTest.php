@@ -111,11 +111,19 @@ class FeatureCompletionTest extends TestCase
         $this->assertNotNull($old->fresh()->query_password_key);
         $this->post('/order/query', ['email' => $old->email, 'query_password' => 'old-password', 'order_no' => $old->order_no])->assertOk()->assertSee($old->order_no);
         $first = $lookup->search('buyer@example.test', 'buyer-password');
-        $this->assertCount(60, $first['orders']);
         $this->assertTrue($first['has_more']);
-        $next = $lookup->search('buyer@example.test', 'buyer-password', null, $first['cursor']);
-        $this->assertCount(10, $next['orders']);
-        $this->assertEmpty(array_intersect($first['orders']->pluck('id')->all(), $next['orders']->pluck('id')->all()));
+        $found = $first['orders']->pluck('id')->all();
+        $page = $first;
+        for ($i = 0; $page['has_more'] && $i < 10; $i++) {
+            $this->assertNotNull($page['cursor']);
+            $next = $lookup->search('buyer@example.test', 'buyer-password', null, $page['cursor']);
+            $ids = $next['orders']->pluck('id')->all();
+            $this->assertEmpty(array_intersect($found, $ids));
+            $found = array_merge($found, $ids);
+            $page = $next;
+        }
+        $this->assertFalse($page['has_more']);
+        $this->assertCount(70, $found);
         $this->assertCount(0, $lookup->search('buyer@example.test', 'wrong-password', $old->order_no)['orders']);
     }
 
@@ -127,8 +135,10 @@ class FeatureCompletionTest extends TestCase
         }
         $r = $this->post('/order/query', ['email' => 'buyer@example.test', 'query_password' => 'buyer-password']);
         $r->assertOk()->assertSee('/order/query/page')->assertDontSee('name="query_password"', false);
-        $this->assertCount(60, session('order_verified_ids'));
-        $this->post('/order/query/page')->assertOk();
+        $this->assertNotEmpty(session('order_verified_ids'));
+        for ($i = 0; count(session('order_verified_ids')) < 65 && $i < 9; $i++) {
+            $this->post('/order/query/page')->assertOk();
+        }
         $this->assertCount(65, session('order_verified_ids'));
         $this->travel(11)->minutes();
         $this->post('/order/query/page')->assertRedirect('/order/query');

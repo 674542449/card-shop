@@ -45,6 +45,7 @@ class ApiOrderCredentialProof
     private function context(Order $order, int $tokenId, string $email, string $password): ?array
     {
         if ($order->api_token_id !== $tokenId || strlen($password) > 72
+            || str_contains($password, "\0") || ! mb_check_encoding($password, 'UTF-8')
             || mb_strtolower($order->email) !== mb_strtolower($email)
             || ! is_string($order->query_password_key) || ! is_string($order->query_password)
             || ! str_starts_with($order->query_password, '$2y$')) {

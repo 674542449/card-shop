@@ -23,6 +23,10 @@ use Illuminate\Support\Facades\Log;
  */
 class OrderFulfilmentService
 {
+    // Receipt and order amounts are CNY cents. Extra trailing zeros are harmless;
+    // nonzero fractions of a cent must never be rounded by PostgreSQL on insert.
+    private const CNY_AMOUNT_PATTERN = '/^\d{1,16}(?:\.\d{1,2}0{0,6})?$/D';
+
     public function __construct(private readonly NotificationQueue $notifications)
     {
     }
@@ -46,6 +50,9 @@ class OrderFulfilmentService
             return OrderFulfilmentResult::refused('网关交易号无效。');
         }
         $paidAmount = trim($paidAmount);
+        if (preg_match(self::CNY_AMOUNT_PATTERN, $paidAmount)) {
+            $paidAmount = bcadd($paidAmount, '0', 2);
+        }
         return $this->transition(
             $orderNo,
             $channel,
@@ -348,7 +355,7 @@ class OrderFulfilmentService
         // we cannot read is treated as a failure, not waved through: delivering
         // an unverifiable payment is the exact failure this guards against.
         $paidAmount = trim($paidAmount);
-        if (!preg_match('/^\d{1,18}(?:\.\d{1,8})?$/D', $paidAmount)) {
+        if (!preg_match(self::CNY_AMOUNT_PATTERN, $paidAmount)) {
             Log::warning('Payment callback carried no readable amount, refusing to deliver', [
                 'order_no' => $order->order_no,
                 'channel' => $channel,

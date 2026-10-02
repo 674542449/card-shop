@@ -7,7 +7,7 @@ use App\Support\SafeUrl;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
+use App\Exceptions\CheckoutException;
 
 class EpusdtService
 {
@@ -47,7 +47,7 @@ class EpusdtService
      * @param string $chain Network chain: 'trc20', 'bep20', or 'polygon'.
      * @return array{payment_url: string, trade_id: string}
      *
-     * @throws RuntimeException If the API call fails.
+     * @throws CheckoutException If the API call fails.
      */
     public function createPayment(Order $order, string $chain): array
     {
@@ -65,7 +65,7 @@ class EpusdtService
             }
             $result = $this->createTransaction($order, $chain);
             if (empty($result['payment_url'])) {
-                throw new RuntimeException('USDT支付接口未返回支付链接');
+                throw new CheckoutException('USDT支付接口未返回支付链接');
             }
             if (is_string($result['trade_id']) && strlen($result['trade_id']) <= 100 && $result['trade_id'] !== '') {
                 $order->update(['gateway_trade_no' => $result['trade_id']]);
@@ -80,20 +80,20 @@ class EpusdtService
     private function createTransaction(Order $order, string $chain): array
     {
         if (SafeUrl::http($this->apiUrl) === null) {
-            throw new RuntimeException('USDT支付网关地址无效');
+            throw new CheckoutException('USDT支付网关地址无效');
         }
         // Create responses have no protocol signature. A plaintext intermediary
         // could substitute the transaction/payment address before it is persisted.
         $scheme = strtolower((string) parse_url($this->apiUrl, PHP_URL_SCHEME));
         $host = strtolower(trim((string) parse_url($this->apiUrl, PHP_URL_HOST), '[]'));
         if ($scheme !== 'https' && !in_array($host, ['127.0.0.1', 'localhost', '::1'], true)) {
-            throw new RuntimeException('USDT支付须使用 HTTPS 网关，本地开发地址除外。');
+            throw new CheckoutException('USDT支付须使用 HTTPS 网关，本地开发地址除外。');
         }
         if (!isset(self::TRADE_TYPES[$chain]) || ($this->flavour !== 'bepusdt' && $chain !== 'trc20')) {
-            throw new RuntimeException('当前 USDT 网关不支持所选网络，请使用默认 USDT 入口。');
+            throw new CheckoutException('当前 USDT 网关不支持所选网络，请使用默认 USDT 入口。');
         }
         if ($this->apiUrl === '' || $this->apiToken === '') {
-            throw new RuntimeException('USDT支付尚未配置');
+            throw new CheckoutException('USDT支付尚未配置');
         }
 
         $params = [
@@ -124,7 +124,7 @@ class EpusdtService
                 'status' => $response->status(),
                 'order_no' => $order->order_no,
             ]);
-            throw new RuntimeException('USDT支付接口请求失败');
+            throw new CheckoutException('USDT支付接口请求失败');
         }
 
         $data = $response->json();
@@ -141,16 +141,16 @@ class EpusdtService
             ]);
             // Gateway failures can echo request signatures, private tokens or
             // internal details. Neither the buyer nor audit logs should receive them.
-            throw new RuntimeException('USDT支付创建失败，请稍后重试或联系客服。');
+            throw new CheckoutException('USDT支付创建失败，请稍后重试或联系客服。');
         }
 
         $transaction = $data['data'] ?? null;
         $paymentUrl = SafeUrl::http(is_array($transaction) ? ($transaction['payment_url'] ?? null) : null);
         if ($paymentUrl === null) {
-            throw new RuntimeException('USDT支付接口返回的支付链接无效');
+            throw new CheckoutException('USDT支付接口返回的支付链接无效');
         }
         if (!$this->validTradeId($transaction['trade_id'] ?? null)) {
-            throw new RuntimeException('USDT支付接口未返回有效交易号');
+            throw new CheckoutException('USDT支付接口未返回有效交易号');
         }
         // Old EPUSDT releases omit some fields. If the gateway does return them,
         // none may contradict the signed creation request or the local order.
@@ -158,7 +158,7 @@ class EpusdtService
             || (array_key_exists('fiat', $transaction) && $transaction['fiat'] !== 'CNY')
             || (array_key_exists('amount', $transaction) && !$this->matchingAmount($transaction['amount'], (string) $order->total_amount))
             || (array_key_exists('status', $transaction) && !in_array($transaction['status'], [1, 2, '1', '2'], true))) {
-            throw new RuntimeException('USDT支付接口返回的订单、金额或币种不匹配');
+            throw new CheckoutException('USDT支付接口返回的订单、金额或币种不匹配');
         }
 
         return [

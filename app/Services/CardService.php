@@ -7,14 +7,15 @@ use App\Models\Product;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Redis;
-use RuntimeException;
+use App\Exceptions\CheckoutException;
+use App\Rules\Utf8Text;
 
 class CardService
 {
     /**
      * Lock N unsold cards for a product using Redis to prevent race conditions.
      *
-     * @throws RuntimeException If insufficient stock or lock cannot be acquired.
+     * @throws CheckoutException If insufficient stock or lock cannot be acquired.
      */
     public function lockCards(int $productId, int $quantity): Collection
     {
@@ -26,7 +27,7 @@ class CardService
         $acquired = Redis::set($lockKey, $lockValue, 'EX', $lockTtl, 'NX');
 
         if (!$acquired) {
-            throw new RuntimeException('系统繁忙，请稍后再试');
+            throw new CheckoutException('系统繁忙，请稍后再试');
         }
 
         try {
@@ -38,7 +39,7 @@ class CardService
                 ->get();
 
             if ($cards->count() < $quantity) {
-                throw new RuntimeException(
+                throw new CheckoutException(
                     "库存不足，当前库存: {$cards->count()}, 需要: {$quantity}"
                 );
             }
@@ -97,6 +98,12 @@ class CardService
     /** Import once per secret, including secrets already sold or held by orders. */
     public function importCardsWithResult(int $productId, string $content, string $delimiter = "\n"): array
     {
+        if (! Utf8Text::isValid($content) || ! Utf8Text::isValid($delimiter)) {
+            throw new \InvalidArgumentException('卡密内容必须是有效 UTF-8 文本，且不能包含空字符。');
+        }
+        if (str_starts_with($content, "\xEF\xBB\xBF")) {
+            $content = substr($content, 3);
+        }
         $lines = array_values(array_filter(
             array_map('trim', $delimiter === "\n" ? preg_split('/\r\n|\r|\n/', $content) : explode($delimiter, $content)),
             fn (string $line) => $line !== ''

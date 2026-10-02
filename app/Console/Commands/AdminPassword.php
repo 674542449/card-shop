@@ -3,9 +3,12 @@
 namespace App\Console\Commands;
 
 use App\Models\Admin;
+use App\Rules\BcryptPassword;
+use App\Rules\Utf8Text;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Validator;
 
 class AdminPassword extends Command
 {
@@ -18,6 +21,11 @@ class AdminPassword extends Command
     public function handle(): int
     {
         $username = (string) ($this->argument('username') ?: 'admin');
+        $usernameValidation = Validator::make(['username' => $username], ['username' => ['required', 'string', 'max:50', new Utf8Text]]);
+        if ($usernameValidation->fails()) {
+            $this->error($usernameValidation->errors()->first());
+            return self::FAILURE;
+        }
 
         $admin = Admin::where('username', $username)->first();
 
@@ -36,9 +44,11 @@ class AdminPassword extends Command
             // without quoting surprises.
             $password = Str::password(20, symbols: false);
             $generated = true;
-        } elseif (mb_strlen($password) < 12) {
-            $this->error('密码至少需要 12 个字符。');
-
+        }
+        $passwordValidation = Validator::make(['password' => $password], ['password' => ['bail', 'required', 'string', 'min:12', 'max:72', new BcryptPassword]],
+            ['password.min' => '密码至少需要 12 个字符。']);
+        if ($passwordValidation->fails()) {
+            $this->error($passwordValidation->errors()->first());
             return self::FAILURE;
         }
 

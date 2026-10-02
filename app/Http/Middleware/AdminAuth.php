@@ -51,6 +51,15 @@ class AdminAuth
         }
 
         $request->attributes->set('admin', $admin);
+        $context = self::contextFingerprint($admin);
+        $submittedContext = $request->header('X-Admin-Context');
+        if ($submittedContext !== null && ! hash_equals($context, $submittedContext)) {
+            // A second same-origin document can switch the shared cookie while an
+            // old settings page still has owner edits waiting. Refuse that stale
+            // UI request before it can write with the new account's authority.
+            return response()->json(['message' => '管理员会话或权限已变化，请重新加载页面。', 'code' => 'admin_context_changed'], 409)
+                ->header('X-Admin-Context', $context);
+        }
         // Authorize the route Laravel matched, never the caller's raw path. The
         // router decodes percent-encoded segments, while Request::path() does not:
         // /%61dmins used to reach AdminController without matching the owner gate.
@@ -82,7 +91,9 @@ class AdminAuth
             return response()->json(['message' => '当前账户没有上传权限。'], 403);
         }
 
-        return $next($request);
+        $response = $next($request);
+        $response->headers->set('X-Admin-Context', self::contextFingerprint($admin));
+        return $response;
     }
 
     /**
@@ -94,5 +105,13 @@ class AdminAuth
     public static function passwordFingerprint(string $passwordHash): string
     {
         return hash('sha256', $passwordHash);
+    }
+
+    public static function contextFingerprint(Admin $admin): string
+    {
+        $permissions = $admin->permissions ?? [];
+        sort($permissions, SORT_STRING);
+        return hash_hmac('sha256', json_encode([$admin->id, self::passwordFingerprint($admin->password),
+            $admin->role, $permissions, $admin->is_active]), (string) config('app.key'));
     }
 }

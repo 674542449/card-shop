@@ -33,8 +33,8 @@ RUN pecl install redis && docker-php-ext-enable redis
 # Copy Composer from official image
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Install Node.js 20 for admin frontend build
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+# Install supported Node.js 24 LTS for admin builds and DOM-based checks.
+RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Front;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateOrderRequest;
 use App\Http\Requests\QueryOrderRequest;
+use App\Exceptions\CheckoutException;
 use App\Models\Card;
 use App\Models\Coupon;
 use App\Models\Order;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Validator;
 
 class OrderController extends Controller
 {
@@ -42,13 +44,13 @@ class OrderController extends Controller
 
                 // Validate quantity range
                 if ($quantity < $product->min_quantity || $quantity > $product->max_quantity) {
-                    throw new \RuntimeException("购买数量必须在 {$product->min_quantity} 到 {$product->max_quantity} 之间");
+                    throw new CheckoutException("购买数量必须在 {$product->min_quantity} 到 {$product->max_quantity} 之间");
                 }
 
                 // Check stock
                 $stockCount = $product->stockCount();
                 if ($stockCount < $quantity) {
-                    throw new \RuntimeException('库存不足，当前库存: ' . $stockCount);
+                    throw new CheckoutException('库存不足，当前库存: ' . $stockCount);
                 }
 
                 // Creating an order locks cards out of sale until it expires, so a slow
@@ -60,7 +62,7 @@ class OrderController extends Controller
                     ->count();
 
                 if ($held >= 3) {
-                    throw new \RuntimeException('您有未完成的订单，请先完成支付或等待订单过期');
+                    throw new CheckoutException('您有未完成的订单，请先完成支付或等待订单过期');
                 }
 
                 $quote = $this->pricing->calculate($product, $quantity, $validated['coupon_code'] ?? null);
@@ -95,7 +97,7 @@ class OrderController extends Controller
                     ->get();
 
                 if ($cards->count() < $quantity) {
-                    throw new \RuntimeException('库存不足，请稍后重试');
+                    throw new CheckoutException('库存不足，请稍后重试');
                 }
 
                 foreach ($cards as $card) {
@@ -120,7 +122,7 @@ class OrderController extends Controller
                         ->increment('used_count');
 
                     if ($claimed === 0) {
-                        throw new \RuntimeException('优惠码已达使用上限');
+                        throw new CheckoutException('优惠码已达使用上限');
                     }
                 }
 
@@ -149,12 +151,11 @@ class OrderController extends Controller
             return redirect('/order/pay/' . $order->order_no);
 
         } catch (\Throwable $e) {
-            Log::error('Order creation failed: ' . $e->getMessage(), ['exception' => $e]);
+            Log::error('Order creation failed', ['exception_class' => $e::class]);
 
-            // Only the RuntimeExceptions thrown deliberately above carry a message meant
-            // for the buyer. Anything else — a QueryException above all — would put
-            // schema or configuration detail on the page.
-            $message = $e instanceof \RuntimeException
+            // Database/HTTP exceptions also inherit RuntimeException. Only explicit
+            // checkout errors have a message intended for the buyer.
+            $message = $e instanceof CheckoutException
                 ? $e->getMessage()
                 : '下单失败，请稍后重试';
 
@@ -357,25 +358,48 @@ class OrderController extends Controller
 
     public function queryPage(Request $request)
     {
+        \App\Support\BuyerCredentialInput::rejectUrlCredentials($request);
         $search = $request->session()->get('order_search');
-        if (!$search || $search['expires'] < now()->timestamp) {
+        if (! is_array($search) || ! is_int($search['expires'] ?? null) || $search['expires'] < now()->timestamp
+            || ! is_string($search['credentials'] ?? null) || ! is_int($search['cursor'] ?? null)) {
             $request->session()->forget('order_search');
             return redirect('/order/query')->withErrors(['error' => '查询已过期，请重新验证。']);
         }
-        $credentials = json_decode(\Illuminate\Support\Facades\Crypt::decryptString($search['credentials']), true);
-        if ($this->tooManyAttempts($request, $credentials['email'])) {
+        try {
+            $credentials = json_decode(\Illuminate\Support\Facades\Crypt::decryptString($search['credentials']), true, flags: JSON_THROW_ON_ERROR);
+            if (! is_array($credentials) || ! is_string($credentials['email'] ?? null) || ! is_string($credentials['password'] ?? null)) {
+                throw new \UnexpectedValueException;
+            }
+        } catch (\Throwable) {
+            $request->session()->forget('order_search');
+            return redirect('/order/query')->withErrors(['error' => '查询已过期，请重新验证。']);
+        }
+        $authenticatedOrderId = null;
+        if (is_int($search['authenticated_order_id'] ?? null)) {
+            $authenticatedOrder = Order::whereKey($search['authenticated_order_id'])->first();
+            if ($authenticatedOrder && mb_strtolower($authenticatedOrder->email) === mb_strtolower($credentials['email'])
+                && $this->isVerified($authenticatedOrder)) {
+                $authenticatedOrderId = $authenticatedOrder->id;
+            }
+        }
+        // A live proof of an earlier match permits continuing this server-held
+        // search without spending another password guess. Each new candidate's
+        // actual bcrypt hash is still checked within the bounded lookup budget.
+        if ($authenticatedOrderId === null && $this->tooManyAttempts($request, $credentials['email'])) {
             return back()->withErrors(['error' => '尝试次数过多，请稍后再试']);
         }
         $result = app(\App\Services\OrderLookupService::class)->search($credentials['email'], $credentials['password'], null, $search['cursor']);
-        return $this->lookupResponse($request, $result, $credentials['email'], $credentials['password']);
+        return $this->lookupResponse($request, $result, $credentials['email'], $credentials['password'],
+            authenticatedOrderId: $authenticatedOrderId);
     }
 
-    private function lookupResponse(Request $request, array $result, string $email, string $password, ?string $orderNo = null)
+    private function lookupResponse(Request $request, array $result, string $email, string $password, ?string $orderNo = null, ?int $authenticatedOrderId = null)
     {
         $matched = $result['orders'];
         $request->session()->put('order_search', [
             'credentials' => \Illuminate\Support\Facades\Crypt::encryptString(json_encode(compact('email', 'password'))),
             'cursor' => $result['cursor'] ?? 0, 'expires' => now()->timestamp + 600,
+            'authenticated_order_id' => $matched->first()?->id ?? $authenticatedOrderId,
         ]);
         if ($matched->isEmpty() && !$result['has_more']) {
             return redirect('/order/query')->withInput(['email' => $email, 'order_no' => $orderNo])->withErrors(['error' => '邮箱或查询密码错误；历史记录较多时请填写订单号精确查询。']);
@@ -436,21 +460,24 @@ class OrderController extends Controller
 
     public function requestRefund(Request $request, string $orderNo, \App\Services\RefundService $service)
     {
+        \App\Support\BuyerCredentialInput::rejectUrlCredentials($request);
         $order = Order::where('order_no', $orderNo)->firstOrFail();
         abort_unless($this->isVerified($order), 403);
-        $data = $request->validate(['amount' => 'required|numeric|gt:0|decimal:0,2|max:9999999999999999', 'reason' => 'required|string|max:2000']);
+        $data = $request->validate(['amount' => 'required|numeric|gt:0|decimal:0,2|max:9999999999999999',
+            'reason' => ['bail', 'required', 'string', 'max:2000', new \App\Rules\BuyerText(true)]]);
         try { $service->request($order, (string) $data['amount'], $data['reason'], null, 'buyer'); }
-        catch (\RuntimeException $e) { return back()->withErrors(['error' => $e->getMessage()]); }
+        catch (CheckoutException $e) { return back()->withErrors(['error' => $e->getMessage()]); }
         return back()->with('success', '退款申请已提交，请等待店主处理。');
     }
 
     public function cancel(Request $request, string $orderNo, \App\Services\OrderService $service)
     {
+        \App\Support\BuyerCredentialInput::rejectUrlCredentials($request);
         $order = Order::where('order_no', $orderNo)->firstOrFail();
         abort_unless($this->isVerified($order), 403);
         try {
             $service->closeOrder($order, true);
-        } catch (\RuntimeException $e) {
+        } catch (CheckoutException $e) {
             return back()->withErrors(['error' => $e->getMessage()]);
         }
         return redirect('/order/detail/'.$order->order_no)->with('success', '订单已取消，库存和优惠次数已释放。');
@@ -569,22 +596,22 @@ class OrderController extends Controller
      */
     public function verify(Request $request): JsonResponse
     {
-        $request->validate([
+        $data = Validator::make(\App\Support\BuyerCredentialInput::body($request), [
             'email' => ['required', 'email', 'max:200'],
-            'order_no' => ['nullable', 'string', 'max:30'],
+            'order_no' => ['bail', 'nullable', 'string', 'max:30', new \App\Rules\BuyerText],
             'query_password' => ['bail', 'required', 'string', 'max:50', new \App\Rules\QueryPasswordBytes],
-        ]);
+        ])->validate();
 
         // This endpoint is not behind the turnstile that protects /order/query, so
         // without a limiter it is a free brute-force oracle for query passwords.
-        if ($this->tooManyAttempts($request, $request->input('email'))) {
+        if ($this->tooManyAttempts($request, $data['email'])) {
             return response()->json([
                 'success' => false,
                 'message' => '尝试次数过多，请稍后再试',
             ], 429);
         }
 
-        $matched = $this->matchOrders($request->input('email'), $request->input('query_password'), $request->input('order_no'));
+        $matched = $this->matchOrders($data['email'], $data['query_password'], $data['order_no'] ?? null);
 
         if ($matched->isEmpty()) {
             // Deliberately identical to the "no such email" case — see query().
@@ -632,7 +659,7 @@ class OrderController extends Controller
                 $order, $order->payment_method === 'alipay' ? 'alipay' : 'wxpay',
             );
         } catch (\RuntimeException $e) {
-            Log::error('EPay payment unavailable', ['order_no' => $order->order_no, 'reason' => $e->getMessage()]);
+            Log::error('EPay payment unavailable', ['order_no' => $order->order_no, 'exception_class' => $e::class]);
             return null;
         }
 
@@ -655,7 +682,7 @@ class OrderController extends Controller
         try {
             $result = app(EpusdtService::class)->createPayment($order, $chain);
         } catch (\Throwable $e) {
-            Log::error('EPUSDT payment error: ' . $e->getMessage(), ['order_no' => $order->order_no]);
+            Log::error('EPUSDT payment error', ['order_no' => $order->order_no, 'exception_class' => $e::class]);
 
             return null;
         }

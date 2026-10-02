@@ -3,6 +3,7 @@ import { message } from 'antd';
 import '@wangeditor/editor/dist/css/style.css';
 import { Editor, Toolbar } from '@wangeditor/editor-for-react';
 import { uploadImage } from '../services/api';
+import { sanitizeEditorHtml, protectEditorHtmlInputs } from '../utils/editorHtml';
 
 // wangEditor renders its toolbar panels and modals inside the editor container.
 // Inside an antd Drawer (z-index 1000) those panels lose the stacking fight, and
@@ -48,18 +49,19 @@ const EXCLUDED_MENUS = ['group-video', 'insertVideo', 'uploadVideo', 'emotion', 
  */
 export default function RichTextEditor({ value, onChange, placeholder = '请输入内容', height = 300, disabled = false }) {
   const [editor, setEditor] = useState(null);
-  const [html, setHtml] = useState(value || '');
+  const safeValue = useMemo(() => sanitizeEditorHtml(value || ''), [value]);
+  const [html, setHtml] = useState(safeValue);
   // What we last handed to (or took from) the form. Guards the sync effect so a
   // value echoed back by the form never resets the caret mid-typing.
-  const lastEmitted = useRef(value || '');
+  const lastEmitted = useRef(safeValue);
 
   useEffect(() => {
-    const next = value || '';
+    const next = safeValue;
     if (next !== lastEmitted.current) {
       lastEmitted.current = next;
       setHtml(next);
     }
-  }, [value]);
+  }, [safeValue]);
 
   // wangEditor instances hold DOM listeners and a global registry entry. Without an
   // explicit destroy they leak and the next Drawer/Modal open renders a dead editor.
@@ -109,7 +111,7 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
 
   const handleChange = (ed) => {
     if (disabled) return;
-    const raw = ed.getHtml();
+    const raw = sanitizeEditorHtml(ed.getHtml());
     // Keep the raw html for the editor itself, but report an empty string upwards
     // when there is nothing in it, so `required` rules behave as an operator expects.
     lastEmitted.current = ed.isEmpty() ? '' : raw;
@@ -124,7 +126,7 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
       <Editor
         defaultConfig={editorConfig}
         value={html}
-        onCreated={setEditor}
+        onCreated={ed => { protectEditorHtmlInputs(ed); setEditor(ed); }}
         onChange={handleChange}
         mode="default"
         style={{ minHeight: height, height, overflowY: 'hidden' }}
