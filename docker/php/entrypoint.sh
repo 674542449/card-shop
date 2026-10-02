@@ -41,6 +41,7 @@ mkdir -p bootstrap/cache \
     storage/framework/sessions \
     storage/framework/views \
     storage/logs
+touch storage/framework/shop-write.lock
 
 # bootstrap/cache and storage live on the host bind mount and survive rebuilds.
 # Stale compiled config/routes/views from an older code version are a common cause
@@ -168,6 +169,16 @@ else
     echo "    WARNING: database password, APP_KEY and the payment gateway secrets."
     echo "    WARNING: Fix it on the host with:  sudo chgrp 33 .env && sudo chmod 640 .env"
 fi
+
+# The independent encryption keyring stays outside the source tree and complete backups.
+# This writable bootstrap mount belongs only to the development compose; production
+# uses an explicit initialization job and a read-only mount for every business process.
+KEYRING_FILE="${SHOP_KEYRING_FILE:-/run/secrets/shop-keyring.json}"
+if [ ! -f "$KEYRING_FILE" ]; then
+    php artisan secrets:init --path="$KEYRING_FILE" || exit 1
+fi
+chown www-data:www-data "$KEYRING_FILE"
+chmod 600 "$KEYRING_FILE"
 
 echo "==> [4/8] Public storage symlink"
 # Uploaded images are written to storage/app/public/uploads and served from

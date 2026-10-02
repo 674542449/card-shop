@@ -7,6 +7,7 @@ use App\Models\{NotificationDelivery, OperationLog};
 use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Http\Resources\Admin\AdminRecordResource;
 
 class NotificationController extends Controller
 {
@@ -23,7 +24,7 @@ class NotificationController extends Controller
             }
         }
         $result = $query->with(['order:id,order_no', 'product:id,name'])->orderByDesc('id')->paginate($pageSize);
-        return response()->json(['data' => $result->items(), 'total' => $result->total()]);
+        return response()->json(['data' => AdminRecordResource::collection($result->items())->resolve($request), 'total' => $result->total()]);
     }
 
     public function retry(NotificationDelivery $delivery)

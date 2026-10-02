@@ -100,7 +100,7 @@ fi
 # Read the current release's compose file, so rollback also works with older
 # releases which have no dedicated backup worker.
 background_services() {
-    $DC config --services 2>/dev/null | awk '/^(scheduler|notifications|backups)$/ { print }'
+    $DC config --services 2>/dev/null | awk '/^(scheduler|notifications|backups|seo|reconciliation)$/ { print }'
 }
 
 # ---------------------------------------------------------------- 回滚

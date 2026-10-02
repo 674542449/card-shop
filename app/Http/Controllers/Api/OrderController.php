@@ -96,6 +96,10 @@ class OrderController extends Controller
 
     private function finishCreation(Request $request, array $validated, Order $order): array
     {
+        if (mb_strtolower($order->email) !== mb_strtolower($validated['email'])
+            || !Hash::check($validated['query_password'], $order->query_password)) {
+            return [['message' => '订单凭据已变化，请重新验证原订单。'], 409];
+        }
         try {
             // A retry after process interruption resumes this order rather than reserving again.
             $paymentData = $order->isPending() ? $this->orderService->processPayment($order, $order->payment_method) : [];
@@ -112,6 +116,9 @@ class OrderController extends Controller
                     'trade_id' => $paymentData['trade_id'] ?? null,
                 ],
             ], 201];
+        } catch (\App\Exceptions\PaymentInProgressException|\App\Exceptions\PaymentUncertainException $e) {
+            return [['message' => $e->getMessage(), 'data' => ['order_no' => $order->order_no,
+                'payment_initialization' => $e instanceof \App\Exceptions\PaymentUncertainException ? 'uncertain' : 'processing']], 202];
         } catch (\App\Exceptions\CheckoutException $e) {
             $this->releaseFailedOrder($order);
             return [[
@@ -217,6 +224,7 @@ class OrderController extends Controller
                 'payment_method' => $order->payment_method,
                 'status' => $order->status,
                 'payment_review' => Order::paymentReview()->whereKey($order->id)->exists(),
+                'payment_initialization' => \App\Models\PaymentAttempt::where('order_id', $order->id)->value('status'),
                 'payment_received_amount' => $order->payment_received_amount,
                 'payment_received_at' => $order->payment_received_at?->toIso8601String(),
                 'payment_received_currency' => 'CNY',

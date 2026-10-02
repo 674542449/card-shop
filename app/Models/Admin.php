@@ -40,6 +40,9 @@ class Admin extends Model
 
     public function allows(string $area, string $action = 'read'): bool
     {
+        if (! $this->is_active || ! array_key_exists($area, config('admin_permissions.areas', [])) || ! in_array($action, ['read', 'write'], true)) {
+            return false;
+        }
         return $this->role === 'owner' || in_array($area.':'.$action, $this->permissions ?? [], true) || ($action === 'read' && in_array($area.':write', $this->permissions ?? [], true));
     }
 }

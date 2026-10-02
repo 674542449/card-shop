@@ -11,6 +11,6 @@ class ApiOrderRequest extends Model
 
     protected function casts(): array
     {
-        return ['response_payload' => 'encrypted:array', 'response_status' => 'integer'];
+        return ['response_payload' => 'encrypted:array', 'response_status' => 'integer', 'processing_expires_at' => 'datetime'];
     }
 }

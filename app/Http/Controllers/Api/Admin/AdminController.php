@@ -10,12 +10,13 @@ use App\Rules\Utf8Text;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Http\Resources\Admin\AdminRecordResource;
 
 class AdminController extends Controller
 {
     public function index()
     {
-        return response()->json(['data' => Admin::orderBy('id')->get()]);
+        return response()->json(['data' => AdminRecordResource::collection(Admin::orderBy('id')->get())->resolve(request())]);
     }
 
     private function rules(?Admin $admin = null): array
@@ -23,7 +24,7 @@ class AdminController extends Controller
         return ['username' => ['bail', 'required', 'string', 'max:50', new Utf8Text, Rule::unique('admins')->ignore($admin?->id)],
             'password' => ['bail', $admin ? 'nullable' : 'required', 'string', 'min:12', 'max:72', new BcryptPassword],
             'role' => 'required|in:owner,staff', 'permissions' => 'nullable|array',
-            'permissions.*' => ['string', 'regex:/^(overview|catalog|cards|payments|orders|refunds|content|coupons|blacklists|logs|settings|tokens|notifications|maintenance):(read|write)$/D'],
+            'permissions.*' => ['string', Rule::in(\App\Policies\AdminPolicy::permissions())],
             'is_active' => 'required|boolean'];
     }
 
@@ -33,7 +34,7 @@ class AdminController extends Controller
         $admin = Admin::create($data);
         OperationLog::log('创建管理员', 'admin', $admin->id, $admin->username);
 
-        return response()->json($admin, 201);
+        return response()->json((new AdminRecordResource($admin))->resolve($request), 201);
     }
 
     public function update(Request $request, Admin $admin)
@@ -50,6 +51,6 @@ class AdminController extends Controller
         });
         OperationLog::log('更新管理员', 'admin', $admin->id, $admin->username);
 
-        return response()->json($admin);
+        return response()->json((new AdminRecordResource($admin))->resolve($request));
     }
 }

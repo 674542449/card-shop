@@ -12,11 +12,11 @@ class ExpireOrders extends Command
 
     protected $description = '将超过支付时限的待支付订单标记为过期，并把它们锁定的卡密释放回库存';
 
-    public function handle(OrderService $orders): int
+    public function handle(OrderService $orders, \App\Services\MaintenanceWriteBarrier $barrier): int
     {
         // Without this running on a schedule, cards locked by an abandoned order stay
         // locked forever and are permanently subtracted from sellable stock.
-        $count = $orders->expireOrders();
+        $count = $barrier->run(fn () => $orders->expireOrders());
 
         if ($count > 0) {
             $this->info("已过期 {$count} 个订单，卡密已释放回库存。");

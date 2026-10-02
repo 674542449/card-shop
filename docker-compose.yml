@@ -12,6 +12,8 @@ services:
         condition: service_healthy
     volumes:
       - .:/var/www/html
+      # Development startup may initialize this external keyring; production mounts it read-only.
+      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets
     expose:
       - "9000"
     # json-file 默认不轮转，会一直长到把磁盘吃光。届时 PostgreSQL 写不下 WAL，
@@ -36,9 +38,9 @@ services:
       - PHP_FPM_MIN_SPARE=${PHP_FPM_MIN_SPARE:-1}
       - PHP_FPM_MAX_SPARE=${PHP_FPM_MAX_SPARE:-3}
     healthcheck:
-      test: ["CMD-SHELL", "php -r \"@fsockopen('127.0.0.1', 9000) or exit(1);\""]
+      test: ["CMD-SHELL", "php artisan shop:ready >/dev/null && php -r \"@fsockopen('127.0.0.1', 9000) or exit(1);\""]
       interval: 5s
-      timeout: 5s
+      timeout: 10s
       retries: 30
       # 首次启动要在容器里装 PHP 依赖。README 把 1GB / 1 核列为最低配置，那种机器上
       # composer 解析容易接近甚至超过原来 180s 的预算，于是 `docker compose up -d`
@@ -60,6 +62,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/var/www/html
+      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
     working_dir: /var/www/html
     entrypoint: ["php", "artisan", "schedule:work"]
     # 跟 PHP-FPM 的工作进程同一个身份（www-data，uid/gid 33）。
@@ -95,6 +98,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/var/www/html
+      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
     working_dir: /var/www/html
     entrypoint: ["php", "artisan", "notifications:send", "--work"]
     user: "33:33"
@@ -123,6 +127,7 @@ services:
         condition: service_healthy
     volumes:
       - .:/var/www/html
+      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
       # Copying is disabled until the owner configures /mnt/shop-backup-sync.
       - ${BACKUP_SYNC_MOUNT:-./.local/backup-sync}:/mnt/shop-backup-sync
     working_dir: /var/www/html
@@ -140,6 +145,36 @@ services:
       - DB_HOST=postgres
       - REDIS_HOST=redis
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+
+  seo:
+    build: {context: ., dockerfile: docker/php/Dockerfile}
+    restart: unless-stopped
+    depends_on: {app: {condition: service_healthy}}
+    volumes:
+      - .:/var/www/html
+      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
+    working_dir: /var/www/html
+    entrypoint: [php, artisan, "seo:work"]
+    user: "33:33"
+    stop_grace_period: 60s
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    networks: [cardshop]
+    environment: {DB_HOST: postgres, REDIS_HOST: redis}
+
+  reconciliation:
+    build: {context: ., dockerfile: docker/php/Dockerfile}
+    restart: unless-stopped
+    depends_on: {app: {condition: service_healthy}}
+    volumes:
+      - .:/var/www/html
+      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
+    working_dir: /var/www/html
+    entrypoint: [php, artisan, "payments:work"]
+    user: "33:33"
+    stop_grace_period: 60s
+    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
+    networks: [cardshop]
+    environment: {DB_HOST: postgres, REDIS_HOST: redis}
 
   nginx:
     image: nginx:stable

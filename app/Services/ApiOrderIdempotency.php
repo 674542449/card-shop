@@ -6,6 +6,7 @@ use App\Exceptions\IdempotencyConflictException;
 use App\Models\ApiOrderRequest;
 use App\Models\Order;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ApiOrderIdempotency
 {
@@ -38,18 +39,51 @@ class ApiOrderIdempotency
         });
     }
 
-    /** Serialize gateway initiation and persist a response for retries after lost replies. */
+    /** Claim a short lease, then perform gateway I/O without holding row locks. */
     public function respond(ApiOrderRequest $request, callable $finish): array
     {
-        return DB::transaction(function () use ($request, $finish) {
+        $token = (string) Str::uuid();
+        $claim = DB::transaction(function () use ($request, $token) {
             $record = ApiOrderRequest::whereKey($request->id)->lockForUpdate()->firstOrFail();
             if ($record->response_payload !== null) {
                 return [$record->response_payload, $record->response_status, true];
             }
-            $order = Order::find($record->order_id);
-            [$payload, $status] = $order ? $finish($order) : [['message' => '原订单已归档，请联系店主。'], 410];
-            $record->update(['response_payload' => $payload, 'response_status' => $status]);
-            return [$payload, $status, false];
+            if ($record->processing_token && $record->processing_expires_at?->isFuture()) {
+                return [['message' => '付款正在创建，请使用同一 Idempotency-Key 重试。',
+                    'data' => ['order_no' => Order::find($record->order_id)?->order_no, 'payment_initialization' => 'processing']], 202, true];
+            }
+            $record->update(['processing_token' => $token, 'processing_expires_at' => now()->addSeconds(60)]);
+            return null;
         });
+        if ($claim !== null) {
+            if ($claim[1] === 202) {
+                // Wait for a fast peer without a transaction or row lock. Slow
+                // gateways return 202 so the client can retry the same key later.
+                $deadline = microtime(true) + 2;
+                do {
+                    usleep(25000);
+                    $record = ApiOrderRequest::findOrFail($request->id);
+                    if ($record->response_payload !== null) {
+                        return [$record->response_payload, $record->response_status, true];
+                    }
+                } while ($record->processing_token && microtime(true) < $deadline);
+            }
+            return $claim;
+        }
+        try {
+            $order = Order::find($request->order_id);
+            [$payload, $status] = $order ? $finish($order) : [['message' => '原订单已归档，请联系店主。'], 410];
+            DB::transaction(function () use ($request, $token, $payload, $status) {
+                $record = ApiOrderRequest::whereKey($request->id)->where('processing_token', $token)->lockForUpdate()->first();
+                if ($record) {
+                    $record->update(['processing_token' => null, 'processing_expires_at' => null]
+                        + ($status === 202 ? [] : ['response_payload' => $payload, 'response_status' => $status]));
+                }
+            });
+            return [$payload, $status, false];
+        } finally {
+            ApiOrderRequest::whereKey($request->id)->where('processing_token', $token)
+                ->update(['processing_token' => null, 'processing_expires_at' => null]);
+        }
     }
 }

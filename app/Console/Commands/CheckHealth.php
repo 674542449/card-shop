@@ -16,7 +16,7 @@ class CheckHealth extends Command
     public function handle(HeartbeatService $service): int
     {
         if ($this->option('scheduler')) {
-            $service->beat('scheduler');
+            app(\App\Services\MaintenanceWriteBarrier::class)->run(fn () => $service->beat('scheduler'));
         }
         $health = $service->health();
         $this->line(json_encode($health, JSON_UNESCAPED_UNICODE));

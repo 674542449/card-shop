@@ -4,10 +4,12 @@ namespace App\Services;
 
 use App\Models\Setting;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use App\Security\SecretSettings;
 
 class SettingService
 {
-    private const CACHE_KEY = 'settings:all';
+    private const CACHE_KEY = 'settings:all:stored:v1';
     private const CACHE_TTL = 3600;
 
     /**
@@ -17,12 +19,19 @@ class SettingService
      */
     public function getAll(): array
     {
-        return Cache::store('redis')->remember(self::CACHE_KEY, self::CACHE_TTL, function () {
-            return Setting::all()
-                ->groupBy('group')
-                ->map(fn ($items) => $items->pluck('value', 'key')->toArray())
-                ->toArray();
+        $stored = Cache::store('redis')->remember(self::CACHE_KEY, self::CACHE_TTL, function () {
+            return DB::table('settings')->get()->groupBy('group')
+                ->map(fn ($items) => SecretSettings::cacheMap($items->pluck('value', 'key')->all()))->all();
         });
+        foreach ($stored as &$group) {
+            foreach ($group as $key => &$value) {
+                $value = SecretSettings::decode($key, $value);
+            }
+            unset($value);
+        }
+        unset($group);
+
+        return $stored;
     }
 
     /**
@@ -30,11 +39,7 @@ class SettingService
      */
     public function get(string $key, mixed $default = null): mixed
     {
-        return Cache::store('redis')->remember(
-            "setting:{$key}",
-            self::CACHE_TTL,
-            fn () => Setting::where('key', $key)->value('value') ?? $default
-        );
+        return Setting::get($key, $default);
     }
 
     /**
@@ -74,6 +79,7 @@ class SettingService
      */
     private function clearCache(): void
     {
+        SecretSettings::forgetCaches();
         try {
             $cache = Cache::store('redis');
             $cache->forget(self::CACHE_KEY);

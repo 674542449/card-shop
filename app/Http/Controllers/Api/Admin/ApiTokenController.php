@@ -8,6 +8,7 @@ use App\Models\OperationLog;
 use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use App\Http\Resources\Admin\AdminRecordResource;
 
 class ApiTokenController extends Controller
 {
@@ -27,7 +28,7 @@ class ApiTokenController extends Controller
 
         $tokens = $query->orderByDesc('id')->paginate($pageSize);
 
-        return response()->json(['data' => $tokens->items(), 'total' => $tokens->total()]);
+        return response()->json(['data' => AdminRecordResource::collection($tokens->items())->resolve($request), 'total' => $tokens->total()]);
     }
 
     public function store(Request $request)
@@ -42,7 +43,7 @@ class ApiTokenController extends Controller
         OperationLog::log('创建 API 令牌', 'api_token', $token->id, $token->name);
 
         // Only this response reveals the secret. Never store it or put it in logs.
-        return response()->json(['data' => $token->refresh(), 'plain_token' => $plainToken], 201)
+        return response()->json(['data' => (new AdminRecordResource($token->refresh()))->resolve($request), 'plain_token' => $plainToken], 201)
             ->header('Cache-Control', 'no-store');
     }
 
@@ -55,7 +56,7 @@ class ApiTokenController extends Controller
         $apiToken->update($data);
         OperationLog::log('更新 API 令牌', 'api_token', $apiToken->id, $apiToken->name);
 
-        return response()->json($apiToken);
+        return response()->json((new AdminRecordResource($apiToken))->resolve($request));
     }
 
     public function destroy(ApiToken $apiToken)

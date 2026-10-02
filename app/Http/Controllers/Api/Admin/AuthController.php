@@ -194,6 +194,7 @@ class AuthController extends Controller
             'role' => $admin->role, 'permissions' => $admin->permissions,
             'two_factor_enabled' => (bool) $admin->two_factor_confirmed_at,
             'recovery_codes_remaining' => count($admin->two_factor_recovery_codes ?? []),
+            'permission_definition' => \App\Policies\AdminPolicy::definition($admin),
         ]);
     }
 

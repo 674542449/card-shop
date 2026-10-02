@@ -10,9 +10,9 @@ class ScheduleBackups extends Command
     protected $signature = 'shop:backup-schedule';
     protected $description = 'Enqueue the configured daily full backup, disabled by default';
 
-    public function handle(BackupQueue $queue): int
+    public function handle(BackupQueue $queue, \App\Services\MaintenanceWriteBarrier $barrier): int
     {
-        if ($run = $queue->schedule()) {
+        if ($run = $barrier->run(fn () => $queue->schedule())) {
             $this->line('备份任务 '.$run->id.'：'.$run->status);
         }
         return self::SUCCESS;

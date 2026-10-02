@@ -4,7 +4,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 后端使用 **Laravel 12 + PostgreSQL + Redis**，管理后台使用 **React + Ant Design**。提供三套独立前台模板和 Docker Compose 安装方案，支持易支付支付宝/微信及 EPUSDT / BEpusdt USDT 收款。
 
-**当前正式版本：[v1.0.4](https://github.com/674542449/card-shop/releases/tag/v1.0.4)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
+**当前正式版本：[v1.0.5](https://github.com/674542449/card-shop/releases/tag/v1.0.5)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
 
 ## 功能介绍
 
@@ -106,12 +106,12 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 完整操作见 **[正式版首次安装指南](DEPLOY.md)**，从空服务器和域名开始：
 
 1. 准备 Linux 服务器、Docker Engine、Compose 插件及 Git，接入正式域名。
-2. 拉取正式版，运行 `install.sh`，配置 `APP_URL`、数据库和首次管理员账号。
+2. 拉取正式版，配置项目目录之外的运行环境文件、加密密钥目录和正式域名。
 3. 在启动前放好 HTTPS 证书并启用 TLS 配置。
-4. 启动七个容器，检查应用页面、后台资源和业务进程。
+4. 单独完成密钥初始化与数据库初始化，再启动九个运行服务，检查就绪状态和业务心跳。
 5. 登录后台，配置支付、SMTP、人机验证及商品库存，完成首次真实小额下单验收。
 
-后台构建产物随正式版提交，宿主机无需安装 PHP、Composer 或 Node.js。首次启动自动安装锁定的 PHP 依赖、生成 `APP_KEY`、初始化数据库结构、建立存储链接和创建管理员。
+后台构建产物随正式版提交，生产多阶段镜像预装锁定依赖并构建静态资源，宿主机无需安装 PHP、Composer 或 Node.js。正式运行使用 `docker-compose.production.yml`；密钥与数据库初始化是单独执行的一次性步骤，运行容器重启时不下载依赖或执行迁移。开发环境使用 `docker-compose.yml`。
 
 默认用户名为 **`admin`**，可在首次启动前设置 `ADMIN_USERNAME`。**没有固定默认密码**：可预设至少 12 字符的 `ADMIN_PASSWORD`，否则生成随机密码，正常情况下保存于容器内受限文件；读取与重置方式见 [首次登录](DEPLOY.md#首次登录)。
 
@@ -145,14 +145,16 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 | `nginx` / `app` | HTTPS 静态资源、Laravel 业务与后台 API |
 | `postgres` / `redis` | 商品订单及持久任务、缓存、会话、限流与锁 |
 | `scheduler` | 订单过期、低库存检查、定时备份排队与可选对账 |
-| `notifications` | 独立投递邮件、Telegram 和 SEO 推送，失败重试 |
+| `notifications` | 独立投递邮件和 Telegram，失败重试 |
+| `seo` | 独立处理 SEO 推送，避免占用发货邮件进程 |
+| `reconciliation` | 消费持久付款核对任务，记录租约、失败和重试 |
 | `backups` | 独立执行完整备份，记录阶段、进度与校验结果 |
 
-完整备份包含数据库、`.env`、上传素材和私有归档，需私有保存。支持复制到已由管理员挂载的异机目录，程序不自行建立云存储或 SFTP 连接。通知采用至少一次投递，外部服务已受理但本地状态未写回时可能重发。
+卡密和敏感系统配置使用独立外部 keyring 加密存储；Redis 中的敏感设置也保存密文，卡密查重使用稳定 HMAC 指纹。完整备份包含数据库、运行配置、上传素材和私有归档，需私有保存；**外部 keyring 不包含在商城备份内，必须单独备份并保留旧密钥版本**。支持复制到已由管理员挂载的异机目录，程序不自行建立云存储或 SFTP 连接。通知采用至少一次投递，外部服务已受理但本地状态未写回时可能重发。
 
-服务端校验商品、数量、价格、优惠、付款签名、金额、渠道、订单归属及管理员权限，使用事务和锁控制库存与重复发货。提供 CSRF、独立请求限流、bcrypt、可选 Turnstile、IP/邮箱黑名单、扫描防护、富文本白名单净化和输出转义。
+服务端校验商品、数量、价格、优惠、付款签名、金额、渠道、订单归属及管理员权限，前台与 API 共用下单、库存和订单过期服务。付款创建由持久记录与租约控制，网关 HTTP 请求在业务事务提交后执行；超时、中断或不完整响应进入待核对状态，不自动再建付款。后台按显式路由能力授权，API 输出通过字段白名单控制。提供 CSRF、独立请求限流、bcrypt、可选 Turnstile、IP/邮箱黑名单、扫描防护、富文本白名单净化和输出转义。
 
-订单凭据通过请求正文传递；网页查单授权绑定订单与凭据，有效期 30 分钟。动态响应禁止缓存，拒绝 iframe 嵌入。SMTP 的 SSL/TLS 配置拒绝降级，USDT 网关创建交易使用 HTTPS。API 重试可提供 `Idempotency-Key`，同令牌、同键、同参数返回原响应，详见 [API 文档](docs/API.md)。
+订单凭据通过请求正文传递；网页查单授权绑定订单与凭据，有效期 30 分钟。动态响应禁止缓存，拒绝 iframe 嵌入。SMTP 的 SSL/TLS 配置拒绝降级，USDT 网关创建交易使用 HTTPS。网页模板使用服务端签名下单标识防止同一操作重复占库。API 重试可提供 `Idempotency-Key`，同令牌、同键、同参数返回原订单；付款创建中或结果不确定时返回 HTTP 202，详见 [API 文档](docs/API.md)。
 
 生产环境需完成正式域名、代理、支付网关和外部投递的实际验收，不能仅凭容器正常或现有测试认定所有攻击场景均已覆盖。日常监控、备份与故障排查见 [安装指南](DEPLOY.md#日常运行)。
 
@@ -181,7 +183,7 @@ sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
 
 前台页面位于 `resources/views/templates/`，资源位于 `public/themes/` 和 `public/js/`；后台源码位于 `admin-frontend/`，构建产物位于 `public/admin-assets/`。数据库结构定义位于 `database/migrations/`，业务逻辑位于 `app/Services/`，路由位于 `routes/`。
 
-功能验收记录包含 **410 项 PHP 测试、3959 项断言、20 项 Node 测试、7 类 Shell 回归、39 次隔离环境真实 HTTP 请求**，以及并发、完整备份、生产构建和依赖审计。验证范围与实际环境限制见 [测试记录](tests/README.md)。本版整理项目介绍和首次安装文档，业务功能沿用该验收基线。
+本版补齐统一下单与付款创建记录、独立敏感存储加密、显式权限与字段白名单、独立任务进程和受维护锁保护的恢复流程。验收覆盖 PHP、Node、Shell、真实 PostgreSQL 恢复、构建产物和依赖审计；CI 另验证生产镜像首次初始化与运行。实际结果与环境限制见 [测试记录](tests/README.md)。
 
 贡献和发版规则见 [维护者发布说明](RELEASING.md)。代码在 `main` 维护，正式版本通过 Git 标签和 GitHub Release 提供。
 

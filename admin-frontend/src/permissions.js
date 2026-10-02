@@ -2,19 +2,20 @@ export const allows = (admin, area, action = 'read') => admin?.role === 'owner' 
   (admin?.permissions || []).includes(`${area}:${action}`) ||
   (action === 'read' && (admin?.permissions || []).includes(`${area}:write`));
 
-const areas = { '/': 'overview', '/categories': 'catalog', '/products': 'catalog',
-  '/orders': 'orders', '/refunds': 'refunds', '/articles': 'content', '/article-categories': 'content',
-  '/coupons': 'coupons', '/blacklists': 'blacklists', '/logs': 'logs', '/settings': 'settings',
-  '/api-tokens': 'tokens', '/notifications': 'notifications' };
+export const canCapability = (admin, capability) =>
+  (admin?.permission_definition?.capabilities || []).includes(capability);
+
+function matchesPage(page, path) {
+  const normalized = path === '/' ? '/' : path.replace(/\/+$/, '');
+  const pattern = page.path.split('/').map(segment => /^\{[^}]+\}$/.test(segment)
+    ? '[^/]+' : segment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('/');
+  return new RegExp(`^${pattern}${page.children ? '(?:/.*)?' : ''}$`).test(normalized);
+}
 
 export function canVisit(admin, path) {
-  if (path === '/account') return true;
-  if (path === '/admins') return admin?.role === 'owner';
-  if (path === '/operations') return allows(admin, 'maintenance') || allows(admin, 'content');
-  if (/^\/products\/[^/]+\/cards\/?$/.test(path)) return allows(admin, 'cards');
-  const key = Object.keys(areas).sort((a, b) => b.length - a.length)
-    .find(p => path === p || (p !== '/' && path.startsWith(`${p}/`)));
-  return !!key && allows(admin, areas[key]);
+  const page = admin?.permission_definition?.pages?.find(item => matchesPage(item, path));
+  if (!page) return false;
+  return page.any ? page.any.some(capability => canCapability(admin, capability)) : canCapability(admin, page.capability);
 }
 
 export function permittedMenu(admin, tree) {

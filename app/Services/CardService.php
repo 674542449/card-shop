@@ -120,11 +120,14 @@ class CardService
             $count = 0;
             $now = now();
             foreach (array_chunk(array_values(array_unique($lines, SORT_STRING)), 500) as $chunk) {
-                $existing = Card::where('product_id', $productId)->whereIn('content', $chunk)->pluck('content')->all();
+                $cipher = app(\App\Security\SecretCipher::class);
+                $fingerprints = array_map(fn (string $line) => $cipher->fingerprint($line), $chunk);
+                $existing = Card::where('product_id', $productId)->whereIn('content_fingerprint', $fingerprints)
+                    ->pluck('content_fingerprint')->all();
                 $seen = array_fill_keys($existing, true);
                 $records = [];
                 foreach ($chunk as $line) {
-                    if (isset($seen[$line])) {
+                    if (isset($seen[$cipher->fingerprint($line)])) {
                         continue;
                     }
                     $records[] = [

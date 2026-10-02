@@ -88,8 +88,8 @@ class RefundService
                 if (bccomp((string) $refunded, $receipt->amount, 2) >= 0) {
                     $receipt->update(['review_resolved_at' => now(), 'resolution_note' => '退款完成：'.$reference]);
                     $order = Order::findOrFail($locked->order_id);
-                    if (! $order->paymentReceipts()->whereNotNull('review_reason')->whereNull('review_resolved_at')->exists()) {
-                        $order->update(['payment_review_reason' => null]);
+                    if (! $order->paymentReceipts()->unresolvedReview()->exists()) {
+                        $order->update(['payment_review_reason' => null, 'payment_review_code' => null]);
                     }
                 }
             }

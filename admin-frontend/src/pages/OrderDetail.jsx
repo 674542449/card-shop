@@ -5,8 +5,9 @@ import { Alert, Button, Tag, Spin, message, Popconfirm, Space, Typography, Resul
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api from '../services/api';
-import {allows} from '../permissions';
+import {allows, canCapability} from '../permissions';
 import { getOrder, closeOrder, markPaid, resendOrder } from '../services/api';
+import { initializationStates, initializationErrors, initializationBlocksClosing } from '../utils/paymentInitialization';
 
 const { Paragraph } = Typography;
 
@@ -33,9 +34,9 @@ const paymentMethodMap = {
 
 export default function OrderDetail() {
   const { id } = useParams();
-  const admin=useOutletContext();const write=allows(admin,'orders','write');const refundWrite=write&&allows(admin,'refunds','write');
-  const confirmPayment = write && allows(admin, 'payments', 'write');
-  const replacementWrite = write && allows(admin, 'cards', 'write');
+  const admin=useOutletContext();const write=allows(admin,'orders','write');const refundWrite=canCapability(admin,'orders.refund');
+  const confirmPayment = canCapability(admin,'orders.mark_paid');
+  const replacementWrite = canCapability(admin,'orders.replace_cards');
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -117,9 +118,13 @@ export default function OrderDetail() {
   if (!order) return <Result status="warning" title={loadError || '订单不可用'} extra={<Space><Button onClick={() => navigate('/orders')}>返回订单列表</Button><Button onClick={fetchOrder}>重试</Button></Space>} />;
 
   const s = statusMap[order.status];
+  const initialization = initializationStates[order.payment_initialization];
 
   return (
     <div>
+      {order.status === 'pending' && initializationBlocksClosing(order.payment_initialization) && <Alert type="warning" showIcon
+        message={initialization?.text || '付款创建待核对'} style={{ marginBottom: 16 }}
+        description="收银台创建结果尚未确定。请核对原订单和网关记录，勿再次创建付款或关闭订单；此状态并不表示已经收到付款。确认实际到账后才能人工确认支付。" />}
       {order.has_payment_review && (
         <Alert
           type="warning"
@@ -133,7 +138,7 @@ export default function OrderDetail() {
         <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/orders')}>
           返回订单列表
         </Button>
-        {write && order.status === 'pending' && !order.payment_no && !order.payment_receipts?.length && (
+        {write && order.status === 'pending' && !initializationBlocksClosing(order.payment_initialization) && !order.payment_no && !order.payment_receipts?.length && (
           <Popconfirm title="确认关闭此订单？" onConfirm={handleClose}>
             <Button loading={actionLoading}>关闭订单</Button>
           </Popconfirm>
@@ -187,6 +192,9 @@ export default function OrderDetail() {
           <ProDescriptions.Item label="支付方式">
             {paymentMethodMap[order.payment_method] || order.payment_method || '-'}
           </ProDescriptions.Item>
+          <ProDescriptions.Item label="收银台创建状态">{initialization ? <Tag color={initialization.color}>{initialization.text}</Tag> : '暂无创建记录'}</ProDescriptions.Item>
+          <ProDescriptions.Item label="创建状态更新时间">{fmt(order.payment_initialization_detail?.updated_at)}</ProDescriptions.Item>
+          <ProDescriptions.Item label="创建结果说明" span={2}>{initializationErrors[order.payment_initialization_detail?.error_code] || order.payment_initialization_detail?.error_code || '-'}</ProDescriptions.Item>
           {/* orders has no coupon_code column; the controller eager-loads the relation. */}
           <ProDescriptions.Item label="优惠券">{order.coupon?.code || '-'}</ProDescriptions.Item>
           <ProDescriptions.Item label="优惠金额">¥{order.discount_amount || 0}</ProDescriptions.Item>

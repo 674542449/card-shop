@@ -1,0 +1,149 @@
+# Production uses a released image (prefer its registry digest), never a source bind mount.
+# Invoke with --env-file=/etc/cardshop/runtime.env; keep that file and keys outside the repo.
+x-runtime: &runtime
+  image: ${SHOP_APP_IMAGE:-cardshop-app:local}
+  restart: unless-stopped
+  user: "33:33"
+  read_only: true
+  tmpfs:
+    - /tmp:size=128m,mode=1777
+  env_file:
+    - ${SHOP_ENV_FILE:?Set SHOP_ENV_FILE to an external runtime environment file}
+  environment:
+    APP_ENV: production
+    APP_DEBUG: "false"
+    APP_KEY: ${APP_KEY:?Set a unique APP_KEY before initialization}
+    DB_HOST: postgres
+    DB_PORT: "5432"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    LOG_CHANNEL: stderr
+    SHOP_KEYRING_FILE: /run/secrets/shop-keyring.json
+    SHOP_RUNTIME_ENV_FILE: /run/config/runtime.env
+    VIEW_COMPILED_PATH: /var/www/html/build/views
+    PHP_FPM_MAX_CHILDREN: ${PHP_FPM_MAX_CHILDREN:-5}
+    PHP_FPM_START_SERVERS: ${PHP_FPM_START_SERVERS:-2}
+    PHP_FPM_MIN_SPARE: ${PHP_FPM_MIN_SPARE:-1}
+    PHP_FPM_MAX_SPARE: ${PHP_FPM_MAX_SPARE:-3}
+  volumes:
+    - storage:/var/www/html/storage
+    - ${SHOP_SECRETS_DIR:?Set SHOP_SECRETS_DIR to an external private key directory}:/run/secrets:ro
+    - ${SHOP_ENV_FILE:?Set SHOP_ENV_FILE}:/run/config/runtime.env:ro
+  networks: [cardshop]
+  stop_grace_period: 60s
+  logging: &logging
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  initialize:
+    <<: *runtime
+    profiles: [init]
+    restart: "no"
+    volumes:
+      - storage:/var/www/html/storage
+      - ${SHOP_SECRETS_DIR:?Set SHOP_SECRETS_DIR}:/run/secrets
+      - ${SHOP_ENV_FILE:?Set SHOP_ENV_FILE}:/run/config/runtime.env:ro
+    command: [php, artisan, "secrets:init", "--path=/run/secrets/shop-keyring.json"]
+  migrate:
+    <<: *runtime
+    profiles: [init]
+    restart: "no"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    command: [sh, docker/php/production-migrate.sh]
+  app:
+    <<: *runtime
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    expose: ["9000"]
+    healthcheck:
+      test: [CMD-SHELL, "php artisan shop:ready >/dev/null && php -r \"@fsockopen('127.0.0.1',9000) or exit(1);\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+  scheduler:
+    <<: *runtime
+    depends_on: {app: {condition: service_healthy}}
+    command: [php, artisan, "schedule:work"]
+  notifications:
+    <<: *runtime
+    depends_on: {app: {condition: service_healthy}}
+    command: [php, artisan, "notifications:send", --work]
+  seo:
+    <<: *runtime
+    depends_on: {app: {condition: service_healthy}}
+    command: [php, artisan, "seo:work"]
+  reconciliation:
+    <<: *runtime
+    depends_on: {app: {condition: service_healthy}}
+    command: [php, artisan, "payments:work"]
+  backups:
+    <<: *runtime
+    depends_on: {app: {condition: service_healthy}}
+    volumes:
+      - storage:/var/www/html/storage
+      - ${SHOP_SECRETS_DIR:?Set SHOP_SECRETS_DIR}:/run/secrets:ro
+      - ${SHOP_ENV_FILE:?Set SHOP_ENV_FILE}:/run/config/runtime.env:ro
+      - ${BACKUP_SYNC_MOUNT:-/var/lib/cardshop/backup-sync}:/mnt/shop-backup-sync
+    command: [php, artisan, "shop:backup-work"]
+  nginx:
+    image: ${SHOP_WEB_IMAGE:-cardshop-nginx:local}
+    restart: unless-stopped
+    depends_on: {app: {condition: service_healthy}}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - storage:/var/www/html/storage:ro
+      - ${TLS_CONFIG_DIR:-./docker/nginx/tls}:/etc/nginx/tls:ro
+      - ${TLS_CERT_DIR:-/opt/cf}:/etc/nginx/cf:ro
+    networks: [cardshop]
+    logging: *logging
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:17}
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-128MB}
+      - -c
+      - effective_cache_size=${POSTGRES_EFFECTIVE_CACHE:-512MB}
+      - -c
+      - work_mem=${POSTGRES_WORK_MEM:-4MB}
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-100}
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-cardshop}
+      POSTGRES_USER: ${DB_USERNAME:-cardshop}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set a unique PostgreSQL password}
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U ${DB_USERNAME:-cardshop} -d ${DB_DATABASE:-cardshop}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 120s
+    networks: [cardshop]
+    logging: *logging
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    # No eviction: losing security locks/sessions must not be a cache eviction policy.
+    command: [redis-server, --appendonly, "yes", --maxmemory, "${REDIS_MAXMEMORY:-128mb}", --maxmemory-policy, noeviction]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [cardshop]
+    logging: *logging
+
+volumes:
+  storage: {}
+  pgdata: {}
+  redisdata: {}
+networks:
+  cardshop: {driver: bridge}

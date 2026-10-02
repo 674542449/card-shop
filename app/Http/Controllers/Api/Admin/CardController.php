@@ -8,6 +8,7 @@ use App\Models\Product;
 use App\Models\OperationLog;
 use App\Support\AdminListQuery;
 use App\Services\CardService;
+use App\Http\Resources\Admin\CardResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -22,7 +23,7 @@ class CardController extends Controller
         $query = $product->cards()->with('order:id,order_no,status');
 
         if ($request->filled('content')) {
-            $query->where('content', 'ilike', '%' . $request->input('content') . '%');
+            $query->where('content_fingerprint', app(\App\Security\SecretCipher::class)->fingerprint(trim((string) $request->input('content'))));
         }
 
         if ($request->filled('status')) {
@@ -41,7 +42,7 @@ class CardController extends Controller
         $locked = $product->cards()->where('status', 'locked')->count();
 
         return response()->json([
-            'data' => $cards->items(),
+            'data' => CardResource::collection($cards->items())->resolve($request),
             'total' => $cards->total(),
             'stats' => compact('total', 'unsold', 'sold', 'locked'),
             'product' => ['id' => $product->id, 'name' => $product->name],
@@ -149,7 +150,7 @@ class CardController extends Controller
 
         return response()->json([
             'message' => $outcome['changed'] ? "卡密已标记为{$label}。" : "卡密已是{$label}，无需修改。",
-            'card' => $outcome['card']->makeVisible('content')->load('order:id,order_no,status'),
+            'card' => (new CardResource($outcome['card']->load('order:id,order_no,status')))->resolve($request),
         ]);
     }
 

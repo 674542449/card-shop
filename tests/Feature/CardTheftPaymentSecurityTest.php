@@ -85,7 +85,8 @@ class CardTheftPaymentSecurityTest extends TestCase
         try {
             app(EpusdtService::class)->createPayment($order, 'trc20');
             $this->fail('An inconsistent gateway transaction must be refused before binding.');
-        } catch (\RuntimeException) {
+        } catch (\RuntimeException $exception) {
+            $this->assertInstanceOf(\App\Exceptions\PaymentUncertainException::class, $exception);
         }
         $this->assertNull($order->fresh()->gateway_trade_no);
         $this->assertNull(Cache::get('payment_url:'.$order->order_no));

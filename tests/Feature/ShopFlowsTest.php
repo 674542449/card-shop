@@ -189,7 +189,9 @@ class ShopFlowsTest extends TestCase
         $product = $this->product(0);
         $this->admin();
         $this->postJson('/api/admin/products/'.$product->id.'/cards/import', ['content' => "0\r\nvalid\r\n"])->assertOk()->assertJsonPath('count', 2);
-        $this->assertDatabaseHas('cards', ['product_id' => $product->id, 'content' => '0']);
+        $this->assertDatabaseHas('cards', ['product_id' => $product->id,
+            'content_fingerprint' => app(\App\Security\SecretCipher::class)->fingerprint('0')]);
+        $this->assertSame('0', $product->cards()->where('content', '0')->firstOrFail()->content);
         $this->postJson('/api/admin/products/'.$product->id.'/cards/import', ['content' => ['invalid']])->assertUnprocessable();
     }
 

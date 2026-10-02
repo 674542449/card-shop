@@ -10,6 +10,8 @@ use App\Http\Controllers\Api\Admin as ApiAdmin;
 |--------------------------------------------------------------------------
 */
 
+Route::get('/health/ready', [\App\Http\Controllers\ProbeController::class, 'ready'])->name('health.ready');
+
 // Payment callbacks (no CSRF, no blacklist check — external payment providers).
 Route::get('/{indexnowKey}.txt', function (string $indexnowKey) {
     $key = (string) setting('bing_indexnow_key', '');
@@ -92,116 +94,116 @@ Route::prefix('api/' . admin_path())->group(function () {
     Route::post('/login/challenge', [ApiAdmin\AuthController::class, 'challenge']);
 
     Route::middleware('admin.auth')->group(function () {
-        Route::post('/logout', [ApiAdmin\AuthController::class, 'logout']);
-        Route::get('/me', [ApiAdmin\AuthController::class, 'me']);
-        Route::post('/password', [ApiAdmin\AuthController::class, 'changePassword']);
-        Route::post('/two-factor/setup', [ApiAdmin\TwoFactorController::class, 'setup']);
-        Route::post('/two-factor/confirm', [ApiAdmin\TwoFactorController::class, 'confirm']);
-        Route::post('/two-factor/disable', [ApiAdmin\TwoFactorController::class, 'disable']);
+        Route::post('/logout', [ApiAdmin\AuthController::class, 'logout'])->defaults('_admin_capability', 'self');
+        Route::get('/me', [ApiAdmin\AuthController::class, 'me'])->defaults('_admin_capability', 'self');
+        Route::post('/password', [ApiAdmin\AuthController::class, 'changePassword'])->defaults('_admin_capability', 'self');
+        Route::post('/two-factor/setup', [ApiAdmin\TwoFactorController::class, 'setup'])->defaults('_admin_capability', 'self');
+        Route::post('/two-factor/confirm', [ApiAdmin\TwoFactorController::class, 'confirm'])->defaults('_admin_capability', 'self');
+        Route::post('/two-factor/disable', [ApiAdmin\TwoFactorController::class, 'disable'])->defaults('_admin_capability', 'self');
 
         // API access credentials
-        Route::get('/api-tokens', [ApiAdmin\ApiTokenController::class, 'index']);
-        Route::post('/api-tokens', [ApiAdmin\ApiTokenController::class, 'store']);
-        Route::put('/api-tokens/{apiToken}', [ApiAdmin\ApiTokenController::class, 'update']);
-        Route::delete('/api-tokens/{apiToken}', [ApiAdmin\ApiTokenController::class, 'destroy']);
+        Route::get('/api-tokens', [ApiAdmin\ApiTokenController::class, 'index'])->defaults('_admin_capability', 'tokens:read');
+        Route::post('/api-tokens', [ApiAdmin\ApiTokenController::class, 'store'])->defaults('_admin_capability', 'tokens:write');
+        Route::put('/api-tokens/{apiToken}', [ApiAdmin\ApiTokenController::class, 'update'])->defaults('_admin_capability', 'tokens:write');
+        Route::delete('/api-tokens/{apiToken}', [ApiAdmin\ApiTokenController::class, 'destroy'])->defaults('_admin_capability', 'tokens:write');
 
         // Dashboard
-        Route::get('/dashboard', [ApiAdmin\DashboardController::class, 'index']);
-        Route::get('/notifications', [ApiAdmin\NotificationController::class, 'index']);
-        Route::post('/notifications/{delivery}/retry', [ApiAdmin\NotificationController::class, 'retry'])->middleware('throttle:20,1,admin-notification-retry');
+        Route::get('/dashboard', [ApiAdmin\DashboardController::class, 'index'])->defaults('_admin_capability', 'overview:read');
+        Route::get('/notifications', [ApiAdmin\NotificationController::class, 'index'])->defaults('_admin_capability', 'notifications:read');
+        Route::post('/notifications/{delivery}/retry', [ApiAdmin\NotificationController::class, 'retry'])->middleware('throttle:20,1,admin-notification-retry')->defaults('_admin_capability', 'notifications:write');
 
         // Uploads (image picker + rich text editor)
-        Route::post('/upload', [ApiAdmin\UploadController::class, 'store']);
+        Route::post('/upload', [ApiAdmin\UploadController::class, 'store'])->defaults('_admin_capability', 'upload');
 
         // Categories
-        Route::get('/categories', [ApiAdmin\CategoryController::class, 'index']);
-        Route::post('/categories', [ApiAdmin\CategoryController::class, 'store']);
-        Route::put('/categories/{category}', [ApiAdmin\CategoryController::class, 'update']);
-        Route::delete('/categories/{category}', [ApiAdmin\CategoryController::class, 'destroy']);
+        Route::get('/categories', [ApiAdmin\CategoryController::class, 'index'])->defaults('_admin_capability', 'catalog:read');
+        Route::post('/categories', [ApiAdmin\CategoryController::class, 'store'])->defaults('_admin_capability', 'catalog:write');
+        Route::put('/categories/{category}', [ApiAdmin\CategoryController::class, 'update'])->defaults('_admin_capability', 'catalog:write');
+        Route::delete('/categories/{category}', [ApiAdmin\CategoryController::class, 'destroy'])->defaults('_admin_capability', 'catalog:write');
 
         // Products
-        Route::get('/products', [ApiAdmin\ProductController::class, 'index']);
-        Route::post('/products', [ApiAdmin\ProductController::class, 'store']);
-        Route::get('/products/{product}', [ApiAdmin\ProductController::class, 'show']);
-        Route::put('/products/{product}', [ApiAdmin\ProductController::class, 'update']);
-        Route::delete('/products/{product}', [ApiAdmin\ProductController::class, 'destroy']);
+        Route::get('/products', [ApiAdmin\ProductController::class, 'index'])->defaults('_admin_capability', 'catalog:read');
+        Route::post('/products', [ApiAdmin\ProductController::class, 'store'])->defaults('_admin_capability', 'catalog:write');
+        Route::get('/products/{product}', [ApiAdmin\ProductController::class, 'show'])->defaults('_admin_capability', 'catalog:read');
+        Route::put('/products/{product}', [ApiAdmin\ProductController::class, 'update'])->defaults('_admin_capability', 'catalog:write');
+        Route::delete('/products/{product}', [ApiAdmin\ProductController::class, 'destroy'])->defaults('_admin_capability', 'catalog:write');
 
         // Cards
-        Route::get('/products/{product}/cards', [ApiAdmin\CardController::class, 'index']);
-        Route::post('/products/{product}/cards/import', [ApiAdmin\CardController::class, 'import']);
-        Route::delete('/cards/batch-destroy', [ApiAdmin\CardController::class, 'batchDestroy']);
-        Route::patch('/cards/{card}/status', [ApiAdmin\CardController::class, 'updateStatus']);
-        Route::delete('/cards/{card}', [ApiAdmin\CardController::class, 'destroy']);
+        Route::get('/products/{product}/cards', [ApiAdmin\CardController::class, 'index'])->defaults('_admin_capability', 'cards:read');
+        Route::post('/products/{product}/cards/import', [ApiAdmin\CardController::class, 'import'])->defaults('_admin_capability', 'cards:write');
+        Route::delete('/cards/batch-destroy', [ApiAdmin\CardController::class, 'batchDestroy'])->defaults('_admin_capability', 'cards:write');
+        Route::patch('/cards/{card}/status', [ApiAdmin\CardController::class, 'updateStatus'])->defaults('_admin_capability', 'cards:write');
+        Route::delete('/cards/{card}', [ApiAdmin\CardController::class, 'destroy'])->defaults('_admin_capability', 'cards:write');
 
         // Orders
-        Route::get('/orders', [ApiAdmin\OrderController::class, 'index']);
-        Route::get('/orders/export', [ApiAdmin\OrderController::class, 'export']);
-        Route::get('/orders/{order}', [ApiAdmin\OrderController::class, 'show']);
-        Route::post('/orders/{order}/close', [ApiAdmin\OrderController::class, 'close']);
-        Route::post('/orders/{order}/paid', [ApiAdmin\OrderController::class, 'markPaid']);
-        Route::post('/orders/{order}/resend', [ApiAdmin\OrderController::class, 'resend']);
-        Route::post('/orders/{order}/replacements', [ApiAdmin\OrderController::class, 'replaceCards']);
-        Route::post('/orders/{order}/sync', [ApiAdmin\OperationsController::class, 'sync'])->middleware('throttle:10,1,admin-payment-sync');
-        Route::post('/orders/{order}/receipts/{receipt}/resolve', [ApiAdmin\OperationsController::class, 'resolve']);
-        Route::post('/orders/{order}/refunds', [ApiAdmin\RefundController::class, 'store']);
-        Route::get('/refunds', [ApiAdmin\RefundController::class, 'index']);
-        Route::put('/refunds/{refund}', [ApiAdmin\RefundController::class, 'update']);
-        Route::get('/admins', [ApiAdmin\AdminController::class, 'index']);
-        Route::post('/admins', [ApiAdmin\AdminController::class, 'store']);
-        Route::put('/admins/{admin}', [ApiAdmin\AdminController::class, 'update']);
-        Route::get('/maintenance/health', [ApiAdmin\OperationsController::class, 'health']);
-        Route::post('/maintenance/health/acknowledge', [ApiAdmin\OperationsController::class, 'acknowledgeHealth']);
-        Route::post('/seo-deliveries/enqueue', [ApiAdmin\OperationsController::class, 'enqueueSeo'])->middleware('throttle:2,1,admin-seo-enqueue');
-        Route::get('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assets']);
-        Route::post('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assetAction']);
-        Route::get('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backups']);
-        Route::post('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backup'])->middleware('throttle:2,10,admin-shop-backup');
-        Route::get('/maintenance/backup-runs', [ApiAdmin\MaintenanceController::class, 'backupRuns']);
-        Route::get('/maintenance/backup-runs/{run}', [ApiAdmin\MaintenanceController::class, 'backupRun']);
-        Route::post('/maintenance/backup-runs/{run}/retry', [ApiAdmin\MaintenanceController::class, 'retryBackup']);
-        Route::post('/maintenance/backup-runs/{run}/acknowledge', [ApiAdmin\MaintenanceController::class, 'acknowledgeBackup']);
-        Route::get('/maintenance/backups/{name}/download', [ApiAdmin\MaintenanceController::class, 'download']);
-        Route::post('/maintenance/backups/{name}/validate', [ApiAdmin\MaintenanceController::class, 'validateBackup']);
-        Route::get('/seo-deliveries', [ApiAdmin\OperationsController::class, 'seo']);
-        Route::post('/seo-deliveries/{delivery}/retry', [ApiAdmin\OperationsController::class, 'retrySeo']);
+        Route::get('/orders', [ApiAdmin\OrderController::class, 'index'])->defaults('_admin_capability', 'orders:read');
+        Route::get('/orders/export', [ApiAdmin\OrderController::class, 'export'])->defaults('_admin_capability', 'orders:read');
+        Route::get('/orders/{order}', [ApiAdmin\OrderController::class, 'show'])->defaults('_admin_capability', 'orders:read');
+        Route::post('/orders/{order}/close', [ApiAdmin\OrderController::class, 'close'])->defaults('_admin_capability', 'orders:write');
+        Route::post('/orders/{order}/paid', [ApiAdmin\OrderController::class, 'markPaid'])->defaults('_admin_capability', 'orders.mark_paid');
+        Route::post('/orders/{order}/resend', [ApiAdmin\OrderController::class, 'resend'])->defaults('_admin_capability', 'orders:write');
+        Route::post('/orders/{order}/replacements', [ApiAdmin\OrderController::class, 'replaceCards'])->defaults('_admin_capability', 'orders.replace_cards');
+        Route::post('/orders/{order}/sync', [ApiAdmin\OperationsController::class, 'sync'])->middleware('throttle:10,1,admin-payment-sync')->defaults('_admin_capability', 'orders:write');
+        Route::post('/orders/{order}/receipts/{receipt}/resolve', [ApiAdmin\OperationsController::class, 'resolve'])->defaults('_admin_capability', 'orders:write');
+        Route::post('/orders/{order}/refunds', [ApiAdmin\RefundController::class, 'store'])->defaults('_admin_capability', 'orders.refund');
+        Route::get('/refunds', [ApiAdmin\RefundController::class, 'index'])->defaults('_admin_capability', 'refunds:read');
+        Route::put('/refunds/{refund}', [ApiAdmin\RefundController::class, 'update'])->defaults('_admin_capability', 'refunds:write');
+        Route::get('/admins', [ApiAdmin\AdminController::class, 'index'])->defaults('_admin_capability', 'accounts');
+        Route::post('/admins', [ApiAdmin\AdminController::class, 'store'])->defaults('_admin_capability', 'accounts');
+        Route::put('/admins/{admin}', [ApiAdmin\AdminController::class, 'update'])->defaults('_admin_capability', 'accounts');
+        Route::get('/maintenance/health', [ApiAdmin\OperationsController::class, 'health'])->defaults('_admin_capability', 'maintenance:read');
+        Route::post('/maintenance/health/acknowledge', [ApiAdmin\OperationsController::class, 'acknowledgeHealth'])->defaults('_admin_capability', 'health.acknowledge');
+        Route::post('/seo-deliveries/enqueue', [ApiAdmin\OperationsController::class, 'enqueueSeo'])->middleware('throttle:2,1,admin-seo-enqueue')->defaults('_admin_capability', 'content:write');
+        Route::get('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assets'])->defaults('_admin_capability', 'maintenance:read');
+        Route::post('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assetAction'])->defaults('_admin_capability', 'maintenance:write');
+        Route::get('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backups'])->defaults('_admin_capability', 'backups.read');
+        Route::post('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backup'])->middleware('throttle:2,10,admin-shop-backup')->defaults('_admin_capability', 'backups.write');
+        Route::get('/maintenance/backup-runs', [ApiAdmin\MaintenanceController::class, 'backupRuns'])->defaults('_admin_capability', 'backups.read');
+        Route::get('/maintenance/backup-runs/{run}', [ApiAdmin\MaintenanceController::class, 'backupRun'])->defaults('_admin_capability', 'backups.read');
+        Route::post('/maintenance/backup-runs/{run}/retry', [ApiAdmin\MaintenanceController::class, 'retryBackup'])->defaults('_admin_capability', 'backups.write');
+        Route::post('/maintenance/backup-runs/{run}/acknowledge', [ApiAdmin\MaintenanceController::class, 'acknowledgeBackup'])->defaults('_admin_capability', 'backups.write');
+        Route::get('/maintenance/backups/{name}/download', [ApiAdmin\MaintenanceController::class, 'download'])->defaults('_admin_capability', 'backups.read');
+        Route::post('/maintenance/backups/{name}/validate', [ApiAdmin\MaintenanceController::class, 'validateBackup'])->defaults('_admin_capability', 'backups.write');
+        Route::get('/seo-deliveries', [ApiAdmin\OperationsController::class, 'seo'])->defaults('_admin_capability', 'content:read');
+        Route::post('/seo-deliveries/{delivery}/retry', [ApiAdmin\OperationsController::class, 'retrySeo'])->defaults('_admin_capability', 'content:write');
 
         // Articles
-        Route::get('/articles/product-options', [ApiAdmin\ArticleController::class, 'productOptions']);
-        Route::get('/articles', [ApiAdmin\ArticleController::class, 'index']);
-        Route::post('/articles', [ApiAdmin\ArticleController::class, 'store']);
-        Route::get('/articles/{article}', [ApiAdmin\ArticleController::class, 'show']);
-        Route::put('/articles/{article}', [ApiAdmin\ArticleController::class, 'update']);
-        Route::delete('/articles/{article}', [ApiAdmin\ArticleController::class, 'destroy']);
+        Route::get('/articles/product-options', [ApiAdmin\ArticleController::class, 'productOptions'])->defaults('_admin_capability', 'content:read');
+        Route::get('/articles', [ApiAdmin\ArticleController::class, 'index'])->defaults('_admin_capability', 'content:read');
+        Route::post('/articles', [ApiAdmin\ArticleController::class, 'store'])->defaults('_admin_capability', 'content:write');
+        Route::get('/articles/{article}', [ApiAdmin\ArticleController::class, 'show'])->defaults('_admin_capability', 'content:read');
+        Route::put('/articles/{article}', [ApiAdmin\ArticleController::class, 'update'])->defaults('_admin_capability', 'content:write');
+        Route::delete('/articles/{article}', [ApiAdmin\ArticleController::class, 'destroy'])->defaults('_admin_capability', 'content:write');
 
         // Article Categories
-        Route::get('/article-categories', [ApiAdmin\ArticleCategoryController::class, 'index']);
-        Route::post('/article-categories', [ApiAdmin\ArticleCategoryController::class, 'store']);
-        Route::put('/article-categories/{articleCategory}', [ApiAdmin\ArticleCategoryController::class, 'update']);
-        Route::delete('/article-categories/{articleCategory}', [ApiAdmin\ArticleCategoryController::class, 'destroy']);
+        Route::get('/article-categories', [ApiAdmin\ArticleCategoryController::class, 'index'])->defaults('_admin_capability', 'content:read');
+        Route::post('/article-categories', [ApiAdmin\ArticleCategoryController::class, 'store'])->defaults('_admin_capability', 'content:write');
+        Route::put('/article-categories/{articleCategory}', [ApiAdmin\ArticleCategoryController::class, 'update'])->defaults('_admin_capability', 'content:write');
+        Route::delete('/article-categories/{articleCategory}', [ApiAdmin\ArticleCategoryController::class, 'destroy'])->defaults('_admin_capability', 'content:write');
 
         // Coupons
-        Route::get('/coupons/product-options', [ApiAdmin\CouponController::class, 'productOptions']);
-        Route::get('/coupons', [ApiAdmin\CouponController::class, 'index']);
-        Route::post('/coupons', [ApiAdmin\CouponController::class, 'store']);
-        Route::put('/coupons/{coupon}', [ApiAdmin\CouponController::class, 'update']);
-        Route::delete('/coupons/{coupon}', [ApiAdmin\CouponController::class, 'destroy']);
+        Route::get('/coupons/product-options', [ApiAdmin\CouponController::class, 'productOptions'])->defaults('_admin_capability', 'coupons:read');
+        Route::get('/coupons', [ApiAdmin\CouponController::class, 'index'])->defaults('_admin_capability', 'coupons:read');
+        Route::post('/coupons', [ApiAdmin\CouponController::class, 'store'])->defaults('_admin_capability', 'coupons:write');
+        Route::put('/coupons/{coupon}', [ApiAdmin\CouponController::class, 'update'])->defaults('_admin_capability', 'coupons:write');
+        Route::delete('/coupons/{coupon}', [ApiAdmin\CouponController::class, 'destroy'])->defaults('_admin_capability', 'coupons:write');
 
         // Blacklists
-        Route::get('/blacklists', [ApiAdmin\BlacklistController::class, 'index']);
-        Route::post('/blacklists', [ApiAdmin\BlacklistController::class, 'store']);
-        Route::put('/blacklists/{blacklist}', [ApiAdmin\BlacklistController::class, 'update']);
-        Route::delete('/blacklists/{blacklist}', [ApiAdmin\BlacklistController::class, 'destroy']);
+        Route::get('/blacklists', [ApiAdmin\BlacklistController::class, 'index'])->defaults('_admin_capability', 'blacklists:read');
+        Route::post('/blacklists', [ApiAdmin\BlacklistController::class, 'store'])->defaults('_admin_capability', 'blacklists:write');
+        Route::put('/blacklists/{blacklist}', [ApiAdmin\BlacklistController::class, 'update'])->defaults('_admin_capability', 'blacklists:write');
+        Route::delete('/blacklists/{blacklist}', [ApiAdmin\BlacklistController::class, 'destroy'])->defaults('_admin_capability', 'blacklists:write');
 
         // Logs
-        Route::get('/logs', [ApiAdmin\LogController::class, 'index']);
+        Route::get('/logs', [ApiAdmin\LogController::class, 'index'])->defaults('_admin_capability', 'logs:read');
 
         // Settings
-        Route::get('/settings', [ApiAdmin\SettingController::class, 'index']);
-        Route::post('/settings', [ApiAdmin\SettingController::class, 'update']);
+        Route::get('/settings', [ApiAdmin\SettingController::class, 'index'])->defaults('_admin_capability', 'settings:read');
+        Route::post('/settings', [ApiAdmin\SettingController::class, 'update'])->defaults('_admin_capability', 'settings:write');
         // Throttled: it opens an outbound SMTP connection per call, so it is the one
         // admin action that can be turned into an outbound flood.
         Route::post('/settings/test-email', [ApiAdmin\SettingController::class, 'testEmail'])
-            ->middleware('throttle:10,1,admin-test-email');
+            ->middleware('throttle:10,1,admin-test-email')->defaults('_admin_capability', 'settings.test_email');
     });
 });
 

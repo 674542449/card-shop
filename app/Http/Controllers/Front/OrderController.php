@@ -6,159 +6,42 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateOrderRequest;
 use App\Http\Requests\QueryOrderRequest;
 use App\Exceptions\CheckoutException;
-use App\Models\Card;
-use App\Models\Coupon;
 use App\Models\Order;
-use App\Models\Product;
-use App\Services\CheckoutPricingService;
-use App\Services\EpusdtService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 
 class OrderController extends Controller
 {
-    public function __construct(private readonly CheckoutPricingService $pricing) {}
-
     /**
      * Create a new order and initiate payment.
      */
     public function create(CreateOrderRequest $request)
     {
         $validated = $request->validated();
-
         try {
-            $order = DB::transaction(function () use ($validated, $request) {
-                // Serialize this visitor's quota check across products and browser
-                // sessions. Card locks alone run after the count and cannot prevent
-                // two requests claiming the final pending-order allowance.
-                DB::select('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', ['web-order-reservation', (string) $request->ip()]);
-                $product = Product::active()->findOrFail($validated['product_id']);
-                $quantity = (int) $validated['quantity'];
-
-                // Validate quantity range
-                if ($quantity < $product->min_quantity || $quantity > $product->max_quantity) {
-                    throw new CheckoutException("购买数量必须在 {$product->min_quantity} 到 {$product->max_quantity} 之间");
-                }
-
-                // Check stock
-                $stockCount = $product->stockCount();
-                if ($stockCount < $quantity) {
-                    throw new CheckoutException('库存不足，当前库存: ' . $stockCount);
-                }
-
-                // Creating an order locks cards out of sale until it expires, so a slow
-                // drip of orders is enough to empty the shelf without ever paying. The
-                // per-minute throttle on the route does not stop that on its own; this
-                // caps how much stock one visitor can hold at a time.
-                $held = Order::where('ip', $request->ip())
-                    ->where('status', 'pending')
-                    ->count();
-
-                if ($held >= 3) {
-                    throw new CheckoutException('您有未完成的订单，请先完成支付或等待订单过期');
-                }
-
-                $quote = $this->pricing->calculate($product, $quantity, $validated['coupon_code'] ?? null);
-                $unitPrice = $quote['unit_price'];
-                $finalAmount = $quote['total_amount'];
-                $discountAmount = $quote['discount_amount'];
-                $couponId = $quote['coupon']?->id;
-
-                // Create order
-                $order = Order::create([
-                    'order_no' => generate_order_no(),
-                    'product_id' => $product->id,
-                    'email' => $validated['email'],
-                    'query_password' => Hash::make($validated['query_password']),
-                    'query_password_key' => Order::passwordKey($validated['email'], $validated['query_password']),
-                    'quantity' => $quantity,
-                    'unit_price' => $unitPrice,
-                    'total_amount' => $finalAmount,
-                    'coupon_id' => $couponId,
-                    'discount_amount' => $discountAmount,
-                    'payment_method' => $validated['payment_method'],
-                    'status' => 'pending',
-                    'ip' => $request->ip(),
-                    'expires_at' => now()->addMinutes((int) setting('order_expire_minutes', 30)),
-                ]);
-
-                // Lock cards for this order
-                $cards = Card::where('product_id', $product->id)
-                    ->unsold()
-                    ->limit($quantity)
-                    ->lockForUpdate()
-                    ->get();
-
-                if ($cards->count() < $quantity) {
-                    throw new CheckoutException('库存不足，请稍后重试');
-                }
-
-                foreach ($cards as $card) {
-                    $card->update([
-                        'order_id' => $order->id,
-                        'status' => 'locked',
-                        'locked_at' => now(),
-                    ]);
-                }
-
-                // The conditional UPDATE is the gate, not bookkeeping. isValid() above
-                // is a check-then-act that two concurrent buyers both pass, so the limit
-                // has to be enforced by the write itself: whichever transaction loses
-                // the row lock re-evaluates the predicate against the committed row,
-                // affects zero rows, and rolls its own order back.
-                if ($couponId && bccomp($discountAmount, '0.00', 2) > 0) {
-                    $claimed = Coupon::where('id', $couponId)
-                        ->where(function ($q) {
-                            $q->where('max_uses', '<=', 0)
-                              ->orWhereColumn('used_count', '<', 'max_uses');
-                        })
-                        ->increment('used_count');
-
-                    if ($claimed === 0) {
-                        throw new CheckoutException('优惠码已达使用上限');
-                    }
-                }
-
-                return $order;
-            });
-
-            // 把这一单记到「本浏览器已验证」名下。
-            //
-            // 是这个会话亲手填了邮箱和查询密码并提交的，它当然拥有这一单——付款从网关
-            // 跳回来（epayReturn 只做展示、送回 /order/pay/{no}）后就能直接看到卡密，
-            // 不必再输一遍密码，合法买家的体验和以前一样。
-            //
-            // 这刻意取代了以前 epayReturn 依据「出站 submit URL 的签名」来授权的做法：
-            // 那个签名同时被 pay() 公开渲染给任何知道订单号的人，等于谁都能拿它去
-            // /payment/epay/return 换取别人已支付订单的卡密。所有权只认「亲手下的这一单」
-            // 和 /order/query 的邮箱+密码，不认可被公开的签名。
-            $this->grantAccess(collect([$order]));
-
-            // Initiate payment
-            $paymentUrl = $this->initiatePayment($order);
-
-            if ($paymentUrl) {
-                return redirect($paymentUrl);
+            $data = $validated + ['ip' => (string) $request->ip()];
+            $create = fn () => app(\App\Services\OrderService::class)->createOrder($data);
+            $order = !empty($validated['checkout_key'])
+                ? app(\App\Services\CheckoutIntentService::class)->reserve($validated['checkout_key'], $data, $create)
+                : $create();
+            // A replay must not restore an old proof after a shop owner changed credentials.
+            if (mb_strtolower($order->email) !== mb_strtolower($validated['email'])
+                || !Hash::check($validated['query_password'], $order->query_password)) {
+                return redirect('/order/query?order_no='.$order->order_no)->withErrors(['error' => '订单凭据已变化，请重新验证。']);
             }
-
-            return redirect('/order/pay/' . $order->order_no);
-
+            $this->grantAccess(collect([$order]));
+            if (!$order->isPending()) return redirect('/order/pay/'.$order->order_no);
+            $paymentUrl = $this->initiatePayment($order);
+            return redirect($paymentUrl ?: '/order/pay/'.$order->order_no);
         } catch (\Throwable $e) {
             Log::error('Order creation failed', ['exception_class' => $e::class]);
-
-            // Database/HTTP exceptions also inherit RuntimeException. Only explicit
-            // checkout errors have a message intended for the buyer.
-            $message = $e instanceof CheckoutException
-                ? $e->getMessage()
-                : '下单失败，请稍后重试';
-
+            $message = $e instanceof CheckoutException || $e instanceof \App\Exceptions\IdempotencyConflictException
+                ? $e->getMessage() : '下单失败，请稍后重试';
             return back()->withInput($request->except(['query_password', 'cf-turnstile-response']))->withErrors(['error' => $message]);
         }
     }
@@ -171,6 +54,7 @@ class OrderController extends Controller
         $order = Order::where('order_no', $orderNo)
             ->with('product')
             ->firstOrFail();
+        $initialization = \App\Models\PaymentAttempt::where('order_id', $order->id)->value('status');
 
         // The pay page polls this same URL every 5s waiting for the callback to land.
         // Answer it with the bare status. It used to get the full HTML page back and
@@ -183,7 +67,8 @@ class OrderController extends Controller
                 $order->refresh();
             }
 
-            return response()->json(['status' => $order->status, 'payment_review' => !$order->isPaid() && !empty($order->payment_no),
+            return response()->json(['status' => $order->status, 'payment_initialization' => $initialization,
+                'payment_review' => !$order->isPaid() && (!empty($order->payment_no) || $initialization === 'uncertain'),
                 'verification_required' => $order->isPaid() && ! $this->isVerified($order),
                 'expires_at' => $order->expires_at->toIso8601String()])
                 ->header('Cache-Control', 'no-store');
@@ -216,6 +101,12 @@ class OrderController extends Controller
                 return redirect('/order/query')
                     ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
             }
+        }
+
+        if ($order->isPending() && in_array($initialization, ['processing', 'uncertain'], true)) {
+            return theme_view('order.pay', ['order' => $order, 'expired' => true, 'paymentReview' => true,
+                'deadTitle' => $initialization === 'processing' ? '付款正在创建' : '付款创建待核对',
+                'deadReason' => '请稍后刷新原订单或联系客服核对，请勿重复下单或付款。', 'paymentUrl' => null]);
         }
 
         // Decide from the STATUS, not from isExpired(). isExpired() is
@@ -277,6 +168,13 @@ class OrderController extends Controller
         if (!$paymentUrl) {
             $paymentUrl = $this->initiatePayment($order);
 
+            $initialization = \App\Models\PaymentAttempt::where('order_id', $order->id)->value('status');
+            if (!$paymentUrl && in_array($initialization, ['processing', 'uncertain'], true)) {
+                return theme_view('order.pay', ['order' => $order, 'expired' => true, 'paymentReview' => true,
+                    'deadTitle' => $initialization === 'processing' ? '付款正在创建' : '付款创建待核对',
+                    'deadReason' => '请稍后刷新原订单或联系客服核对，请勿重复下单或付款。', 'paymentUrl' => null]);
+            }
+
             if ($paymentUrl) {
                 try {
                     // 缓存到订单失效为止即可，过期订单不需要支付链接。
@@ -310,29 +208,7 @@ class OrderController extends Controller
      */
     private function expireOrder(Order $order): void
     {
-        DB::transaction(function () use ($order) {
-            $claimed = Order::where('id', $order->id)
-                ->where('status', 'pending')
-                ->update(['status' => 'expired']);
-
-            if ($claimed === 0) {
-                return;
-            }
-
-            Card::where('order_id', $order->id)
-                ->where('status', 'locked')
-                ->update([
-                    'order_id' => null,
-                    'status' => 'unsold',
-                    'locked_at' => null,
-                ]);
-
-            // The coupon use goes back with the cards — it was claimed when the order
-            // was created, before any money moved.
-            if ($order->coupon_id && (float) $order->discount_amount > 0) {
-                Coupon::release($order->coupon_id);
-            }
-        });
+        app(\App\Services\OrderService::class)->expireOrder($order);
     }
 
     /**
@@ -637,68 +513,14 @@ class OrderController extends Controller
      */
     private function initiatePayment(Order $order): ?string
     {
-        $method = $order->payment_method;
-
-        if (in_array($method, ['alipay', 'wechat'])) {
-            return $this->initiateEpayPayment($order);
-        }
-
-        if (str_starts_with($method, 'usdt_')) {
-            return $this->initiateEpusdtPayment($order);
-        }
-
-        return null;
-    }
-
-    /**
-     * Initiate EPay payment (Alipay / WeChat).
-     */
-    private function initiateEpayPayment(Order $order): ?string
-    {
         try {
-            // Use the same server-only signing and gateway URL validation as the
-            // API checkout, rather than maintaining a second construction path.
-            $paymentUrl = app(\App\Services\EpayService::class)->createPayment(
-                $order, $order->payment_method === 'alipay' ? 'alipay' : 'wxpay',
-            );
-        } catch (\RuntimeException $e) {
-            Log::error('EPay payment unavailable', ['order_no' => $order->order_no, 'exception_class' => $e::class]);
-            return null;
-        }
-
-        session(['payment_url_' . $order->order_no => $paymentUrl]);
-
-        return $paymentUrl;
-    }
-
-    /**
-     * Initiate EPUSDT payment.
-     */
-    private function initiateEpusdtPayment(Order $order): ?string
-    {
-        // EpusdtService is the single implementation: it checks the gateway's
-        // status_code rather than only the HTTP status, and it is the one that knows
-        // how to pin the payment to the chain the buyer chose. This method used to
-        // carry a second copy that did neither.
-        $chain = str_replace('usdt_', '', (string) $order->payment_method);
-
-        try {
-            $result = app(EpusdtService::class)->createPayment($order, $chain);
+            $result = app(\App\Services\OrderService::class)->processPayment($order, $order->payment_method);
+            $url = \App\Support\SafeUrl::http($result['url'] ?? $result['payment_url'] ?? null);
+            if ($url) session(['payment_url_'.$order->order_no => $url]);
+            return $url;
         } catch (\Throwable $e) {
-            Log::error('EPUSDT payment error', ['order_no' => $order->order_no, 'exception_class' => $e::class]);
-
+            Log::error('Payment initialization unavailable', ['order_no' => $order->order_no, 'exception_class' => $e::class]);
             return null;
         }
-
-        $paymentUrl = \App\Support\SafeUrl::http($result['payment_url'] ?? null);
-        if ($paymentUrl === null) {
-            Log::error('EPUSDT returned no payment_url', ['order_no' => $order->order_no]);
-
-            return null;
-        }
-
-        session(['payment_url_' . $order->order_no => $paymentUrl]);
-
-        return $paymentUrl;
     }
 }

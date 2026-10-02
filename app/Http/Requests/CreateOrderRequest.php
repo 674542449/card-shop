@@ -21,13 +21,19 @@ class CreateOrderRequest extends FormRequest
      */
     public function rules(): array
     {
+        $input = $this->validationData();
+        $key = $input['checkout_key'] ?? null;
+        $bound = is_string($key) && is_numeric($input['product_id'] ?? null)
+            && app(\App\Services\CheckoutIntentService::class)->bound($key, (int) $input['product_id']);
         return [
-            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'product_id' => ['required', 'integer', $bound ? 'min:1' : 'exists:products,id'],
             'email' => ['required', 'email', 'max:200'],
             'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', new \App\Rules\QueryPasswordBytes],
             'quantity' => ['required', 'integer', 'min:1'],
             'coupon_code' => ['bail', 'nullable', 'string', 'max:50', new \App\Rules\BuyerText],
-            'payment_method' => ['required', \Illuminate\Validation\Rule::in(\App\Support\PaymentMethods::supported())],
+            'payment_method' => ['required', \Illuminate\Validation\Rule::in($bound
+                ? ['alipay', 'wechat', 'usdt_trc20', 'usdt_bep20', 'usdt_polygon'] : \App\Support\PaymentMethods::supported())],
+            'checkout_key' => ['nullable', 'string', 'max:110'],
             'cf-turnstile-response' => ['nullable', 'string'],
         ];
     }

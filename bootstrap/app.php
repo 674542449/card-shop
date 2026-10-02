@@ -86,6 +86,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // 那些请求。命中即封禁来源 IP 并返回 404，之后由 CheckBlacklist 挡成 403。
         $middleware->prepend(\App\Http\Middleware\TrapScanners::class);
         $middleware->prepend(\App\Http\Middleware\ProtectSensitiveResponses::class);
+        $middleware->prepend(\App\Http\Middleware\RequestCorrelation::class);
+        $middleware->append(\App\Http\Middleware\ApiErrorContractMiddleware::class);
 
         $middleware->alias([
             'admin.auth' => \App\Http\Middleware\AdminAuth::class,
@@ -96,6 +98,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions) {
         $exceptions->dontFlash(['query_password', 'cf-turnstile-response', 'code', 'new_password', 'new_password_confirmation']);
-        $exceptions->respond(fn ($response) => \App\Http\Middleware\ProtectSensitiveResponses::protect($response));
+        $exceptions->respond(fn ($response) => \App\Http\Middleware\ProtectSensitiveResponses::protect(
+            \App\Support\ApiErrorContract::apply($response)));
     })
     ->create();

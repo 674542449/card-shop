@@ -63,7 +63,7 @@ class DemoShopSeeder extends Seeder
             'articles' => Article::where('slug', 'like', 'demo-%')->count(),
             'coupons' => Coupon::where('code', 'like', 'DEMO-%')->count(),
             'orders' => Order::where('order_no', 'like', 'DEMO-%')->count(),
-            'cards' => Card::where('content', 'like', 'DEMO-%')->count(),
+            'cards' => Card::whereHas('product', fn ($q) => $q->where('slug', 'like', 'demo-%'))->count(),
         ];
         $this->command?->info(json_encode($counts, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
         $this->command?->info('Query preview: '.self::QUERY_EMAIL.' / '.self::QUERY_PASSWORD);

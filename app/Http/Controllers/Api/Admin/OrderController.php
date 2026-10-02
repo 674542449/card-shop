@@ -13,6 +13,9 @@ use App\Services\OrderCardReplacementService;
 use App\Services\RefundService;
 use App\Exceptions\CheckoutException;
 use App\Support\AdminListQuery;
+use App\Support\PaymentInitializationSummary;
+use App\Http\Resources\Admin\{AdminRecordResource, OrderResource};
+use App\Policies\AdminPolicy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,6 +41,7 @@ class OrderController extends Controller
         $request->validate([
             'status' => 'nullable|in:pending,paid,closed,expired',
             'payment_review' => 'nullable|boolean',
+            'payment_initialization' => 'nullable|in:created,processing,uncertain,succeeded,failed,none',
             'payment_method' => 'nullable|in:alipay,wechat,usdt_trc20,usdt_bep20,usdt_polygon,manual',
             'order_no' => 'nullable|string|max:100',
             'email' => 'nullable|string|max:254',
@@ -52,6 +56,13 @@ class OrderController extends Controller
         }
         if ($request->boolean('payment_review')) {
             $query->paymentReview();
+        }
+        if ($request->filled('payment_initialization')) {
+            $state = $request->input('payment_initialization');
+            $condition = fn ($attempt) => $attempt->selectRaw('1')->from('payment_attempts')
+                ->whereColumn('payment_attempts.order_id', 'orders.id')
+                ->when($state !== 'none', fn ($attempt) => $attempt->where('status', $state));
+            $state === 'none' ? $query->whereNotExists($condition) : $query->whereExists($condition);
         }
         if ($request->filled('payment_method')) {
             $query->where('payment_method', $request->payment_method);
@@ -109,9 +120,10 @@ class OrderController extends Controller
         $orders = $query->orderBy($sortBy, $sortDir)
             ->orderBy('id', $sortDir)
             ->paginate($pageSize);
+        PaymentInitializationSummary::attach($orders->items());
 
         return response()->json([
-            'data' => $orders->items(),
+            'data' => OrderResource::collection($orders->items())->resolve($request),
             'total' => $orders->total(),
         ]);
     }
@@ -134,13 +146,14 @@ class OrderController extends Controller
         $order->setAttribute('refund_enabled', $refunds->enabled());
         $order->setAttribute('refund_balance', $refunds->balance($order));
         $order->paymentReceipts->each(fn ($receipt) => $receipt->setAttribute('refund_balance', $refunds->balance($order, $receipt)));
+        PaymentInitializationSummary::attach([$order]);
 
-        return response()->json($order);
+        return response()->json((new OrderResource($order))->resolve($request));
     }
 
     public function replaceCards(Request $request, Order $order, OrderCardReplacementService $service)
     {
-        abort_unless($request->attributes->get('admin')->allows('cards', 'write'), 403, '售后换卡需要卡密修改权限。');
+        AdminPolicy::authorize($request->attributes->get('admin'), 'orders.replace_cards');
         $data = $request->validate([
             'card_ids' => 'required|array|min:1|max:200',
             'card_ids.*' => 'required|integer|min:1|max:2147483647|distinct',
@@ -151,7 +164,7 @@ class OrderController extends Controller
         } catch (CheckoutException $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }
-        return response()->json(['message' => '已完成换卡，旧卡保留售后历史且不会再次售出；当前卡密邮件已加入发送队列。', 'data' => $replacement], 201);
+        return response()->json(['message' => '已完成换卡，旧卡保留售后历史且不会再次售出；当前卡密邮件已加入发送队列。', 'data' => (new AdminRecordResource($replacement))->resolve($request)], 201);
     }
 
     public function close(Order $order, \App\Services\OrderService $service)
@@ -169,7 +182,7 @@ class OrderController extends Controller
     {
         // Closing or resending orders does not authorize dispensing stock for an
         // unpaid order. Manual receipt confirmation is a separate funds privilege.
-        abort_unless($request->attributes->get('admin')->allows('payments', 'write'), 403, '当前账户没有人工确认付款权限。');
+        AdminPolicy::authorize($request->attributes->get('admin'), 'orders.mark_paid');
         // Expired and closed are allowed on purpose. This is the repair path for a
         // payment that reached the gateway after the order lapsed and could not be
         // delivered automatically — refusing everything but 'pending' meant those
@@ -216,7 +229,7 @@ class OrderController extends Controller
 
         OperationLog::log('补发卡密', 'order', $order->id, "订单 {$order->order_no} 补发卡密");
 
-        return response()->json(['message' => '卡密邮件已加入发送队列，请刷新查看投递状态。', 'data' => $delivery], 202);
+        return response()->json(['message' => '卡密邮件已加入发送队列，请刷新查看投递状态。', 'data' => (new AdminRecordResource($delivery))->resolve(request())], 202);
     }
 
     public function export(Request $request)

@@ -1,1 +1,0 @@
-import{j as i}from"./index-B5BFjzl0.js";import{i as m,ai as o,L as r}from"./index-BtTvWeuw.js";function c({to:s,children:a,...t}){const n=m(),e=typeof s=="string"?s.split("?")[0]:s.pathname;return o(n,e)?i.jsx(r,{to:s,...t,children:a}):i.jsx("span",{className:t.className,children:a})}export{c as P};

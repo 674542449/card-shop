@@ -14,6 +14,7 @@ use App\Services\SeoQueue;
 use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Http\Resources\Admin\AdminRecordResource;
 
 class OperationsController extends Controller
 {
@@ -36,10 +37,10 @@ class OperationsController extends Controller
         DB::transaction(function () use ($order, $receipt, $data) {
             $lockedOrder = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             $lockedReceipt = PaymentReceipt::whereKey($receipt->id)->lockForUpdate()->firstOrFail();
-            abort_if(! $lockedReceipt->review_reason || $lockedReceipt->review_resolved_at, 422, '该回执已处理或无需核对。');
+            abort_if((! $lockedReceipt->review_code && ! $lockedReceipt->review_reason) || $lockedReceipt->review_resolved_at, 422, '该回执已处理或无需核对。');
             $lockedReceipt->update(['review_resolved_at' => now(), 'resolution_note' => $data['note']]);
-            if (! $lockedOrder->paymentReceipts()->whereNotNull('review_reason')->whereNull('review_resolved_at')->exists()) {
-                $lockedOrder->update(['payment_review_reason' => null]);
+            if (! $lockedOrder->paymentReceipts()->unresolvedReview()->exists()) {
+                $lockedOrder->update(['payment_review_reason' => null, 'payment_review_code' => null]);
             }
         });
         OperationLog::log('完成付款核对', 'order', $order->id, $data['note']);
@@ -56,7 +57,8 @@ class OperationsController extends Controller
     {
         $size = AdminListQuery::pageSize($request, 20, ['status' => 'nullable|in:pending,processing,sent,failed']);
 
-        return response()->json(SeoDelivery::when($request->filled('status'), fn ($q) => $q->where('status', $request->status))->orderByDesc('id')->paginate($size));
+        return response()->json(SeoDelivery::when($request->filled('status'), fn ($q) => $q->where('status', $request->status))->orderByDesc('id')->paginate($size)
+            ->through(fn ($delivery) => (new AdminRecordResource($delivery))->resolve($request)));
     }
 
     public function retrySeo(SeoDelivery $delivery)

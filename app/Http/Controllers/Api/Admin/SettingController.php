@@ -9,6 +9,7 @@ use App\Services\NotificationService;
 use App\Support\SafeUrl;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Http\Resources\Admin\SettingsResource;
 
 class SettingController extends Controller
 {
@@ -22,14 +23,7 @@ class SettingController extends Controller
      * that could read the admin page could read them all. The operator can still tell
      * a configured secret from an empty one, which is the only thing they need to see.
      */
-    private const SECRET_KEYS = [
-        'epay_merchant_key',
-        'epusdt_api_token',
-        'turnstile_secret_key',
-        'telegram_bot_token',
-        'mail_password',
-        'baidu_push_token',
-    ];
+    private const SECRET_KEYS = \App\Security\SecretSettings::KEYS;
 
     /** Sent in place of a stored secret, and refused as an incoming value. */
     private const MASK = '********';
@@ -49,20 +43,7 @@ class SettingController extends Controller
 
     public function index()
     {
-        $settings = [];
-        foreach (Setting::all() as $setting) {
-            $settings[$setting->key] = in_array($setting->key, self::SECRET_KEYS, true)
-                && (string) $setting->value !== ''
-                ? self::MASK
-                : $setting->value;
-        }
-
-        // 前台模板是「磁盘上有什么」决定的，不是设置项能穷举的。把可选值一起带回去，
-        // 后台就不用再发一次请求，也不会出现下拉框里列着一个已经被删掉的模板。
-        // 下划线开头表示这不是设置项：update() 的白名单里没有它，写不进数据库。
-        $settings['_available_themes'] = themes_available();
-
-        return response()->json($settings);
+        return response()->json((new SettingsResource(Setting::all()))->resolve(request()));
     }
 
     public function update(Request $request)

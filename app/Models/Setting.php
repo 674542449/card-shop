@@ -4,6 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use App\Models\Builders\SettingQueryBuilder;
+use App\Security\SecretCipher;
+use App\Security\SecretSettings;
 
 class Setting extends Model
 {
@@ -15,15 +18,46 @@ class Setting extends Model
         'value',
     ];
 
+    // Settings endpoints build an explicit masked projection. Generic model JSON
+    // must never serialize a credential through the value accessor.
+    protected $hidden = ['value'];
+
+    public function newEloquentBuilder($query): SettingQueryBuilder
+    {
+        return new SettingQueryBuilder($query);
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (Setting $setting): void {
+            $raw = $setting->attributes['value'] ?? null;
+            if (SecretSettings::contains((string) $setting->key) && $raw !== null && $raw !== ''
+                && ! SecretCipher::isEncrypted((string) $raw)) {
+                $setting->attributes['value'] = SecretSettings::encode($setting->key, $raw);
+            }
+        });
+        static::saved(fn () => SecretSettings::forgetCaches());
+        static::deleted(fn () => SecretSettings::forgetCaches());
+    }
+
+    public function getValueAttribute(mixed $value): mixed
+    {
+        return SecretSettings::decode((string) ($this->attributes['key'] ?? ''), $value);
+    }
+
+    public function setValueAttribute(mixed $value): void
+    {
+        $this->attributes['value'] = SecretSettings::encode((string) ($this->attributes['key'] ?? ''), $value);
+    }
+
     /**
      * Get a setting value by key, with Redis caching.
      */
     public static function get(string $key, mixed $default = null): mixed
     {
-        return Cache::store('redis')->rememberForever(
-            "setting:{$key}",
-            fn () => static::where('key', $key)->value('value') ?? $default
-        );
+        $stored = settings_all()[$key] ?? null;
+
+        return $stored === null ? $default : SecretSettings::decode($key, $stored);
     }
 
     /**
@@ -36,14 +70,6 @@ class Setting extends Model
             ['value' => $value, 'group' => $group]
         );
 
-        try {
-            Cache::forget("setting:{$key}");
-        } catch (\Throwable $e) {
-            // Unreachable cache is already effectively cleared.
-        }
-
-        // The settings map read by the setting() helper must be invalidated too,
-        // otherwise the site serves the old value for up to an hour after a save.
-        settings_forget();
+        SecretSettings::forgetCaches();
     }
 }

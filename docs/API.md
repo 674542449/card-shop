@@ -65,6 +65,8 @@ curl -X POST -H "Authorization: Bearer YOUR_TOKEN" \
 `expires_at`、`payment_url` 和 `trade_id`。`payment_url` 为支付链接，`trade_id` 随网关返回，可能为 `null` 或空字符串。201 表示订单创建及支付发起成功，
 卡密交付以服务端确认有效付款后的查单结果为准。
 
+创建仍在执行或远端结果不确定时返回 **HTTP 202**，`data.order_no` 指向已经预留的原订单，`data.payment_initialization` 为 `processing` 或 `uncertain`。202不是付款成功，也不是下单参数失败，不保存为最终幂等响应。`processing` 可以同键同参数稍后重试；`uncertain` 须查询原订单或联系客服核对，服务器不会自动再次创建付款，不要换新键重复购买或付款。明确网关拒绝才会保存失败响应。
+
 查单示例（仅示例凭据）：
 
 ```bash
@@ -83,6 +85,7 @@ curl -X POST -H "Authorization: Bearer YOUR_TOKEN" \
 | `status` | `pending` 待付款、`paid` 已付款、`expired` 已过期、`closed` 已关闭 |
 | `cards` | 仅 `paid` 时提供卡密数组；售后换卡后为当前交付卡密 |
 | `payment_review` | 是否存在待人工核对的付款，不应据此再次付款 |
+| `payment_initialization` | 付款创建记录状态；`processing` / `uncertain` 时应先核对原订单，不重复创建 |
 | `payment_received_amount` / `payment_received_at` / `payment_received_currency` | 已记录人民币收款信息，不代替订单交付状态 |
 | `refund_enabled` | 店主是否开放新退款申请 |
 | `refund_balance` | 原付款的 `maximum` 总额度、`reserved` 申请预占、`completed` 已退、`available` 剩余额度 |

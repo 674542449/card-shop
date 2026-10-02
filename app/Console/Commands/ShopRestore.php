@@ -33,14 +33,25 @@ class ShopRestore extends Command
                 return self::FAILURE;
             }
             if ($database === config('database.connections.pgsql.database')) {
-                $this->line('恢复前备份：'.$service->create());
+                if (! app()->isDownForMaintenance()) {
+                    $this->error('正式库恢复须先 artisan down 并暂停全部写入进程；当前服务未停写，已拒绝。');
+                    return self::FAILURE;
+                }
             }
-            $service->restore($file, $database, (bool) $this->option('include-config'));
+            $service->restore($file, $database, (bool) $this->option('include-config'), true);
             $this->info('恢复完成。正式库恢复后请清理配置缓存并重启应用和工作进程。');
 
             return self::SUCCESS;
-        } catch (\Throwable) {
-            $this->error('备份校验或恢复失败，请检查备份文件、PostgreSQL 客户端、目标库和磁盘空间。');
+        } catch (\Throwable $e) {
+            if ($e instanceof \App\Exceptions\MaintenanceWriteBlockedException) {
+                $this->error($e->getMessage());
+            } elseif ($e instanceof \App\Exceptions\SecretStorageException) {
+                $this->error('独立密钥无法读取，请检查对应密钥文件；正式库保持维护模式。');
+            } elseif ($e instanceof \RuntimeException && preg_match('/^(生产运行配置为外部只读挂载|备份对应的独立密钥|备份独立密钥版本标识|发现未结束的恢复|恢复失败且部分文件撤销)/u', $e->getMessage())) {
+                $this->error($e->getMessage());
+            } else {
+                $this->error('备份校验或恢复失败，请检查备份文件、PostgreSQL 客户端、目标库和磁盘空间；正式库保持维护模式。');
+            }
 
             return self::FAILURE;
         }

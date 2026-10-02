@@ -1,0 +1,180 @@
+name: Validate and build release
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: cardshop_testing
+          POSTGRES_USER: cardshop_test
+          POSTGRES_PASSWORD: ci-isolated-fixture-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U cardshop_test -d cardshop_testing"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      APP_ENV: testing
+      APP_KEY: base64:QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_DATABASE: cardshop_testing
+      DB_USERNAME: cardshop_test
+      DB_PASSWORD: ci-isolated-fixture-password
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: "6379"
+      REDIS_DB: "10"
+      REDIS_CACHE_DB: "11"
+      REDIS_PREFIX: cardshop_testing_
+      CACHE_STORE: redis
+      SESSION_DRIVER: array
+      MAIL_MAILER: log
+      SHOP_RUN_RESTORE_INTEGRATION: "1"
+      PG_DUMP_BINARY: /usr/lib/postgresql/17/bin/pg_dump
+      PG_RESTORE_BINARY: /usr/lib/postgresql/17/bin/pg_restore
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_pgsql, pgsql, redis, bcmath, intl, zip, openssl
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: admin-frontend/package-lock.json
+      - name: Locked dependencies and test-only external keyring
+        run: |
+          composer install --prefer-dist --no-interaction --no-progress
+          npm ci --prefix admin-frontend --no-audit --no-fund
+          mkdir -p "$RUNNER_TEMP/cardshop-secrets"
+          chmod 700 "$RUNNER_TEMP/cardshop-secrets"
+          echo "SHOP_KEYRING_FILE=$RUNNER_TEMP/cardshop-secrets/shop-keyring.json" >> "$GITHUB_ENV"
+          echo "SHOP_TEST_KEYRING_FILE=$RUNNER_TEMP/cardshop-secrets/shop-keyring.json" >> "$GITHUB_ENV"
+          php artisan secrets:init --path="$RUNNER_TEMP/cardshop-secrets/shop-keyring.json"
+      - name: PostgreSQL 17 restore-test client
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl --fail https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
+          echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt noble-pgdg main' | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+      - name: Committed admin artifacts
+        run: |
+          php scripts/validate-admin-assets.php
+          test "$(sh docker/php/spa-stamp.sh)" = "$(tr -d '\r\n' < public/admin-assets/.build-stamp)"
+      - name: PHP tests on isolated database and Redis namespaces
+        run: php vendor/bin/phpunit
+      - name: JavaScript and shell regressions
+        run: |
+          npm test --prefix admin-frontend
+          node --test tests/js/*.test.cjs
+          bash tests/shell/composer-install.test.sh
+          for script in install.sh scripts/*.sh docker/php/*.sh; do bash -n "$script"; done
+      - name: Production assets and dependency audits
+        run: |
+          npm run build --prefix admin-frontend
+          sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
+          php scripts/validate-admin-assets.php
+          composer audit --locked
+          npm audit --prefix admin-frontend --audit-level=high
+      - name: Validate production compose contract without real credentials
+        env:
+          SHOP_ENV_FILE: /tmp/cardshop-ci.env
+          SHOP_SECRETS_DIR: /tmp/cardshop-ci-secrets
+          APP_KEY: base64:QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=
+          DB_PASSWORD: ci-isolated-fixture-password
+        run: |
+          touch "$SHOP_ENV_FILE"
+          mkdir -p "$SHOP_SECRETS_DIR"
+          docker compose -f docker-compose.production.yml config --quiet
+
+  image:
+    needs: verify
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build application runtime
+        id: app
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/php/Dockerfile.production
+          target: runtime
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,mode=max,scope=runtime
+          provenance: false
+      - name: Build Nginx static assets
+        id: web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/php/Dockerfile.production
+          target: web
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ghcr.io/${{ github.repository }}-nginx:ci-${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+          provenance: false
+      - name: Production first installation and restart acceptance
+        env:
+          SHOP_APP_IMAGE: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
+          SHOP_WEB_IMAGE: ghcr.io/${{ github.repository }}-nginx:ci-${{ github.sha }}
+        run: bash scripts/ci-production-smoke.sh
+      - uses: docker/login-action@v3
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish the exact smoke-tested release images
+        id: publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          IMAGE_ROOT: ghcr.io/${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          docker tag "$IMAGE_ROOT:ci-$GITHUB_SHA" "$IMAGE_ROOT:$RELEASE_TAG"
+          docker tag "$IMAGE_ROOT-nginx:ci-$GITHUB_SHA" "$IMAGE_ROOT-nginx:$RELEASE_TAG"
+          docker push "$IMAGE_ROOT:$RELEASE_TAG"
+          docker push "$IMAGE_ROOT-nginx:$RELEASE_TAG"
+          APP_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_ROOT:$RELEASE_TAG")"
+          WEB_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_ROOT-nginx:$RELEASE_TAG")"
+          echo "app=$APP_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "web=$WEB_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "Application: $APP_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          echo "Nginx: $WEB_DIGEST" >> "$GITHUB_STEP_SUMMARY"

@@ -55,7 +55,8 @@ class ShopBackupService
             $progress && $progress(5, '准备数据库导出');
             $this->databaseProcess([(string) env('PG_DUMP_BINARY', 'pg_dump'), '--format=custom', '--no-owner', '--no-privileges', '--file='.$stage.'/database.dump'], null, $progress);
             $archive = new \PharData($file);
-            $manifest = ['version' => 1, 'created_at' => now()->toIso8601String(), 'database' => config('database.connections.pgsql.database'), 'files' => []];
+            $manifest = ['version' => 1, 'created_at' => now()->toIso8601String(), 'database' => config('database.connections.pgsql.database'),
+                'secrets' => app(\App\Security\SecretCipher::class)->metadata(), 'files' => []];
             $inputs = $this->backupInputs($stage);
             $total = 0;
             foreach ($inputs as $full) {
@@ -109,7 +110,16 @@ class ShopBackupService
     protected function backupInputs(string $stage): array
     {
         $inputs = ['database.dump' => $stage.'/database.dump'];
-        if (is_file(base_path('.env'))) {
+        $runtimeConfig = (string) env('SHOP_RUNTIME_ENV_FILE', '');
+        if ($runtimeConfig !== '') {
+            if (! is_file($runtimeConfig) || ! is_readable($runtimeConfig) || is_link($runtimeConfig)) {
+                throw new RuntimeException('生产运行配置挂载文件不可读，拒绝不完整备份。');
+            }
+            if (realpath($runtimeConfig) === realpath((string) config('secrets.keyring_file'))) {
+                throw new RuntimeException('独立密钥文件不能作为运行配置加入商城备份。');
+            }
+            $inputs['config.env'] = $runtimeConfig;
+        } elseif (is_file(base_path('.env'))) {
             $inputs['config.env'] = base_path('.env');
         }
         foreach (Storage::disk('public')->allFiles() as $path) {
@@ -265,36 +275,166 @@ class ShopBackupService
         return $manifest;
     }
 
-    public function restore(string $file, string $database, bool $includeConfig = false): void
+    public function restore(string $file, string $database, bool $includeConfig = false, bool $safetyBackup = false): void
     {
         if (! preg_match('/^[A-Za-z0-9_]{1,63}$/D', $database)) {
             throw new RuntimeException('目标数据库名称不允许。');
         }
         $manifest = $this->validate($file);
+        if (isset($manifest['secrets'])) {
+            $current = app(\App\Security\SecretCipher::class)->metadata();
+            if (! is_array($manifest['secrets']) || ! is_string($manifest['secrets']['keyring_id'] ?? null)
+                || ! hash_equals($current['keyring_id'], $manifest['secrets']['keyring_id'])
+                || ! is_array($manifest['secrets']['version_ids'] ?? null)
+                || array_diff($manifest['secrets']['version_ids'], $current['version_ids'])) {
+                throw new RuntimeException('备份对应的独立密钥文件或历史密钥版本缺失，拒绝恢复。');
+            }
+            if (array_key_exists('version_fingerprints', $manifest['secrets'])
+                && (! is_array($manifest['secrets']['version_fingerprints'])
+                    || array_diff($manifest['secrets']['version_ids'], array_keys($manifest['secrets']['version_fingerprints'])))) {
+                throw new RuntimeException('备份独立密钥版本标识无效，拒绝恢复。');
+            }
+            foreach ($manifest['secrets']['version_fingerprints'] ?? [] as $version => $fingerprint) {
+                if (! is_string($fingerprint) || ! isset($current['version_fingerprints'][$version])
+                    || ! hash_equals($current['version_fingerprints'][$version], $fingerprint)) {
+                    throw new RuntimeException('备份对应的独立密钥版本不匹配，拒绝恢复。');
+                }
+            }
+        }
+        $live = $database === config('database.connections.pgsql.database');
+        if ($live && $includeConfig && (string) env('SHOP_RUNTIME_ENV_FILE', '') !== '') {
+            throw new RuntimeException('生产运行配置为外部只读挂载；须停服务后由运维离线恢复配置，不能通过应用覆盖。');
+        }
+        $operation = function () use ($file, $database, $includeConfig, $manifest, $live, $safetyBackup) {
+            if ($live && $safetyBackup) { $this->create(); }
+            $this->restorePrepared($file, $database, $includeConfig, $manifest, $live);
+        };
+        if ($live) {
+            app(MaintenanceWriteBarrier::class)->restore($operation);
+        } else {
+            $operation();
+        }
+    }
+
+    private function restorePrepared(string $file, string $database, bool $includeConfig, array $manifest, bool $live): void
+    {
+        if ($live && (glob($this->directory().'/restore-*', GLOB_ONLYDIR) ?: []) !== []) {
+            throw new RuntimeException('发现未结束的恢复暂存目录，请先核对恢复计划和原文件，保持维护状态。');
+        }
         $archive = new \PharData($file);
         $stage = $this->directory().'/restore-'.Str::uuid();
         mkdir($stage, 0700, true);
+        $prepared = [];
+        $published = [];
+        $retainStage = false;
         try {
-            copy($archive['database.dump']->getPathname(), $stage.'/database.dump');
-            $this->databaseProcess([(string) env('PG_RESTORE_BINARY', 'pg_restore'), '--clean', '--if-exists', '--no-owner', '--no-privileges', '--exit-on-error', '--dbname='.$database, $stage.'/database.dump'], $database);
-            // Restore validation into a separate database must never touch live files.
-            if ($database === config('database.connections.pgsql.database')) {
+            if (! copy($archive['database.dump']->getPathname(), $stage.'/database.dump')) {
+                throw new RuntimeException('无法准备数据库恢复文件。');
+            }
+            // Prepare every file before touching either live files or the target database.
+            if ($live) {
                 foreach ($manifest['files'] as $path => $meta) {
                     if (str_starts_with($path, 'uploads/') || str_starts_with($path, 'private/')) {
-                        $stream = fopen($archive[$path]->getPathname(), 'rb');
                         $disk = str_starts_with($path, 'uploads/') ? 'public' : 'local';
-                        Storage::disk($disk)->put(substr($path, 8), $stream);
-                        fclose($stream);
+                        $destination = Storage::disk($disk)->path(substr($path, 8));
+                        $this->assertDestination($destination, Storage::disk($disk)->path(''));
+                        $prepared[] = $this->prepareRestoreFile($archive[$path]->getPathname(), $destination, $stage, count($prepared), $disk === 'public' ? 0644 : 0600);
                     }
                 }
                 if ($includeConfig && isset($archive['config.env'])) {
-                    file_put_contents(base_path('.env'), $archive['config.env']->getContent());
+                    $prepared[] = $this->prepareRestoreFile($archive['config.env']->getPathname(), base_path('.env'), $stage, count($prepared), 0640);
                 }
             }
+            if (! file_put_contents($stage.'/restore-plan.json', json_encode(['database' => $database,
+                'live' => $live, 'files' => $prepared], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR))) {
+                throw new RuntimeException('无法保留恢复计划。');
+            }
+            chmod($stage.'/restore-plan.json', 0600);
+            // The exclusive barrier keeps HTTP/worker readers away during publication.
+            // Original files stay in the private stage until the database commits.
+            foreach ($prepared as $item) {
+                $this->publishRestoreFile($item['new'], $item['destination'], $item['mode']);
+                $published[] = $item;
+            }
+            $this->databaseProcess([(string) env('PG_RESTORE_BINARY', 'pg_restore'), '--clean', '--if-exists',
+                '--no-owner', '--no-privileges', '--exit-on-error', '--single-transaction',
+                '--dbname='.$database, $stage.'/database.dump'], $database);
+        } catch (\Throwable $failure) {
+            foreach (array_reverse($published) as $item) {
+                try {
+                    if ($item['existed']) {
+                        $this->publishRestoreFile($item['old'], $item['destination'], $item['old_mode']);
+                    } elseif (is_file($item['destination']) && ! unlink($item['destination'])) {
+                        throw new RuntimeException('无法撤销新恢复文件。');
+                    }
+                } catch (\Throwable) {
+                    $retainStage = true;
+                }
+            }
+            if ($retainStage) {
+                throw new RuntimeException('恢复失败且部分文件撤销未完成；原文件已保存在私有 restore 目录，保持维护模式并联系运维。', 0, $failure);
+            }
+            throw $failure;
         } finally {
-            if (is_file($stage.'/database.dump')) {
-                unlink($stage.'/database.dump');
-            } rmdir($stage);
+            if (! $retainStage) {
+                foreach (glob($stage.'/*') ?: [] as $temporary) {
+                    if (is_file($temporary)) { unlink($temporary); }
+                }
+                rmdir($stage);
+            }
+        }
+    }
+
+    private function assertDestination(string $destination, string $root): void
+    {
+        $resolvedRoot = realpath($root);
+        if (! $resolvedRoot || is_link($destination)) {
+            throw new RuntimeException('恢复目标目录不允许。');
+        }
+        $parent = dirname($destination);
+        while (! file_exists($parent)) {
+            $next = dirname($parent);
+            if ($next === $parent) { throw new RuntimeException('恢复目标目录不允许。'); }
+            $parent = $next;
+        }
+        $resolvedParent = realpath($parent);
+        $normalizedRoot = strtolower(str_replace('\\', '/', $resolvedRoot));
+        $normalizedParent = strtolower(str_replace('\\', '/', $resolvedParent ?: ''));
+        if ($normalizedParent !== $normalizedRoot && ! str_starts_with($normalizedParent.'/', rtrim($normalizedRoot, '/').'/')) {
+            throw new RuntimeException('恢复路径越过存储目录。');
+        }
+    }
+
+    private function prepareRestoreFile(string $source, string $destination, string $stage, int $index, int $mode): array
+    {
+        if (is_link($destination) || (file_exists($destination) && ! is_file($destination))) {
+            throw new RuntimeException('恢复目标不是普通文件。');
+        }
+        $new = $stage.'/new-'.$index;
+        $old = $stage.'/old-'.$index;
+        if (! copy($source, $new)) { throw new RuntimeException('无法准备恢复文件。'); }
+        chmod($new, 0600);
+        $existed = is_file($destination);
+        $old_mode = $existed ? fileperms($destination) & 0777 : $mode;
+        if ($existed && ! copy($destination, $old)) { throw new RuntimeException('无法保留原文件。'); }
+        if ($existed) { chmod($old, 0600); }
+        return compact('destination', 'new', 'old', 'existed', 'mode', 'old_mode');
+    }
+
+    /** Atomic per-file publication; overridable for isolated failure-injection tests. */
+    protected function publishRestoreFile(string $source, string $destination, int $mode = 0600): void
+    {
+        if (! is_dir(dirname($destination)) && ! mkdir(dirname($destination), 0770, true)) {
+            throw new RuntimeException('无法创建恢复目录。');
+        }
+        $temporary = dirname($destination).'/.restore-'.Str::uuid();
+        try {
+            if (! copy($source, $temporary)) { throw new RuntimeException('无法写入恢复文件。'); }
+            // Public uploads must remain readable by the separate nginx container.
+            chmod($temporary, $mode);
+            if (! rename($temporary, $destination)) { throw new RuntimeException('无法发布恢复文件。'); }
+        } finally {
+            if (is_file($temporary)) { unlink($temporary); }
         }
     }
 }

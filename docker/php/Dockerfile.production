@@ -1,0 +1,63 @@
+ARG PHP_IMAGE=php:8.3-fpm-bookworm
+ARG COMPOSER_IMAGE=composer:2.8
+ARG NODE_IMAGE=node:24-bookworm-slim
+ARG NGINX_IMAGE=nginx:stable
+
+FROM ${NODE_IMAGE} AS frontend
+WORKDIR /src
+COPY admin-frontend/package.json admin-frontend/package-lock.json ./admin-frontend/
+RUN cd admin-frontend && npm ci --no-audit --no-fund
+COPY admin-frontend ./admin-frontend
+COPY docker/php/spa-stamp.sh ./docker/php/spa-stamp.sh
+RUN cd admin-frontend && npm run build && cd /src \
+    && sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
+
+FROM ${PHP_IMAGE} AS php-base
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev libzip-dev libicu-dev ca-certificates curl \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl --fail -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-17 \
+    && docker-php-ext-install pdo_pgsql pgsql zip intl bcmath opcache \
+    && pecl install redis-6.2.0 && docker-php-ext-enable redis \
+    && rm -rf /var/lib/apt/lists/*
+RUN { echo 'opcache.enable=1'; echo 'opcache.validate_timestamps=0'; \
+    echo 'opcache.memory_consumption=128'; echo 'opcache.max_accelerated_files=20000'; \
+    echo 'memory_limit=256M'; echo 'expose_php=Off'; \
+    echo 'upload_max_filesize=20M'; echo 'post_max_size=20M'; } > /usr/local/etc/php/conf.d/production.ini
+
+FROM ${COMPOSER_IMAGE} AS composer-tool
+FROM php-base AS application-build
+COPY --from=composer-tool /usr/bin/composer /usr/local/bin/composer
+WORKDIR /var/www/html
+COPY . .
+COPY --from=frontend /src/public/admin-assets ./public/admin-assets
+RUN mkdir -p bootstrap/cache storage/framework/cache/purifier storage/framework/views storage/logs \
+    && composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader \
+    && php scripts/validate-admin-assets.php \
+    && mkdir -p build/views storage/app/public storage/app/private storage/framework/cache/data \
+      storage/framework/sessions storage/framework/views storage/logs \
+    && VIEW_COMPILED_PATH=/var/www/html/build/views php artisan view:cache \
+    && find build/views -name '*.php' -exec php -l {} \; \
+    && rm -f public/storage && ln -s /var/www/html/storage/app/public public/storage \
+    && chown -R www-data:www-data storage bootstrap/cache build
+
+FROM php-base AS runtime
+WORKDIR /var/www/html
+COPY --from=application-build --chown=www-data:www-data /var/www/html /var/www/html
+COPY docker/php/production-entrypoint.sh /usr/local/bin/production-entrypoint
+COPY docker/php/production-pool.conf /usr/local/etc/php-fpm.d/zz-production.conf
+RUN chmod 755 /usr/local/bin/production-entrypoint
+ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr \
+    VIEW_COMPILED_PATH=/var/www/html/build/views \
+    SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json \
+    PHP_FPM_MAX_CHILDREN=5 PHP_FPM_START_SERVERS=2 PHP_FPM_MIN_SPARE=1 PHP_FPM_MAX_SPARE=3
+USER www-data
+EXPOSE 9000
+ENTRYPOINT ["production-entrypoint"]
+CMD ["php-fpm"]
+
+FROM ${NGINX_IMAGE} AS web
+COPY --from=application-build /var/www/html/public /var/www/html/public
+COPY docker/nginx/default.conf /etc/nginx/conf.d/default.conf

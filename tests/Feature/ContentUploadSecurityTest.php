@@ -291,7 +291,8 @@ class ContentUploadSecurityTest extends TestCase
             app(EpusdtService::class)->createPayment($order, 'trc20');
             $this->fail('A redirect is not a successful gateway response.');
         } catch (\RuntimeException $e) {
-            $this->assertSame('USDT支付接口请求失败', $e->getMessage());
+            $this->assertInstanceOf(\App\Exceptions\PaymentUncertainException::class, $e);
+            $this->assertStringContainsString('付款创建结果待核对', $e->getMessage());
         }
         Http::assertSentCount(1);
         $this->assertSame('pending', $order->fresh()->status);
@@ -313,7 +314,8 @@ class ContentUploadSecurityTest extends TestCase
             app(EpusdtService::class)->createPayment($order, 'trc20');
             $this->fail('An active or invalid payment URL must be rejected.');
         } catch (\RuntimeException $e) {
-            $this->assertSame('USDT支付接口返回的支付链接无效', $e->getMessage());
+            $this->assertInstanceOf(\App\Exceptions\PaymentUncertainException::class, $e);
+            $this->assertStringStartsWith('USDT支付接口返回的支付链接无效', $e->getMessage());
         }
         $this->assertNull(Cache::get('payment_url:'.$order->order_no));
         $this->assertNull($order->fresh()->gateway_trade_no);

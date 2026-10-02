@@ -10,12 +10,14 @@ use App\Services\BackupQueue;
 use App\Services\ShopBackupService;
 use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
+use App\Http\Resources\Admin\AdminRecordResource;
+use App\Policies\AdminPolicy;
 
 class MaintenanceController extends Controller
 {
     private function owner(): void
     {
-        abort_unless(request()->attributes->get('admin')?->role === 'owner', 403);
+        AdminPolicy::authorize(request()->attributes->get('admin'), 'backups.read');
     }
 
     public function assets(AssetMaintenanceService $service)
@@ -43,7 +45,7 @@ class MaintenanceController extends Controller
         rsort($files);
 
         return response()->json(['data' => array_map(fn ($f) => ['name' => basename($f), 'size' => filesize($f), 'created_at' => date(DATE_ATOM, filemtime($f))], $files),
-            'runs' => BackupRun::orderByDesc('id')->limit(20)->get(), 'health' => app(\App\Services\HeartbeatService::class)->backupHealth()]);
+            'runs' => AdminRecordResource::collection(BackupRun::orderByDesc('id')->limit(20)->get())->resolve(request()), 'health' => app(\App\Services\HeartbeatService::class)->backupHealth()]);
     }
 
     private function file(string $name, ShopBackupService $service): string
@@ -64,20 +66,20 @@ class MaintenanceController extends Controller
             return response()->json(['message' => '暂时无法提交备份任务，请稍后重试。'], 503);
         }
         OperationLog::log('提交完整备份', 'backup_run', $run->id, '备份任务已入队');
-        return response()->json(['message' => '备份任务已提交，页面将显示进度。', 'run' => $run], 202);
+        return response()->json(['message' => '备份任务已提交，页面将显示进度。', 'run' => (new AdminRecordResource($run))->resolve(request())], 202);
     }
 
     public function backupRuns(Request $request)
     {
         $this->owner();
         $size = AdminListQuery::pageSize($request);
-        return response()->json(BackupRun::orderByDesc('id')->paginate($size));
+        return response()->json(BackupRun::orderByDesc('id')->paginate($size)->through(fn ($run) => (new AdminRecordResource($run))->resolve($request)));
     }
 
     public function backupRun(BackupRun $run)
     {
         $this->owner();
-        return response()->json($run);
+        return response()->json((new AdminRecordResource($run))->resolve(request()));
     }
 
     public function retryBackup(BackupRun $run, BackupQueue $queue)
@@ -89,7 +91,7 @@ class MaintenanceController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
         OperationLog::log('重试完整备份', 'backup_run', $run->id, '备份任务重新入队');
-        return response()->json(['message' => '备份任务已重新提交。', 'run' => $updated], 202);
+        return response()->json(['message' => '备份任务已重新提交。', 'run' => (new AdminRecordResource($updated))->resolve(request())], 202);
     }
 
     public function acknowledgeBackup(BackupRun $run)

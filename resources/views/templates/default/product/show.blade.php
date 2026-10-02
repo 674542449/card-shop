@@ -158,6 +158,7 @@
                 @if($buyable)
                 <form class="pd-form" action="/order/create" method="POST" data-guard>
                     @csrf
+                <input type="hidden" name="checkout_key" value="{{ old('checkout_key', app(\App\Services\CheckoutIntentService::class)->issue($product->id)) }}">
                     <input type="hidden" name="product_id" id="product_id" value="{{ $product->id }}">
                     <input type="hidden" id="product-base-price" value="{{ $product->price }}">
                     <input type="hidden" id="wholesale-prices-data" value="{{ $product->wholesalePrices->toJson() }}">

@@ -25,6 +25,7 @@ export default function ProductCards() {
     {
       title: '卡密内容',
       dataIndex: 'content',
+      fieldProps: { placeholder: '输入完整卡密，精确匹配' },
       width: 300,
       // ProTable's render receives the already-rendered node first, not the raw value.
       // With ellipsis:true that node is a Tooltip element, so calling a string method

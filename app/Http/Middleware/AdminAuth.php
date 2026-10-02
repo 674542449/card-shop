@@ -3,6 +3,8 @@
 namespace App\Http\Middleware;
 
 use App\Models\Admin;
+use App\Policies\AdminPolicy;
+use App\Support\ApiErrorContract;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -15,7 +17,7 @@ class AdminAuth
 
         if (!$adminId) {
             if ($request->expectsJson()) {
-                return response()->json(['message' => '未登录'], 401);
+                return response()->json(['message' => '未登录', 'code' => 'authentication_required'], 401);
             }
             return redirect('/' . admin_path() . '/login');
         }
@@ -25,7 +27,7 @@ class AdminAuth
         if (!$admin || !$admin->is_active) {
             $request->session()->forget('admin_id');
             if ($request->expectsJson()) {
-                return response()->json(['message' => '未登录'], 401);
+                return response()->json(['message' => '未登录', 'code' => 'authentication_required'], 401);
             }
             return redirect('/' . admin_path() . '/login');
         }
@@ -46,7 +48,7 @@ class AdminAuth
             ($admin->two_factor_revision !== null && !hash_equals((string) $admin->two_factor_revision, (string) $request->session()->get('admin_factor')))) {
             $request->session()->forget(['admin_id', 'admin_username', 'admin_pw']);
             if ($request->expectsJson()) {
-                return response()->json(['message' => '登录状态已失效，请重新登录。'], 401);
+                return response()->json(['message' => '登录状态已失效，请重新登录。', 'code' => 'authentication_required'], 401);
             }
             return redirect('/' . admin_path() . '/login');
         }
@@ -61,40 +63,19 @@ class AdminAuth
             return response()->json(['message' => '管理员会话或权限已变化，请重新加载页面。', 'code' => 'admin_context_changed'], 409)
                 ->header('X-Admin-Context', $context);
         }
-        // Authorize the route Laravel matched, never the caller's raw path. The
-        // router decodes percent-encoded segments, while Request::path() does not:
-        // /%61dmins used to reach AdminController without matching the owner gate.
-        $routeUri = $request->route()?->uri() ?? '';
-        $prefix = 'api/'.admin_path().'/';
-        $segment = str_starts_with($routeUri, $prefix)
-            ? explode('/', substr($routeUri, strlen($prefix)))[0]
-            : '';
-        // Card routes nested under /products are still secret-inventory actions.
-        // Catalog readers and product editors must not inherit permission to
-        // extract every unsold card just because the URI starts with products.
-        if (str_starts_with($request->route()?->getActionName() ?? '', \App\Http\Controllers\Api\Admin\CardController::class.'@')) {
-            $segment = 'cards';
+        // Metadata belongs to the matched Laravel route, so encoded path segments
+        // cannot change its policy. Unconfigured endpoints fail closed for owners too.
+        $capability = $request->route()?->defaults['_admin_capability'] ?? null;
+        if (! is_string($capability) || ! AdminPolicy::allows($admin, $capability)) {
+            return response()->json(['message' => is_string($capability) ? '当前账户没有此操作权限。' : '此后台接口尚未配置访问权限。',
+                'code' => 'permission_denied'], 403);
         }
-        $areas = ['dashboard' => 'overview', 'categories' => 'catalog', 'products' => 'catalog', 'cards' => 'cards',
-            'orders' => 'orders', 'refunds' => 'refunds', 'articles' => 'content', 'article-categories' => 'content',
-            'coupons' => 'coupons', 'blacklists' => 'blacklists', 'logs' => 'logs', 'settings' => 'settings',
-            'api-tokens' => 'tokens', 'notifications' => 'notifications', 'maintenance' => 'maintenance', 'seo-deliveries' => 'content'];
-        // Self-service routes are available to every authenticated administrator.
-        // New areas require an explicit policy before any staff account can use them.
-        if (!isset($areas[$segment]) && !in_array($segment, ['admins', 'upload', 'me', 'logout', 'password', 'two-factor'], true)) {
-            return response()->json(['message' => '此后台接口尚未配置访问权限。'], 403);
-        }
-        if ($segment === 'admins' && $admin->role !== 'owner') { return response()->json(['message' => '仅店主管理员可以管理账户。'], 403); }
-        if (isset($areas[$segment]) && !$admin->allows($areas[$segment], $request->isMethodSafe() ? 'read' : 'write')) {
-            return response()->json(['message' => '当前账户没有此操作权限。'], 403);
-        }
-        if ($segment === 'upload' && !$admin->allows('catalog', 'write') && !$admin->allows('content', 'write') && !$admin->allows('settings', 'write')) {
-            return response()->json(['message' => '当前账户没有上传权限。'], 403);
-        }
+        // Defaults hold immutable route metadata, not a controller argument.
+        $request->route()->forgetParameter('_admin_capability');
 
         $response = $next($request);
         $response->headers->set('X-Admin-Context', self::contextFingerprint($admin));
-        return $response;
+        return ApiErrorContract::apply($response);
     }
 
     /**
@@ -113,6 +94,7 @@ class AdminAuth
         $permissions = $admin->permissions ?? [];
         sort($permissions, SORT_STRING);
         return hash_hmac('sha256', json_encode([$admin->id, self::passwordFingerprint($admin->password),
-            $admin->role, $permissions, $admin->is_active, $admin->two_factor_revision]), (string) config('app.key'));
+            $admin->role, $permissions, $admin->is_active, $admin->two_factor_revision,
+            hash('sha256', json_encode(config('admin_permissions', [])))]), (string) config('app.key'));
     }
 }

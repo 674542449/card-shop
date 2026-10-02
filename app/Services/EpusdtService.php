@@ -124,10 +124,21 @@ class EpusdtService
                 'status' => $response->status(),
                 'order_no' => $order->order_no,
             ]);
+            if ($response->serverError() || $response->redirect() || $response->status() === 408) {
+                throw new \App\Exceptions\PaymentUncertainException('USDT付款创建结果待核对，请勿重复付款。');
+            }
             throw new CheckoutException('USDT支付接口请求失败');
         }
 
         $data = $response->json();
+
+        if (!is_array($data) || !array_key_exists('status_code', $data)) {
+            throw new \App\Exceptions\PaymentUncertainException('USDT付款创建响应不完整，请勿重复付款。');
+        }
+        if (!is_int($data['status_code']) && !(is_string($data['status_code']) && preg_match('/^\d{1,6}$/D', $data['status_code']))) {
+            Log::error('EPUSDT API returned invalid status', ['status' => $response->status(), 'order_no' => $order->order_no]);
+            throw new \App\Exceptions\PaymentUncertainException('USDT付款创建状态无效，请勿重复付款。');
+        }
 
         if (!is_array($data) || !in_array($data['status_code'] ?? null, [200, '200'], true)) {
             $statusCode = is_array($data) ? ($data['status_code'] ?? null) : null;
@@ -147,10 +158,10 @@ class EpusdtService
         $transaction = $data['data'] ?? null;
         $paymentUrl = SafeUrl::http(is_array($transaction) ? ($transaction['payment_url'] ?? null) : null);
         if ($paymentUrl === null) {
-            throw new CheckoutException('USDT支付接口返回的支付链接无效');
+            throw new \App\Exceptions\PaymentUncertainException('USDT支付接口返回的支付链接无效，请先核对原付款。');
         }
         if (!$this->validTradeId($transaction['trade_id'] ?? null)) {
-            throw new CheckoutException('USDT支付接口未返回有效交易号');
+            throw new \App\Exceptions\PaymentUncertainException('USDT支付接口未返回有效交易号，请先核对原付款。');
         }
         // Old EPUSDT releases omit some fields. If the gateway does return them,
         // none may contradict the signed creation request or the local order.
@@ -158,7 +169,7 @@ class EpusdtService
             || (array_key_exists('fiat', $transaction) && $transaction['fiat'] !== 'CNY')
             || (array_key_exists('amount', $transaction) && !$this->matchingAmount($transaction['amount'], (string) $order->total_amount))
             || (array_key_exists('status', $transaction) && !in_array($transaction['status'], [1, 2, '1', '2'], true))) {
-            throw new CheckoutException('USDT支付接口返回的订单、金额或币种不匹配');
+            throw new \App\Exceptions\PaymentUncertainException('USDT支付接口返回的订单、金额或币种不匹配，请先核对原付款。');
         }
 
         return [

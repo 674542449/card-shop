@@ -2,7 +2,7 @@
 
 从一台空的 Linux 服务器和一个正式域名开始，完成 HTTPS、商城初始化、后台配置和首次下单验收。功能介绍见 [README](README.md)，对接接口见 [API 文档](docs/API.md)。
 
-本文使用 **Docker Compose + Cloudflare 橙云代理**，示例域名为 **`shop.example.com`**。所有域名、服务器 IP 和账号都应替换成自己的值。命令在服务器的 SSH 终端执行；标注「外部电脑」的验证在你自己的电脑执行。
+本文使用 **Docker Compose + Cloudflare 橙云代理**，示例域名为 **`shop.example.com`**。所有域名、服务器 IP 和账号都应替换成自己的值。服务器命令在受控的 root 管理终端执行：SSH 登录后先运行 `sudo -i`；标注「外部电脑」的验证在你自己的电脑执行。这样 Compose 能读取仅 root 与容器组可读的外部环境文件，店铺员工不需要服务器权限。
 
 ## 安装前准备
 
@@ -15,7 +15,7 @@
 | 端口 | 云安全组允许 HTTPS/HTTP 回源；SSH 按自己的管理地址放行 |
 | 外部服务 | 易支付或 USDT 网关至少一个；建议准备支持 SSL/TLS 的 SMTP 服务 |
 
-宿主机无需安装 PHP、Composer 或 Node.js，镜像包含运行环境和数据库备份工具。后台产物已随正式版提供。首次构建需要网络下载镜像和依赖，1 GB 机器应预留 swap 和足够磁盘空间。
+宿主机无需安装 PHP、Composer 或 Node.js，镜像包含运行环境、依赖和数据库备份工具。首次安装需要网络下载发布镜像，1 GB 机器应预留 swap 和足够磁盘空间。
 
 ## 第 1 步：准备域名与 Docker
 
@@ -39,55 +39,54 @@ docker compose version
 
 两条命令均应成功；本文使用 `docker compose`，不使用独立的旧式 `docker-compose` 命令。
 
-## 第 2 步：拉取代码与配置环境
+## 第 2 步：准备正式镜像和外部配置
 
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-./install.sh
+git checkout v1.0.5
+sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
+sudo cp .env.example /etc/cardshop/runtime.env
+sudo chown root:33 /etc/cardshop/runtime.env
+sudo chmod 640 /etc/cardshop/runtime.env
+sudo nano /etc/cardshop/runtime.env
 ```
 
-也可以从 [最新正式版](https://github.com/674542449/card-shop/releases/latest) 下载源码。`install.sh` 会创建 `.env`、询问正式域名、生成数据库强密码，并根据 CPU 和内存配置 PHP-FPM 及 PostgreSQL 参数；它不会安装 Docker 或启动容器。
-
-使用源码压缩包时，先解压并进入项目根目录，执行 `chmod +x install.sh scripts/*.sh`，再运行 `./install.sh`。下文的 `~/card-shop` 应替换为自己的解压目录。
-
-域名提示填 **`shop.example.com`**，不带协议。随后编辑已有 `.env`：
-
-```bash
-nano .env
-```
-
-核对以下配置；**修改已有键的值，不要在末尾重复追加同名键**：
+修改已有键，不要重复追加。正式配置保存在项目目录之外。`APP_KEY` 应生成一次并独立保存；可在安全终端运行 `openssl rand -base64 32`，把结果加上 `base64:` 前缀填入 `APP_KEY`，不要使用示例或重复生成。数据库与管理员密码使用独立随机强密码。
 
 ```env
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://shop.example.com
-APP_KEY=
+APP_KEY=base64:你生成的32字节随机密钥
 DB_DATABASE=cardshop
 DB_USERNAME=cardshop
-DB_PASSWORD=安装脚本生成的随机强密码
-TRUSTED_PROXIES=
-TLS_CERT_DIR=/opt/cf
+DB_PASSWORD=你的随机强密码
 ADMIN_PATH=admin
 ADMIN_USERNAME=admin
-ADMIN_PASSWORD=
+ADMIN_PASSWORD=至少12字符的随机强密码
+TRUSTED_PROXIES=
+TLS_CERT_DIR=/opt/cf
+SHOP_ENV_FILE=/etc/cardshop/runtime.env
+SHOP_SECRETS_DIR=/etc/cardshop/secrets
+SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.5
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.5
 ```
 
-- `APP_URL` 是正式 HTTPS 地址，决定资源、会话 cookie、邮件链接和支付回调地址；主机名必须与 DNS 和证书一致。
-- `APP_KEY` 首次保持为空，由应用启动时生成并写回。生成后应妥善备份，勿反复执行 `key:generate`。
-- 数据库密码使用安装脚本生成的值，不能保留 `secret`。只在 `.env` 设置，Compose 自动读取。
-- 本文的 Cloudflare / Nginx 方案中，`TRUSTED_PROXIES` 保持为空，真实访客 IP 由 Nginx 处理。
-- `ADMIN_USERNAME` 决定首次店主账号；`ADMIN_PASSWORD` 可留空生成随机密码，也可预设至少 12 字符的强密码。不要照抄示例说明文字作为密码。
-- 可在首次启动前修改 `ADMIN_PATH`，仅使用字母、数字、`-`、`_`，最长 32 位，避免保留路由名称。修改路径无需重新构建后台，仍须使用强密码及访问控制。
+发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
 
-只输出非密钥配置进行核对：
+下文在项目目录先定义 Compose 简写，新终端需重新定义：
 
 ```bash
-grep -E '^(APP_ENV|APP_DEBUG|APP_URL|TRUSTED_PROXIES|PHP_FPM_MAX_CHILDREN|TLS_CERT_DIR|ADMIN_PATH)=' .env
+shop() { docker compose --env-file /etc/cardshop/runtime.env -f docker-compose.production.yml "$@"; }
+shop config --quiet
+shop pull app nginx
 ```
 
-`./install.sh --show` 只查看配置；`--recommended` 采用推荐性能参数且不询问域名，因此使用它前必须先填写正确的 `APP_URL`。
+本方案使用独立生产 Compose；`install.sh` 和默认 `docker-compose.yml` 保留给源码开发部署。首次正式安装不需要在服务器编译 React、运行 Composer 或导入演示数据。
+
+`APP_URL` 必须对应实际 HTTPS 域名，影响 Cookie、邮件与支付回调。Cloudflare/Nginx 方案保持 `TRUSTED_PROXIES` 为空。后台路径可修改为最长32位字母、数字、`-`、`_`，不能代替强密码或服务端权限。
 
 ## 第 3 步：启动前配置 HTTPS
 
@@ -104,54 +103,44 @@ sudo chmod 600 /opt/cf/key.pem
 
 ```bash
 cd ~/card-shop
-./install.sh --recommended
+cp docker/nginx/tls/ssl.conf.example docker/nginx/tls/ssl.conf
 test -s docker/nginx/tls/ssl.conf && echo 'TLS configuration ready'
 ```
 
-脚本确认两个证书文件存在后才生成 `ssl.conf`。如果没有成功提示，先检查 `.env` 的 `TLS_CERT_DIR` 和证书路径，再继续。
+先检查两个证书文件和外部环境文件中的 `TLS_CERT_DIR`，再继续启动。
 
 Nginx 的证书在容器内挂载为 `/etc/nginx/cf/`，宿主机路径可通过 `TLS_CERT_DIR` 调整。云安全组应允许 Cloudflare 回源访问 80/443；避免被其他服务占用。
 
 Cloudflare Origin CA 证书供橙云代理回源使用，浏览器直接访问源站不会信任它；若自行采用无 CDN 的部署方案，需公开可信证书，并自行调整代理与源站防护配置。[证书适用范围](https://developers.cloudflare.com/ssl/origin-configuration/origin-ca/)
 
-## 第 4 步：启动并验证服务
+## 第 4 步：显式初始化并启动
 
 ```bash
 cd ~/card-shop
-docker compose up -d --build --wait --wait-timeout 900
+shop up -d postgres redis --wait --wait-timeout 180
+shop --profile init run --rm initialize
+shop --profile init run --rm migrate
+shop up -d --wait --wait-timeout 300
+shop ps
+shop exec nginx nginx -t
+shop exec app php artisan shop:ready
+shop exec app php artisan shop:health
 ```
 
-首次启动自动完成锁定的 PHP 依赖安装、生成应用密钥、初始化数据库结构、建立存储链接和创建基础配置及店主。默认不导入商品、订单或演示卡密，不需要额外执行 `db:seed`。
+`initialize` 在外部密钥目录创建 keyring，已有文件时拒绝覆盖。`migrate` 是单独的一次性操作，初始化数据库与基础配置、店主；不会导入商品订单或测试卡密。运行容器使用只读镜像和只读 keyring，重启不会下载依赖、重新建库或更新数据库结构。
 
-若等待超时，先查看日志和容器状态，再根据实际结果处理；依赖下载尚在进行时可等待完成后重新执行 `docker compose up -d --wait --wait-timeout 900`。不要通过删除数据库卷重新安装。
+应有 **9 个运行服务**：`app`、`scheduler`、`notifications`、`seo`、`reconciliation`、`backups`、`nginx`、`postgres`、`redis`。初始化任务执行完即退出。数据库和 Redis 不发布宿主机端口。`shop:ready` 检查数据库、迁移、Redis、密钥、构建产物、存储和维护状态；`shop:health` 检查工作进程心跳及业务积压，启动后等约一分钟再执行。
 
-```bash
-docker compose ps
-docker compose logs --tail=80 app
-docker compose exec nginx nginx -t
-```
+等待失败时看 `shop logs --tail=80 app`，按实际错误修复；不要删数据库卷。初始 keyring 须单独保存到安全离线介质，保留所有版本。**只有商城备份而没有 keyring，无法恢复卡密与支付密钥。**
 
-应有 **7 个服务**：`app`、`scheduler`、`notifications`、`backups`、`nginx`、`postgres`、`redis`，全部在运行；`app`、PostgreSQL 和 Redis 的健康检查应正常。Nginx 只发布 80/443，数据库和 Redis 不发布宿主机端口。
-
-在 Cloudflare 设置 **SSL/TLS → Full (strict)**，开启 **Always Use HTTPS**。这样浏览器至 Cloudflare、Cloudflare 至源站均使用加密连接，并核验源站证书。[Full (strict) 说明](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/)
-
-核对应用确实正常渲染：
+Cloudflare 设置 **Full (strict)** 和 **Always Use HTTPS**，核验源站证书。正式页面应包含布局标记：
 
 ```bash
-# PHP 工作进程能读取配置
-docker compose exec --user www-data app sh -c 'test -r .env && echo readable'
-
-# 本地应用页面和正式域名页面均应包含布局标记
 curl -fsS http://127.0.0.1/ | grep -c 'csrf-token'
 curl -fsS https://shop.example.com/ | grep -c 'csrf-token'
-
-# 业务工作进程心跳；首次启动可等约一分钟再检查
-docker compose exec -T --user www-data app php artisan shop:health
 ```
 
-第一条输出 `readable`，两个页面计数均大于 0，健康检查返回正常。只看容器 Up 或 HTTP 状态码不足以确认页面和后台任务可用。
-
-不要为后台、订单或 API 配置 Cloudflare 整页强制缓存；此类动态页面需要实时会话和服务端状态。
+计数均应大于0。不要对后台、订单和 API 强制整页缓存。`/health/ready` 只允许直接回环连接或正确 `X-Shop-Probe-Token`，返回安全的就绪布尔值；容器直接使用 CLI 探针。
 
 ## 第 5 步：限制源站访问
 
@@ -163,13 +152,13 @@ sudo ./scripts/cf-only-firewall.sh --check
 sudo ./scripts/cf-only-firewall.sh --apply --persist
 ```
 
-脚本从 `.env` 读取域名，校验代理、网卡、端口与 IPv6 条件，再设置仅允许 Cloudflare 回源的规则及开机持久化。Docker 发布端口的流量不能仅依赖普通 UFW 规则限制，见 [Docker 防火墙说明](https://docs.docker.com/engine/network/packet-filtering-firewalls/)。脚本操作自己的 `DOCKER-USER` 规则，不修改 SSH 所用的 `INPUT` 规则。
+脚本从项目 `.env` 读取域名（先用 `ln -s /etc/cardshop/runtime.env .env` 指向受保护的外部配置文件），校验代理、网卡、端口与 IPv6 条件，再设置仅允许 Cloudflare 回源的规则及开机持久化。Docker 发布端口的流量不能仅依赖普通 UFW 规则限制，见 [Docker 防火墙说明](https://docs.docker.com/engine/network/packet-filtering-firewalls/)。脚本操作自己的 `DOCKER-USER` 规则，不修改 SSH 所用的 `INPUT` 规则。
 
 验证入站和容器出站：
 
 ```bash
 curl -fsS https://shop.example.com/ | grep -c 'csrf-token'
-docker compose exec app curl -m 10 -fsS -o /dev/null -w '%{http_code}\n' https://api.github.com
+shop exec app curl -m 10 -fsS -o /dev/null -w '%{http_code}\n' https://api.github.com
 ```
 
 页面计数应大于 0，出站检查应成功。再从 **外部电脑** 测试 `http://服务器IP/`，应无法直接取得商城页面；服务器自己访问公网 IP 不能作为这项验证的依据。
@@ -183,21 +172,21 @@ docker compose exec app curl -m 10 -fsS -o /dev/null -w '%{http_code}\n' https:/
 没有预设有效密码时，通过有权限的服务器终端读取：
 
 ```bash
-docker compose exec app cat storage/app/initial-admin-password.txt
+shop exec app cat storage/app/initial-admin-password.txt
 ```
 
 正常情况下随机密码保存于受限文件。若文件不可取，用专用命令重置，不要依赖默认密码或 `tinker`：
 
 ```bash
-docker compose exec app php artisan admin:password admin
+shop exec app php artisan admin:password admin
 ```
 
-将命令末尾的 `admin` 替换为实际用户名。登录后在「账户与密码」更换密码，并删除初始密码文件。若安装时出现密码文件写入失败并打印密码的警告，还需按自己的日志保留系统清理该敏感记录。修改 `.env` 的 `ADMIN_PASSWORD` 不会修改已创建账号。
+将命令末尾的 `admin` 替换为实际用户名。登录后在「账户与密码」更换密码，并删除初始密码文件。若安装时出现密码文件写入失败并打印密码的警告，还需按自己的日志保留系统清理该敏感记录。修改外部环境文件的 `ADMIN_PASSWORD` 不会修改已创建账号。
 
 可在「账户与密码 → 登录双重验证」绑定验证器，提交验证码确认后才启用。8 个恢复码只展示一次，应离线保存，每个仅能使用一次。确保服务器时间同步，并备份 `APP_KEY`；丢失验证器及恢复码时，在受控终端执行：
 
 ```bash
-docker compose exec app php artisan admin:2fa-reset admin
+shop exec app php artisan admin:2fa-reset admin
 ```
 
 将末尾用户名替换为实际账号，按交互提示确认。该操作会撤销旧登录会话。
@@ -245,19 +234,19 @@ Turnstile 小组件允许的主机名需包含实际商城域名，再将配对�
 技术自检：
 
 ```bash
-sudo ./scripts/doctor.sh
+sudo ./scripts/doctor.sh --production --env-file /etc/cardshop/runtime.env
 ```
 
-该命令检查配置、权限、服务、页面、代理、证书、出站、防火墙和开机自启。退出码 `0` 为通过，`1` 为警告或跳过，`2` 为失败；逐项处理报告。`--fix` 可修复工具明确支持的配置问题。真实支付到账和外部邮件送达仍须用实际订单验收。
+生产自检读取外部环境，检查九个服务、就绪状态与业务健康。退出码 `0` 为通过，`1` 为警告或跳过，`2` 为失败。真实支付到账、外部邮件、代理证书与防火墙仍须按前文用实际环境验收。
 
 ## 日常运行
 
 ### 进程与监控
 
 ```bash
-docker compose ps
-docker compose logs --tail=50 notifications backups scheduler
-docker compose exec -T --user www-data app php artisan shop:health --alert
+shop ps
+shop logs --tail=50 notifications seo reconciliation backups scheduler
+shop exec -T --user www-data app php artisan shop:health --alert
 ```
 
 `shop:health` 检查工作进程心跳、通知/SEO 失败与积压、连续对账失败、逾期订单、备份和空间。退出码 `0` 正常、`1` 异常；`--alert` 可通过已启用的 Telegram 发送告警，每 15 分钟最多一条。应由独立服务器监控执行，避免只依赖商城自己的调度器。
@@ -266,35 +255,35 @@ docker compose exec -T --user www-data app php artisan shop:health --alert
 
 ### 完整备份与校验
 
-店主在 **维护与推送 → 备份与恢复** 创建、查看进度、校验和下载备份。归档包含数据库、`.env`、上传文件、私有素材和历史操作归档，保存在 `storage/app/private/shop-backups/`，必须作为含密钥的私有数据保管。
+店主在 **维护与推送 → 备份与恢复** 创建、查看进度、校验和下载备份。归档包含数据库、可读取的运行配置、上传文件、私有素材和历史操作归档，保存在 `storage/app/private/shop-backups/`，必须作为含密钥的私有数据保管。外部 keyring 不进入归档，运行环境文件和完整 keyring 也应独立安全备份。
 
 ```bash
-docker compose exec -T --user www-data backups php artisan shop:backup --wait
-docker compose exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --verify-only
+shop exec -T --user www-data backups php artisan shop:backup --wait
+shop exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --verify-only
 ```
 
 CLI 不带 `--wait` 时只入队，带 `--wait` 可执行并等待任务，放在备份容器运行以便使用其异机挂载。自动备份默认关闭，启用后的默认计划为应用时区 Asia/Shanghai（北京时间）每日 03:00、保留 14 份 / 30 天；新副本验证成功后才应用保留策略，保留最新成功副本。该计划不随宿主机时区变化。
 
-可选异机复制只支持已存在且可写的挂载目录。在 `.env` 设置 `BACKUP_SYNC_MOUNT=/你的受控挂载目录`，应用 Compose 配置后，在后台填 `/mnt/shop-backup-sync`。确保容器 UID/GID 33 可写，并自行设置远端保留策略。默认本地 `.local/backup-sync` 挂载不等于异机备份，后台留空时不复制；程序不直接连接 SFTP 或云存储。
+可选异机复制只支持已存在且可写的挂载目录。在外部环境文件设置 `BACKUP_SYNC_MOUNT=/你的受控挂载目录`，应用 Compose 配置后，在后台填 `/mnt/shop-backup-sync`。确保容器 UID/GID 33 可写，并自行设置远端保留策略。后台留空时不复制；程序不直接连接 SFTP 或云存储。
 
 ### 恢复演练
 
 以下按默认数据库账号举例，先创建独立空库；恢复覆盖明确指定的目标库，不应拿正式库做演练：
 
 ```bash
-docker compose exec -T postgres createdb -U cardshop cardshop_restore_check
-docker compose exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --database=cardshop_restore_check --confirm=restore:cardshop_restore_check
+shop exec -T postgres createdb -U cardshop cardshop_restore_check
+shop exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --database=cardshop_restore_check --confirm=restore:cardshop_restore_check
 ```
 
-独立库演练不修改正在使用的文件和配置。备份校验检查清单、路径、SHA-256 与大小。真正恢复正式库时须暂停 Web、调度、通知和备份写入进程，再按照确认的恢复点操作；仅显式使用 `--include-config` 才覆盖 `.env`。恢复后清理应用/配置缓存、启动服务并核对数据，代码和后台产物使用与备份匹配的正式版本。
+独立库演练不修改正在使用的文件和配置。备份校验检查清单、路径、SHA-256、大小及外部 keyring 标识。正式库恢复必须先 `shop exec app php artisan down`，暂停 HTTP入口及调度、通知、SEO、对账、备份写入进程；未结束请求会阻止排他锁。数据库恢复使用单事务，数据库失败时撤销已发布文件。保持维护模式，确认数据和配套 keyring 后再重启进程并执行 `artisan up`。只读生产镜像中的运行环境文件须由运维从私有备份离线恢复，不能通过 `--include-config` 改写镜像。
 
 ### 记录与源站维护
 
 维护页可以归档未被引用且上传超过 7 天的素材，后续引用可恢复。`php artisan shop:archive-records --days=365` 只预览，显式 `--apply` 后才将旧记录归档、校验并清理；订单、付款回执、退款及未完成任务保留。先完成完整备份再清理。
 
-Cloudflare 网段维护时运行 `sudo ./scripts/cf-only-firewall.sh --apply --yes`，脚本获取当前列表；Nginx 的可信代理网段也需同步并验证。HTTPS 与证书有效期由运维持续监控。停止服务使用 `docker compose down`，不要加 `-v` 删除业务数据卷。
+Cloudflare 网段维护时运行 `sudo ./scripts/cf-only-firewall.sh --apply --yes`，脚本获取当前列表；Nginx 的可信代理网段也需同步并验证。HTTPS 与证书有效期由运维持续监控。停止服务使用 `shop down`，不要加 `-v` 删除业务数据卷。
 
-非 Docker 部署需自行维护 PHP-FPM/Web、PostgreSQL、Redis，并常驻运行 `php artisan schedule:work`、`php artisan notifications:send --work` 和 `php artisan shop:backup-work`。
+非 Docker 部署需自行维护 PHP-FPM/Web、PostgreSQL、Redis、外部 keyring，并常驻运行 `php artisan schedule:work`、`php artisan notifications:send --work`、`php artisan seo:work`、`php artisan payments:work` 和 `php artisan shop:backup-work`。
 
 ## 常见问题
 
@@ -315,9 +304,9 @@ Cloudflare 网段维护时运行 `sudo ./scripts/cf-only-firewall.sh --apply --y
 诊断命令：
 
 ```bash
-docker compose logs --tail=100 app nginx postgres
-sudo ./scripts/doctor.sh
-docker compose exec -T --user www-data app php artisan shop:health
+shop logs --tail=100 app nginx postgres
+sudo ./scripts/doctor.sh --production --env-file /etc/cardshop/runtime.env
+shop exec -T --user www-data app php artisan shop:health
 ```
 
 [返回项目介绍](README.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md)

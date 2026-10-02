@@ -17,6 +17,12 @@
 #   · 不用 set -e。体检的价值是把问题一次列全，而不是撞到第一个就退出。
 #   · 「没检查」必须和「没问题」区分开。跳过的项单独计数、单独列出、计入退出码。
 
+# Image deployments use their own external environment and never run source-based fixes.
+if [ "${1:-}" = "--production" ]; then
+    shift
+    exec bash "$(dirname "$0")/doctor-production.sh" "$@"
+fi
+
 FIX=0
 QUIET=0
 for a in "$@"; do
@@ -214,7 +220,7 @@ fi
 sect "容器"
 
 RUNNING="$(docker compose ps --services --status running 2>/dev/null)"
-for svc in app nginx postgres redis scheduler notifications backups; do
+for svc in app nginx postgres redis scheduler notifications backups seo reconciliation; do
     if printf '%s\n' "$RUNNING" | grep -qx "$svc"; then
         pass "$svc 在运行"
     else

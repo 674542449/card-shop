@@ -6,6 +6,7 @@ use App\Models\Card;
 use App\Models\Coupon;
 use App\Models\Order;
 use App\Models\PaymentReceipt;
+use App\Enums\PaymentReviewCode;
 use Closure;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -175,13 +176,13 @@ class OrderFulfilmentService
                     ]);
                 }
                 if ($bindingRefusal !== null) {
-                    $this->recordReview($order, $receipt, $bindingRefusal);
+                    $this->recordReview($order, $receipt, PaymentReviewCode::BindingMismatch, $bindingRefusal);
                     return OrderFulfilmentResult::refused($bindingRefusal, $order, true);
                 }
             }
             if ($order->isPaid()) {
                 if ($receipt && $order->payment_no !== $receipt->trade_no && !$receipt->review_resolved_at) {
-                    $this->recordReview($order, $receipt, '已发货订单收到另一笔付款，请核对重复收款并处理退款。');
+                    $this->recordReview($order, $receipt, PaymentReviewCode::DuplicatePayment, '已发货订单收到另一笔付款，请核对重复收款并处理退款。');
                 }
                 return OrderFulfilmentResult::skipped('订单已发货。');
             }
@@ -189,13 +190,13 @@ class OrderFulfilmentService
             // arrived while stock was unavailable and fulfilment succeeds now.
             if ($receipt) {
                 foreach ($order->paymentReceipts()->where('id', '!=', $receipt->id)->whereNull('review_resolved_at')->get() as $other) {
-                    $this->recordReview($order, $other, '已发货订单收到另一笔付款，请核对重复收款并处理退款。');
+                    $this->recordReview($order, $other, PaymentReviewCode::DuplicatePayment, '已发货订单收到另一笔付款，请核对重复收款并处理退款。');
                 }
             }
             if (!in_array($order->status, $fromStatuses, true)) {
                 $reason = "订单状态为 {$order->status}，支付到达时无法自动发货。";
                 if ($receipt) {
-                    $this->recordReview($order, $receipt, $reason);
+                    $this->recordReview($order, $receipt, PaymentReviewCode::OrderState, $reason);
                     return OrderFulfilmentResult::orphaned($order, $reason);
                 }
                 return OrderFulfilmentResult::refused($reason);
@@ -205,7 +206,7 @@ class OrderFulfilmentService
 
             if ($cards->count() < $order->quantity) {
                 if ($receipt) {
-                    $this->recordReview($order, $receipt, "库存不足：需要 {$order->quantity} 张，可用 {$cards->count()} 张。");
+                    $this->recordReview($order, $receipt, PaymentReviewCode::InsufficientStock, "库存不足：需要 {$order->quantity} 张，可用 {$cards->count()} 张。");
                 }
                 Log::warning('Refusing to fulfil order, insufficient stock', [
                     'order_no' => $orderNo,
@@ -237,7 +238,7 @@ class OrderFulfilmentService
                         ->orWhereColumn('used_count', '<', 'max_uses'));
                 }
                 if ($claim->increment('used_count') === 0 && $source !== 'manual') {
-                    $this->recordReview($order, $receipt, '迟到付款的优惠券名额已被其他订单占用，请核对网关流水后人工处理。');
+                    $this->recordReview($order, $receipt, PaymentReviewCode::CouponUnavailable, '迟到付款的优惠券名额已被其他订单占用，请核对网关流水后人工处理。');
                     return OrderFulfilmentResult::refused(
                         '迟到付款的优惠券名额已被其他订单占用，请核对网关流水后人工处理。',
                         $order,
@@ -252,9 +253,9 @@ class OrderFulfilmentService
                 'sold_at' => now(),
             ]);
 
-            $order->update(\Illuminate\Support\Arr::except($attributes($order), ['_receipt_details', '_gateway_payment_type']) + ['payment_review_reason' => null]);
-            $order->paymentReceipts()->whereNotNull('review_reason')->whereNull('review_resolved_at')
-                ->where('review_reason', 'not like', '已发货订单%')
+            $order->update(\Illuminate\Support\Arr::except($attributes($order), ['_receipt_details', '_gateway_payment_type']) + ['payment_review_reason' => null, 'payment_review_code' => null]);
+            $order->paymentReceipts()->unresolvedReview()
+                ->whereIn('review_code', PaymentReviewCode::resolvedByDelivery())
                 ->update(['review_resolved_at' => now(), 'resolution_note' => '订单已完成发货。']);
             // Durable notification records commit with the delivered cards. A process
             // crash after commit cannot lose email delivery; callbacks do no SMTP I/O.
@@ -277,10 +278,10 @@ class OrderFulfilmentService
         return $result;
     }
 
-    private function recordReview(Order $order, PaymentReceipt $receipt, string $reason): void
+    private function recordReview(Order $order, PaymentReceipt $receipt, PaymentReviewCode $code, string $reason): void
     {
-        if (!$receipt->review_resolved_at) { $receipt->update(['review_reason' => $reason]); }
-        $order->update(['payment_review_reason' => $reason]);
+        if (!$receipt->review_resolved_at) { $receipt->update(['review_reason' => $reason, 'review_code' => $code->value]); }
+        $order->update(['payment_review_reason' => $reason, 'payment_review_code' => $code->value]);
         $this->notifications->enqueue('payment-review:'.$receipt->id, 'payment_review', $order, [
             'message' => "<b>⚠ 付款需要核对</b>\n订单号: <code>".e($order->order_no)."</code>\n"
                 .'网关流水: '.e($receipt->trade_no)."\n金额: ".e($receipt->amount)."\n原因: ".e($reason),

@@ -22,13 +22,20 @@ cd "$(dirname "$0")"
 ENV_FILE=".env"
 MODE="interactive"
 
-for arg in "$@"; do
-    case "$arg" in
+while [ "$#" -gt 0 ]; do
+    case "$1" in
         --recommended) MODE="auto" ;;
         --show) MODE="show" ;;
+        --env-file)
+            [ "$#" -ge 2 ] || { echo "--env-file requires an absolute path"; exit 1; }
+            ENV_FILE="$2"
+            case "$ENV_FILE" in /*) ;; *) echo "--env-file must be absolute"; exit 1 ;; esac
+            shift
+            ;;
         -h|--help) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
-        *) echo "未知参数：$arg（可用：--recommended / --show / --help）"; exit 1 ;;
+        *) echo "未知参数：$1（可用：--recommended / --show / --env-file / --help）"; exit 1 ;;
     esac
+    shift
 done
 
 # ---------------------------------------------------------------- 依赖提醒

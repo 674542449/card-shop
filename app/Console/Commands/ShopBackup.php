@@ -11,17 +11,17 @@ class ShopBackup extends Command
 
     protected $description = 'Private database + uploads + configuration backup with checksums';
 
-    public function handle(BackupQueue $queue): int
+    public function handle(BackupQueue $queue, \App\Services\MaintenanceWriteBarrier $barrier): int
     {
         try {
-            $run = $queue->enqueue('cli');
+            $run = $barrier->run(fn () => $queue->enqueue('cli'));
             if ($this->option('wait')) {
                 $deadline = microtime(true) + BackupQueue::LEASE_SECONDS + 60;
                 do {
                     // A dedicated daemon may already own this job. Wait for its
                     // result instead of reporting failure merely because the lock is busy.
                     if ($run->status === 'pending') {
-                        $queue->process();
+                        $barrier->run(fn () => $queue->process());
                     }
                     $run->refresh();
                     if (! in_array($run->status, ['pending', 'running'], true)) {

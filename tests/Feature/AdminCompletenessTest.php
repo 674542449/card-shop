@@ -132,7 +132,10 @@ class AdminCompletenessTest extends TestCase
         Card::create(['product_id' => $product->id, 'content' => '0', 'status' => 'unsold']);
         $longContent = str_repeat('secret-value-', 12);
         Card::create(['product_id' => $product->id, 'content' => $longContent, 'status' => 'sold']);
-        $this->getJson('/api/admin/products/'.$product->id.'/cards?content=secret-value&status=sold')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.content', $longContent);
+        // Encrypted inventory supports an exact fingerprint lookup, never a scan
+        // or a plaintext substring index. The UI asks for the complete card value.
+        $this->getJson('/api/admin/products/'.$product->id.'/cards?content=secret-value&status=sold')->assertOk()->assertJsonCount(0, 'data');
+        $this->getJson('/api/admin/products/'.$product->id.'/cards?content='.rawurlencode($longContent).'&status=sold')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.content', $longContent);
         $file = \Illuminate\Http\UploadedFile::fake()->createWithContent('cards.txt', "0\r\nsecond-card\r\n");
         $this->post('/api/admin/products/'.$product->id.'/cards/import', ['file' => $file], ['Accept' => 'application/json'])->assertOk()->assertJsonPath('count', 1)->assertJsonPath('skipped', 1);
         $this->assertSame(1, $product->cards()->where('content', '0')->count());

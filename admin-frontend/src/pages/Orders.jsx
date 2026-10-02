@@ -5,6 +5,7 @@ import { Tag, Button, message, Space } from 'antd';
 import { ExportOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { getOrders, exportOrders } from '../services/api';
+import { initializationStates } from '../utils/paymentInitialization';
 
 // Laravel serialises timestamps to UTC ISO strings. Rendering them raw showed the
 // operator a time 8 hours behind the app's Asia/Shanghai clock; dayjs converts to the
@@ -39,6 +40,8 @@ export default function Orders() {
   const requestedStatus = searchParams.get('status');
   const initialStatus = Object.prototype.hasOwnProperty.call(statusMap, requestedStatus) ? requestedStatus : undefined;
   const paymentReviewOnly = searchParams.get('payment_review') === '1';
+  const requestedInitialization = searchParams.get('payment_initialization');
+  const initialInitialization = Object.prototype.hasOwnProperty.call(initializationStates, requestedInitialization) || requestedInitialization === 'none' ? requestedInitialization : undefined;
 
   const handleExport = async () => {
     try {
@@ -60,6 +63,9 @@ export default function Orders() {
 
   const columns = [
     { title: '付款待核对', dataIndex: 'payment_review', hideInTable: true, valueType: 'select', valueEnum: { 1: { text: '仅待核对' }, 0: { text: '全部' } } },
+    { title: '收银台创建', dataIndex: 'payment_initialization', valueType: 'select', width: 160,
+      valueEnum: { ...Object.fromEntries(Object.entries(initializationStates).map(([key, value]) => [key, { text: value.text }])), none: { text: '暂无创建记录' } },
+      render: (_, record) => { const state = initializationStates[record.payment_initialization]; return state ? <Tag color={state.color}>{state.text}</Tag> : '-'; } },
     { title: '订单号', dataIndex: 'order_no', copyable: true, width: 200 },
     {
       title: '商品',
@@ -142,12 +148,12 @@ export default function Orders() {
     <ProTable
       // Remount only when the URL's valid filter changes, so browser navigation
       // updates both the search field and its first request without pinning edits.
-      key={`orders-${initialStatus || 'all'}-${paymentReviewOnly}`}
+      key={`orders-${initialStatus || 'all'}-${paymentReviewOnly}-${initialInitialization || 'all'}`}
       actionRef={actionRef}
       rowKey="id"
       columns={columns}
       search={{ labelWidth: 'auto' }}
-      form={{ name: 'orders-search', initialValues: { status: initialStatus, payment_review: paymentReviewOnly ? '1' : undefined } }}
+      form={{ name: 'orders-search', initialValues: { status: initialStatus, payment_review: paymentReviewOnly ? '1' : undefined, payment_initialization: initialInitialization } }}
       request={async (params, sort = {}) => {
         const { current, pageSize, ...rest } = params;
         // Keep the active filters so 导出订单 can export what is on screen. Without

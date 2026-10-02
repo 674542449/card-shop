@@ -32,6 +32,7 @@ class Order extends Model
         'payment_received_amount',
         'payment_received_at',
         'payment_review_reason',
+        'payment_review_code',
     ];
 
     protected $hidden = [
@@ -57,7 +58,7 @@ class Order extends Model
     public function scopePaymentReview(Builder $query): Builder
     {
         return $query->where(fn ($q) => $q->where(fn ($p) => $p->where('status', '!=', 'paid')->whereNotNull('payment_no'))
-            ->orWhereHas('paymentReceipts', fn ($r) => $r->whereNotNull('review_reason')->whereNull('review_resolved_at')));
+            ->orWhereHas('paymentReceipts', fn ($r) => $r->unresolvedReview()));
     }
 
     public function refunds(): HasMany { return $this->hasMany(OrderRefund::class); }
@@ -119,7 +120,8 @@ class Order extends Model
         if ($query->getQuery()->columns === null) { $query->select('orders.*'); }
         return $query->selectRaw("((orders.status <> 'paid' AND orders.payment_no IS NOT NULL)
             OR EXISTS (SELECT 1 FROM payment_receipts WHERE payment_receipts.order_id = orders.id
-                AND payment_receipts.review_reason IS NOT NULL AND payment_receipts.review_resolved_at IS NULL)) AS has_payment_review");
+                AND (payment_receipts.review_code IS NOT NULL OR payment_receipts.review_reason IS NOT NULL)
+                AND payment_receipts.review_resolved_at IS NULL)) AS has_payment_review");
     }
 
     public function requiresPaymentReview(): bool
@@ -129,8 +131,8 @@ class Order extends Model
         }
         return ($this->status !== 'paid' && $this->payment_no !== null)
             || ($this->relationLoaded('paymentReceipts')
-                ? $this->paymentReceipts->contains(fn ($receipt) => $receipt->review_reason !== null && $receipt->review_resolved_at === null)
-                : $this->paymentReceipts()->whereNotNull('review_reason')->whereNull('review_resolved_at')->exists());
+                ? $this->paymentReceipts->contains(fn ($receipt) => ($receipt->review_code !== null || $receipt->review_reason !== null) && $receipt->review_resolved_at === null)
+                : $this->paymentReceipts()->unresolvedReview()->exists());
     }
 
     /**

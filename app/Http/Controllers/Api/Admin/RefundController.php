@@ -9,6 +9,8 @@ use App\Models\OrderRefund;
 use App\Services\RefundService;
 use App\Support\AdminListQuery;
 use App\Exceptions\CheckoutException;
+use App\Http\Resources\Admin\AdminRecordResource;
+use App\Policies\AdminPolicy;
 use Illuminate\Http\Request;
 
 class RefundController extends Controller
@@ -21,12 +23,12 @@ class RefundController extends Controller
             $q->where('status', $request->status);
         }
 
-        return response()->json($q->orderByDesc('id')->paginate($pageSize));
+        return response()->json($q->orderByDesc('id')->paginate($pageSize)->through(fn ($refund) => (new AdminRecordResource($refund))->resolve($request)));
     }
 
     public function store(Request $request, Order $order, RefundService $service)
     {
-        abort_unless($request->attributes->get('admin')->allows('refunds', 'write'), 403);
+        AdminPolicy::authorize($request->attributes->get('admin'), 'orders.refund');
         $data = $request->validate(['amount' => 'required|numeric|gt:0|decimal:0,2|max:9999999999999999', 'reason' => 'required|string|max:2000', 'payment_receipt_id' => 'nullable|integer']);
         try {
             $refund = $service->request($order, (string) $data['amount'], $data['reason'], $data['payment_receipt_id'] ?? null);
@@ -35,7 +37,7 @@ class RefundController extends Controller
         }
         OperationLog::log('登记退款申请', 'refund', $refund->id, $order->order_no.' '.$refund->amount.' CNY');
 
-        return response()->json($refund, 201);
+        return response()->json((new AdminRecordResource($refund))->resolve($request), 201);
     }
 
     public function update(Request $request, OrderRefund $refund, RefundService $service)
@@ -48,6 +50,6 @@ class RefundController extends Controller
         }
         OperationLog::log('处理退款', 'refund', $refund->id, $data['status']);
 
-        return response()->json($result);
+        return response()->json((new AdminRecordResource($result))->resolve($request));
     }
 }

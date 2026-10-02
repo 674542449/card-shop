@@ -6,6 +6,7 @@ use App\Models\NotificationDelivery;
 use App\Models\BackupRun;
 use App\Models\SeoDelivery;
 use App\Models\Order;
+use App\Models\PaymentReconciliationJob;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -83,7 +84,7 @@ class HeartbeatService
     {
         $beats = DB::table('service_heartbeats')->get()->keyBy('name');
         $result = [];
-        foreach (['notifications', 'scheduler', 'reconciliation'] as $name) {
+        foreach (['notifications', 'scheduler', 'reconciliation', 'seo'] as $name) {
             $seen = $beats[$name]->last_seen_at ?? null;
             $result[$name] = ['last_seen_at' => $seen, 'healthy' => $seen && Carbon::parse($seen)->gt(now()->subMinutes($name === 'reconciliation' ? 15 : 3))];
         }
@@ -100,6 +101,13 @@ class HeartbeatService
         $result['oldest_seo_at'] = (clone $seoWaiting)->min('created_at');
         $result['seo_failed'] = (clone $seoFailures)->count();
         $result['seo_failure_through_id'] = (clone $seoFailures)->max('id');
+        $result['seo']['enabled'] = $result['seo_pending'] > 0 || (bool) setting('baidu_push_token') || (bool) setting('bing_indexnow_key');
+        $result['reconciliation']['pending'] = PaymentReconciliationJob::whereIn('status', ['pending', 'processing'])->count();
+        $result['reconciliation']['failed'] = PaymentReconciliationJob::where('status', 'failed')->count();
+        $result['reconciliation']['oldest_pending_at'] = PaymentReconciliationJob::whereIn('status', ['pending', 'processing'])
+            ->selectRaw('min(coalesce(queued_at, created_at)) as oldest')->value('oldest');
+        $result['reconciliation']['backlog_warning'] = $result['reconciliation']['oldest_pending_at']
+            && Carbon::parse($result['reconciliation']['oldest_pending_at'])->lt(now()->subMinutes(15));
         $result['backlog_warning'] = ($oldest && Carbon::parse($oldest)->lt(now()->subMinutes(15)))
             || ($result['oldest_seo_at'] && Carbon::parse($result['oldest_seo_at'])->lt(now()->subMinutes(15)));
         $result['overdue_orders'] = Order::where('status', 'pending')->where('expires_at', '<', now()->subMinutes(2))->count();
@@ -112,7 +120,9 @@ class HeartbeatService
         $result['backups'] = $this->backupHealth();
         $result['observed_at'] = now()->toIso8601String();
         $result['healthy'] = $result['notifications']['healthy'] && $result['scheduler']['healthy']
-            && (! $result['reconciliation']['enabled'] || ($result['reconciliation']['healthy'] && ! $result['reconciliation']['failure_warning']))
+            && (! $result['seo']['enabled'] || $result['seo']['healthy'])
+            && (! $result['reconciliation']['enabled'] || ($result['reconciliation']['healthy'] && ! $result['reconciliation']['failure_warning']
+                && ! $result['reconciliation']['backlog_warning'] && $result['reconciliation']['failed'] === 0))
             && ! $result['backlog_warning'] && $result['overdue_orders'] === 0
             && $result['notification_failed'] === 0 && $result['seo_failed'] === 0 && $result['backups']['healthy'];
 
