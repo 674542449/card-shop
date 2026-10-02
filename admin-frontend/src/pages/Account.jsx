@@ -3,6 +3,7 @@ import { ProForm, ProFormText } from '@ant-design/pro-components';
 import { Alert, Button, Card, Descriptions, message, Spin, Typography } from 'antd';
 import dayjs from 'dayjs';
 import { getMe, changePassword } from '../services/api';
+import TwoFactorSettings from '../components/TwoFactorSettings';
 
 export default function Account() {
   const [admin, setAdmin] = useState(null);
@@ -67,6 +68,7 @@ export default function Account() {
           />
         </ProForm>
       </Card>
+      <TwoFactorSettings admin={admin} onChange={async () => { const res = await getMe(); setAdmin(res.data); }} />
     </div>
   );
 }

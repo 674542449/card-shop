@@ -42,7 +42,8 @@ class AdminAuth
         //
         // 会话里没有这个值时一律拒绝：这是本次修复之前建立的老会话，没法证明它是在
         // 当前密码下建立的。代价是升级后所有管理员要重新登录一次。
-        if (!hash_equals(self::passwordFingerprint($admin->password), (string) $request->session()->get('admin_pw'))) {
+        if (!hash_equals(self::passwordFingerprint($admin->password), (string) $request->session()->get('admin_pw')) ||
+            ($admin->two_factor_revision !== null && !hash_equals((string) $admin->two_factor_revision, (string) $request->session()->get('admin_factor')))) {
             $request->session()->forget(['admin_id', 'admin_username', 'admin_pw']);
             if ($request->expectsJson()) {
                 return response()->json(['message' => '登录状态已失效，请重新登录。'], 401);
@@ -80,7 +81,7 @@ class AdminAuth
             'api-tokens' => 'tokens', 'notifications' => 'notifications', 'maintenance' => 'maintenance', 'seo-deliveries' => 'content'];
         // Self-service routes are available to every authenticated administrator.
         // New areas require an explicit policy before any staff account can use them.
-        if (!isset($areas[$segment]) && !in_array($segment, ['admins', 'upload', 'me', 'logout', 'password'], true)) {
+        if (!isset($areas[$segment]) && !in_array($segment, ['admins', 'upload', 'me', 'logout', 'password', 'two-factor'], true)) {
             return response()->json(['message' => '此后台接口尚未配置访问权限。'], 403);
         }
         if ($segment === 'admins' && $admin->role !== 'owner') { return response()->json(['message' => '仅店主管理员可以管理账户。'], 403); }
@@ -112,6 +113,6 @@ class AdminAuth
         $permissions = $admin->permissions ?? [];
         sort($permissions, SORT_STRING);
         return hash_hmac('sha256', json_encode([$admin->id, self::passwordFingerprint($admin->password),
-            $admin->role, $permissions, $admin->is_active]), (string) config('app.key'));
+            $admin->role, $permissions, $admin->is_active, $admin->two_factor_revision]), (string) config('app.key'));
     }
 }

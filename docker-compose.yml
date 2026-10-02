@@ -111,6 +111,36 @@ services:
       - REDIS_HOST=redis
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
 
+  # Full archives execute separately from checkout and notification delivery.
+  backups:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: cardshop-backups
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    volumes:
+      - .:/var/www/html
+      # Copying is disabled until the owner configures /mnt/shop-backup-sync.
+      - ${BACKUP_SYNC_MOUNT:-./.local/backup-sync}:/mnt/shop-backup-sync
+    working_dir: /var/www/html
+    entrypoint: ["php", "artisan", "shop:backup-work"]
+    user: "33:33"
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - cardshop
+    environment:
+      - DB_HOST=postgres
+      - REDIS_HOST=redis
+      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
+
   nginx:
     image: nginx:stable
     container_name: cardshop-nginx

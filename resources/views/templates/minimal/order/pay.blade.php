@@ -19,7 +19,7 @@
             @elseif($paymentUnavailable ?? false)<div class="n-message n-message-error" role="alert"><strong>支付渠道暂时不可用</strong><p>无法生成支付链接，请刷新重试。若持续如此，请联系客服并提供订单编号。</p></div><a href="/order/pay/{{ $order->order_no }}" class="n-button n-button-secondary n-button-wide">刷新支付页面</a>
             @else<div class="n-message" role="status"><strong>正在准备支付渠道</strong><p>若支付按钮未出现，请刷新本页重试。</p></div><a href="/order/pay/{{ $order->order_no }}" class="n-button n-button-secondary n-button-wide">刷新支付页面</a>@endif
         </div>
-        <div class="n-payment-polling" id="payment-polling" data-order-no="{{ $order->order_no }}" aria-live="polite"><span class="n-dot" aria-hidden="true"></span><span>自动确认付款，成功后展示卡密。</span></div>
+        <div class="n-payment-polling" id="payment-polling" data-order-no="{{ $order->order_no }}" data-expires="{{ $order->expires_at->toIso8601String() }}" aria-live="polite"><span class="n-dot" aria-hidden="true"></span><span data-payment-status>自动确认付款，成功后展示卡密。</span><button type="button" class="n-button n-button-secondary" data-payment-recheck>重新检查付款</button> <a href="/order/query?order_no={{ $order->order_no }}" data-payment-verify hidden>验证并查询订单</a></div>
         <noscript><p class="n-message">浏览器未启用 JavaScript，付款后请手动刷新本页。支付截止时间见右侧订单信息。</p></noscript>
         @endif
     </section>

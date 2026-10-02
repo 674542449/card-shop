@@ -214,7 +214,7 @@ fi
 sect "容器"
 
 RUNNING="$(docker compose ps --services --status running 2>/dev/null)"
-for svc in app nginx postgres redis scheduler notifications; do
+for svc in app nginx postgres redis scheduler notifications backups; do
     if printf '%s\n' "$RUNNING" | grep -qx "$svc"; then
         pass "$svc 在运行"
     else

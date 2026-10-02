@@ -12,7 +12,7 @@ import {
 } from '@ant-design/pro-components';
 import { Button, message, Popconfirm, Tag } from 'antd';
 import { PlusOutlined } from '@ant-design/icons';
-import { getCoupons, createCoupon, updateCoupon, deleteCoupon, getAllProducts } from '../services/api';
+import api, { getCoupons, createCoupon, updateCoupon, deleteCoupon } from '../services/api';
 
 export default function Coupons() {
   const canWrite = useWritePermission('coupons');
@@ -20,17 +20,26 @@ export default function Coupons() {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [productOptions, setProductOptions] = useState([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [productsLoading, setProductsLoading] = useState(false);
 
   useEffect(() => {
-    getAllProducts()
-      .then((list) => {
+    let active = true;
+    const timer = setTimeout(() => {
+      setProductsLoading(true);
+      api.get('/coupons/product-options', { params: { q: productSearch, include: editingRecord?.product_id, per_page: 50 } })
+      .then((res) => {
+        if (!active) return;
         setProductOptions([
           { label: '全部商品', value: '' },
-          ...list.map((p) => ({ label: p.name, value: p.id })),
+          ...(res.data.data || []).map((p) => ({ label: `${p.name}${p.is_active ? '' : '（已下架）'}`, value: p.id })),
         ]);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => { if (active) message.error('商品选项加载失败，请重新搜索后重试'); })
+      .finally(() => { if (active) setProductsLoading(false); });
+    }, 200);
+    return () => { active = false; clearTimeout(timer); };
+  }, [productSearch, editingRecord?.product_id]);
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 60, search: false },
@@ -59,7 +68,7 @@ export default function Coupons() {
       title: '适用商品',
       dataIndex: 'product_id',
       valueType: 'select',
-      fieldProps: { options: productOptions.filter((option) => option.value !== '') },
+      fieldProps: { options: productOptions.filter((option) => option.value !== ''), showSearch: true, filterOption: false, onSearch: setProductSearch, loading: productsLoading },
       render: (_, record) => record.product?.name || '全部商品',
     },
     {
@@ -97,6 +106,7 @@ export default function Coupons() {
           key="edit"
           onClick={() => {
             setEditingRecord(record);
+            setProductSearch('');
             setModalVisible(true);
           }}
         >
@@ -146,6 +156,7 @@ export default function Coupons() {
             icon={<PlusOutlined />}
             onClick={() => {
               setEditingRecord(null);
+              setProductSearch('');
               setModalVisible(true);
             }}
           >
@@ -200,7 +211,7 @@ export default function Coupons() {
           rules={[{ required: true, message: '请选择类型' }]}
         />
         <ProFormDigit name="value" label="优惠值" min={0.01} max={99999999.99} fieldProps={{ precision: 2 }} rules={[{ required: true, message: '请输入优惠值' }]} extra="固定金额填写金额数值，百分比填写百分比数值(如10表示10%)" />
-        <ProFormSelect name="product_id" label="适用商品" options={productOptions} placeholder="留空表示全部商品" />
+        <ProFormSelect name="product_id" label="适用商品" options={productOptions} fieldProps={{ showSearch: true, filterOption: false, onSearch: setProductSearch, loading: productsLoading }} placeholder="搜索商品；留空表示全部商品" />
         <ProFormDigit name="max_uses" label="最大使用次数" min={0} max={2147483647} fieldProps={{ precision: 0 }} placeholder="留空表示不限" />
         <ProFormDigit name="min_amount" label="最低消费金额" min={0} max={99999999.99} fieldProps={{ precision: 2 }} placeholder="留空表示无门槛" />
         <ProFormDateTimePicker name="starts_at" label="开始时间" placeholder="留空表示立即生效" />

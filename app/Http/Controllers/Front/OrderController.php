@@ -183,7 +183,9 @@ class OrderController extends Controller
                 $order->refresh();
             }
 
-            return response()->json(['status' => $order->status, 'payment_review' => !$order->isPaid() && !empty($order->payment_no)])
+            return response()->json(['status' => $order->status, 'payment_review' => !$order->isPaid() && !empty($order->payment_no),
+                'verification_required' => $order->isPaid() && ! $this->isVerified($order),
+                'expires_at' => $order->expires_at->toIso8601String()])
                 ->header('Cache-Control', 'no-store');
         }
 
@@ -198,7 +200,7 @@ class OrderController extends Controller
 
             return theme_view('order.detail', [
                 'order' => $order,
-                'cards' => $order->cards()->sold()->get(),
+                'cards' => $order->deliveryCards()->get(),
                 'message' => '订单已支付成功',
                 'verified' => true,
             ]);
@@ -336,9 +338,10 @@ class OrderController extends Controller
     /**
      * Show the order query form.
      */
-    public function queryForm()
+    public function queryForm(Request $request)
     {
-        return theme_view('order.query');
+        $query = $request->validate(['order_no' => ['nullable', 'string', 'max:30', new \App\Rules\BuyerText]]);
+        return theme_view('order.query', ['lookupOrderNo' => $query['order_no'] ?? '']);
     }
 
     /**
@@ -529,7 +532,7 @@ class OrderController extends Controller
             $order->refresh();
         }
 
-        $cards = $order->isPaid() ? $order->cards()->sold()->get() : collect();
+        $cards = $order->isPaid() ? $order->deliveryCards()->get() : collect();
 
         return theme_view('order.detail', compact('order', 'cards', 'verified'));
     }
@@ -553,7 +556,7 @@ class OrderController extends Controller
                 ->withErrors(['error' => '请先验证身份后下载卡密']);
         }
 
-        $cards = $order->isPaid() ? $order->cards()->sold()->get() : collect();
+        $cards = $order->isPaid() ? $order->deliveryCards()->get() : collect();
         if ($cards->isEmpty()) {
             return redirect('/order/detail/' . $order->order_no)
                 ->withErrors(['error' => '该订单暂无可下载的卡密']);

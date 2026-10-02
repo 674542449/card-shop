@@ -24,13 +24,22 @@ class OrderController extends Controller
      */
     public function create(Request $request): JsonResponse
     {
+        $key = $request->header('Idempotency-Key');
+        if ($key !== null && (! is_string($key) || ! preg_match('/^[A-Za-z0-9._:-]{1,128}$/D', $key))) {
+            return response()->json(['message' => 'Idempotency-Key 须为1–128位字母、数字或 . _ : -。'], 422);
+        }
+        // New requests keep the established field-level validation contract.
+        // A bound retry may outlive a catalog or gateway configuration change.
+        $boundKey = $key !== null && \App\Models\ApiOrderRequest::where('api_token_id', $request->attributes->get('api_token')->id)
+            ->where('key_hash', hash('sha256', $key))->exists();
         $validator = Validator::make(\App\Support\BuyerCredentialInput::body($request), [
-            'product_id' => ['required', 'integer', 'exists:products,id'],
+            'product_id' => ['required', 'integer', $boundKey ? 'min:1' : 'exists:products,id'],
             'email' => ['required', 'email', 'max:200'],
             'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', new \App\Rules\QueryPasswordBytes],
             'quantity' => ['required', 'integer', 'min:1'],
             'coupon_code' => ['bail', 'nullable', 'string', 'max:50', new \App\Rules\BuyerText],
-            'payment_method' => ['required', \Illuminate\Validation\Rule::in(\App\Support\PaymentMethods::supported())],
+            'payment_method' => ['required', \Illuminate\Validation\Rule::in($boundKey
+                ? ['alipay', 'wechat', 'usdt_trc20', 'usdt_bep20', 'usdt_polygon'] : \App\Support\PaymentMethods::supported())],
         ], [
             'product_id.required' => '请选择商品',
             'product_id.exists' => '商品不存在',
@@ -56,9 +65,8 @@ class OrderController extends Controller
         }
 
         $validated = $validator->validated();
-        $order = null;
         try {
-            $order = $this->orderService->createOrder([
+            $create = fn () => $this->orderService->createOrder([
                 'product_id' => (int) $validated['product_id'],
                 'email' => $validated['email'],
                 'query_password' => $validated['query_password'],
@@ -68,22 +76,31 @@ class OrderController extends Controller
                 'ip' => $request->ip(),
                 'api_token_id' => $request->attributes->get('api_token')->id,
             ]);
+            if ($key !== null) {
+                $idempotency = app(\App\Services\ApiOrderIdempotency::class);
+                $record = $idempotency->reserve($request->attributes->get('api_token')->id, $key, $validated, $create);
+                [$payload, $status, $replayed] = $idempotency->respond($record, fn (Order $order) => $this->finishCreation($request, $validated, $order));
+                return response()->json($payload, $status)->header('Idempotency-Replayed', $replayed ? 'true' : 'false');
+            }
+            [$payload, $status] = $this->finishCreation($request, $validated, $create());
+            return response()->json($payload, $status);
+        } catch (\App\Exceptions\IdempotencyConflictException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        } catch (\App\Exceptions\CheckoutException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            Log::error('API order creation failed', ['exception_class' => $e::class]);
+            return response()->json(['message' => '系统错误，请稍后再试'], 500);
+        }
+    }
 
-            // Process payment to get the payment URL
-            $paymentData = $this->orderService->processPayment(
-                $order,
-                $validated['payment_method']
-            );
-
-            // This exact order was just created from these accepted credentials.
-            // Recording its proof only after payment initiation succeeds lets a
-            // legitimate batch buyer query each order without spending guesses.
-            app(\App\Services\ApiOrderCredentialProof::class)->remember(
-                $order, $request->attributes->get('api_token')->id,
-                $validated['email'], $validated['query_password'],
-            );
-
-            return response()->json([
+    private function finishCreation(Request $request, array $validated, Order $order): array
+    {
+        try {
+            // A retry after process interruption resumes this order rather than reserving again.
+            $paymentData = $order->isPending() ? $this->orderService->processPayment($order, $order->payment_method) : [];
+            app(\App\Services\ApiOrderCredentialProof::class)->remember($order, $request->attributes->get('api_token')->id, $validated['email'], $validated['query_password']);
+            return [[
                 'message' => '订单创建成功',
                 'data' => [
                     'order_no' => $order->order_no,
@@ -94,21 +111,21 @@ class OrderController extends Controller
                     'payment_url' => $paymentData['url'] ?? $paymentData['payment_url'] ?? null,
                     'trade_id' => $paymentData['trade_id'] ?? null,
                 ],
-            ], 201);
+            ], 201];
         } catch (\App\Exceptions\CheckoutException $e) {
             $this->releaseFailedOrder($order);
-            return response()->json([
+            return [[
                 'message' => $e->getMessage(),
-            ], 422);
+            ], 422];
         } catch (\Throwable $e) {
             $this->releaseFailedOrder($order);
             Log::error('API order creation failed', [
                 'exception_class' => $e::class,
             ]);
 
-            return response()->json([
+            return [[
                 'message' => '系统错误，请稍后再试',
-            ], 500);
+            ], 500];
         }
     }
 
@@ -183,13 +200,13 @@ class OrderController extends Controller
         if ($order instanceof JsonResponse) {
             return $order;
         }
-        $order->load(['product', 'cards']);
+        $order->load('product');
 
         $response = [
             'data' => [
                 'order_no' => $order->order_no,
                 'product' => [
-                    'id' => $order->product->id,
+                    'id' => $order->product_id,
                     'name' => $order->displayName(),
                 ],
                 'email' => $order->email,
@@ -203,7 +220,9 @@ class OrderController extends Controller
                 'payment_received_amount' => $order->payment_received_amount,
                 'payment_received_at' => $order->payment_received_at?->toIso8601String(),
                 'payment_received_currency' => 'CNY',
-                'refunds' => $order->refunds()->get(['amount', 'status', 'created_at', 'completed_at']),
+                'refund_enabled' => app(\App\Services\RefundService::class)->enabled(),
+                'refund_balance' => app(\App\Services\RefundService::class)->balance($order),
+                'refunds' => $order->refunds()->orderBy('id')->get()->map(fn ($refund) => $refund->customerProjection()),
                 'paid_at' => $order->paid_at?->toIso8601String(),
                 'expires_at' => $order->expires_at->toIso8601String(),
                 'created_at' => $order->created_at->toIso8601String(),
@@ -212,8 +231,7 @@ class OrderController extends Controller
 
         // Only include card contents if the order is paid
         if ($order->isPaid()) {
-            $response['data']['cards'] = $order->cards
-                ->where('status', 'sold')
+            $response['data']['cards'] = $order->deliveryCards()->get()
                 ->pluck('content')
                 ->values()
                 ->toArray();

@@ -103,7 +103,7 @@ export default function Orders() {
         return (
           <Space size={4} wrap>
             {s ? <Tag color={s.color}>{s.text}</Tag> : record.status}
-            {record.status !== 'paid' && record.payment_no && <Tag color="orange">待核对</Tag>}
+            {record.has_payment_review && <Tag color="orange">待核对</Tag>}
           </Space>
         );
       },

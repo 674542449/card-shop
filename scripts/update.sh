@@ -97,6 +97,12 @@ if docker compose version >/dev/null 2>&1; then DC="docker compose"
 elif docker-compose version >/dev/null 2>&1; then DC="docker-compose"
 fi
 
+# Read the current release's compose file, so rollback also works with older
+# releases which have no dedicated backup worker.
+background_services() {
+    $DC config --services 2>/dev/null | awk '/^(scheduler|notifications|backups)$/ { print }'
+}
+
 # ---------------------------------------------------------------- 回滚
 if [ "$ACTION" = "rollback" ]; then
     sect "回滚"
@@ -109,8 +115,26 @@ if [ "$ACTION" = "rollback" ]; then
         exit 0
     fi
     confirm "确认回滚？" || { echo "  已取消"; exit 0; }
+    WORKERS=$(background_services)
+    [ -z "$WORKERS" ] || $DC stop $WORKERS || die "暂停后台进程失败"
     git reset --hard "$TARGET" || die "git reset 失败"
-    [ -n "$DC" ] && $DC restart app nginx
+    if [ -n "$DC" ]; then
+        $DC up -d --remove-orphans app nginx || die "恢复回滚版本容器失败"
+        $DC restart app nginx || die "重启回滚版本失败"
+        ROLLBACK_READY=0
+        for ((attempt=0; attempt<180; attempt++)); do
+            APP_CID=$($DC ps -q app 2>/dev/null | head -1)
+            if [ -n "$APP_CID" ] && [ "$(docker inspect -f '{{.State.Health.Status}}' "$APP_CID" 2>/dev/null)" = healthy ]; then
+                ROLLBACK_READY=1
+                break
+            fi
+            sleep 2
+        done
+        [ "$ROLLBACK_READY" = 1 ] || die "回滚应用未恢复健康" "$DC logs --tail=80 app"
+        WORKERS=$(background_services)
+        [ -z "$WORKERS" ] || $DC up -d --no-deps $WORKERS || die "启动回滚版本后台进程失败"
+        [ -z "$WORKERS" ] || $DC restart $WORKERS || die "重启回滚版本后台进程失败"
+    fi
     ok "已回滚到 $TARGET"
     exit 0
 fi
@@ -309,6 +333,8 @@ fi
 
 # --quiet：这个仓库把后台 SPA 的构建产物也提交了，一次更新动辄一百多个文件重命名，
 # 默认输出会把脚本自己的进度整个淹掉。要看改了什么，上面第 2 步已经列过提交了。
+WORKERS=$(background_services)
+[ -z "$WORKERS" ] || $DC stop $WORKERS || die "暂停后台任务进程失败"
 if [ "$NO_PULL" = "1" ]; then
     ok "代码保持在 $(git rev-parse --short HEAD)（本次不拉取）"
 elif ! git pull --ff-only --quiet origin "$BRANCH"; then
@@ -324,10 +350,11 @@ STARTED_BEFORE=""
 
 if [ "$NEED_BUILD" = "1" ]; then
     echo "  正在重建镜像（会慢一些）..."
-    $DC up -d --build || die "docker compose up -d --build 失败"
+    $DC build || die "docker compose build 失败"
+    $DC up -d app nginx || die "docker compose up -d 失败"
     ok "镜像已重建，容器已按新镜像启动"
 elif [ "$NEED_UP" = "1" ]; then
-    $DC up -d || die "docker compose up -d 失败"
+    $DC up -d app nginx || die "docker compose up -d 失败"
     ok "compose 配置已应用"
 fi
 
@@ -347,9 +374,10 @@ for ((attempt=0; attempt<180; attempt++)); do
     sleep 2
 done
 [ "$APP_READY" = "1" ] || die "app 启动后未恢复健康" "$DC logs --tail=80 app"
-$DC up -d --no-deps scheduler notifications || die "启动后台任务进程失败"
-$DC restart scheduler notifications || die "重启后台任务进程失败"
-ok "调度与通知进程已加载新代码"
+WORKERS=$(background_services)
+[ -z "$WORKERS" ] || $DC up -d --no-deps $WORKERS || die "启动后台任务进程失败"
+[ -z "$WORKERS" ] || $DC restart $WORKERS || die "重启后台任务进程失败"
+ok "调度、通知与备份进程已加载新代码"
 
 $DC restart nginx || warn "重启 nginx 失败" "如果站点 502，手动跑一次 $DC restart nginx"
 ok "nginx 已重启（避免 app 换 IP 后 502）"

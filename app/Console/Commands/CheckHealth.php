@@ -20,9 +20,9 @@ class CheckHealth extends Command
         }
         $health = $service->health();
         $this->line(json_encode($health, JSON_UNESCAPED_UNICODE));
-        $healthy = $health['notifications']['healthy'] && $health['scheduler']['healthy'] && (! $health['reconciliation']['enabled'] || $health['reconciliation']['healthy']) && ! $health['backlog_warning'] && $health['overdue_orders'] === 0;
+        $healthy = $health['healthy'];
         if (! $healthy && $this->option('alert') && Cache::add('shop:health-alert', true, 900)) {
-            $sent = app(NotificationService::class)->sendTelegramNotification('<b>⚠ 商城后台任务异常</b>\n通知或定时任务未收到近期心跳，或有积压/逾期订单。请检查维护与推送页面和服务器进程。');
+            $sent = app(NotificationService::class)->sendTelegramNotification("<b>⚠ 商城后台任务异常</b>\n请检查维护与推送：进程心跳、未确认失败、通知/SEO积压、对账或备份可能异常。");
             if (! $sent) {
                 Cache::forget('shop:health-alert');
             }

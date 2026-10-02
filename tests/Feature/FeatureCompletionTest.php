@@ -359,6 +359,7 @@ class FeatureCompletionTest extends TestCase
 
     public function test_refund_balance_and_transitions_require_actual_payment_reference(): void
     {
+        Setting::set('refund_enabled', '1');
         $o = $this->order($this->product());
         app(OrderFulfilmentService::class)->fulfilFromGateway($o->order_no, 'refund-trade', '10.00', 'epay');
         $service = app(RefundService::class);
@@ -384,6 +385,7 @@ class FeatureCompletionTest extends TestCase
 
     public function test_duplicate_receipt_refund_is_a_separate_budget_and_resolves_review(): void
     {
+        Setting::set('refund_enabled', '1');
         $o = $this->order($this->product());
         $f = app(OrderFulfilmentService::class);
         $f->fulfilFromGateway($o->order_no, 'refund-original', '10.00', 'epay');
@@ -401,6 +403,7 @@ class FeatureCompletionTest extends TestCase
 
     public function test_buyer_refund_requires_order_ownership(): void
     {
+        Setting::set('refund_enabled', '1');
         $o = $this->order($this->product(), ['status' => 'paid']);
         $this->post('/order/refund/'.$o->order_no, ['amount' => 10, 'reason' => 'buyer-refund'])->assertForbidden();
         $this->withBuyerSession($o)->post('/order/refund/'.$o->order_no, ['amount' => 10, 'reason' => 'buyer-refund'])->assertRedirect();

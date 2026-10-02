@@ -32,6 +32,8 @@ const OWNER_SETTINGS = new Set([
   'mail_host', 'mail_port', 'mail_username', 'mail_password', 'mail_encryption', 'mail_from_address', 'mail_from_name',
   'telegram_bot_token', 'telegram_chat_id', 'telegram_enabled', 'turnstile_site_key', 'turnstile_secret_key',
   'order_expire_minutes', 'honeypot_enabled', 'honeypot_ban_minutes', 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
+  'refund_enabled', 'backup_auto_enabled', 'backup_schedule_time', 'backup_retention_count', 'backup_retention_days',
+  'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb',
 ]);
 const settingsSaver = createSerialSaveQueue(updateSettings, AUTO_SAVE_DELAY);
 onAdminSessionChange(() => settingsSaver.reset());
@@ -118,10 +120,15 @@ export default function Settings() {
         const retained = canWrite ? Object.fromEntries(Object.entries(settingsSaver.unsaved())
           .filter(([key]) => canConfigurePrivate || !OWNER_SETTINGS.has(key))) : {};
         const normalised = { ...data, ...retained };
-        for (const [key, defaultValue] of Object.entries({ telegram_enabled: false, honeypot_enabled: true, honeypot_skip_reserved_ips: true, payment_reconciliation_enabled: false })) {
+        for (const [key, defaultValue] of Object.entries({ telegram_enabled: false, honeypot_enabled: true, honeypot_skip_reserved_ips: true, payment_reconciliation_enabled: false, refund_enabled: false, backup_auto_enabled: false })) {
           normalised[key] = normalised[key] == null ? defaultValue : normalised[key] === '1' || normalised[key] === true;
         }
         normalised.honeypot_ban_minutes ??= 10080;
+        normalised.backup_schedule_time ||= '03:00';
+        normalised.backup_retention_count ||= 14;
+        normalised.backup_retention_days ||= 30;
+        normalised.backup_stale_hours ||= 30;
+        normalised.backup_min_free_mb ??= 1024;
         delete normalised._available_themes;
         setInitialValues(normalised);
         form.setFieldsValue(normalised);
@@ -439,8 +446,21 @@ export default function Settings() {
       children: (
         <>
           <ProFormDigit name="order_expire_minutes" disabled={!canConfigurePrivate} label="订单过期时间（分钟）" min={5} max={10080} fieldProps={{ precision: 0 }} />
+          <ProFormSwitch name="refund_enabled" disabled={!canConfigurePrivate} label="启用退款申请" extra="默认关闭，由店主决定是否启用。关闭后买家和后台均不能创建新退款；已有记录仍可查看和处理。退款完成需要人工执行实际打款并登记流水。" />
         </>
       ),
+    },
+    {
+      key: 'backup', label: '自动备份', children: <>
+        <Alert type="info" showIcon message="完整备份由独立后台进程执行" description="启用前确认备份进程正常。文件包含数据库、环境配置和卡密，应妥善保管。异机同步仅支持预先挂载的目录。" style={{ marginBottom: 16 }} />
+        <ProFormSwitch name="backup_auto_enabled" disabled={!canConfigurePrivate} label="启用每日完整备份" />
+        <ProFormText name="backup_schedule_time" disabled={!canConfigurePrivate} label="每日执行时间（服务器时区）" rules={[{ pattern: /^([01]\d|2[0-3]):[0-5]\d$/, message: '请输入 HH:mm' }]} />
+        <ProFormDigit name="backup_retention_count" disabled={!canConfigurePrivate} label="保留份数" min={1} max={365} fieldProps={{ precision: 0 }} />
+        <ProFormDigit name="backup_retention_days" disabled={!canConfigurePrivate} label="保留天数" min={1} max={3650} fieldProps={{ precision: 0 }} />
+        <ProFormText name="backup_sync_directory" disabled={!canConfigurePrivate} label="异机挂载目录（可选）" extra="填写已挂载、存在且可写的绝对目录，不能是网址或应用目录；留空仅保存本地。远端副本需另行设置保留策略。" />
+        <ProFormDigit name="backup_stale_hours" disabled={!canConfigurePrivate} label="超过多久无成功备份告警（小时）" min={1} max={8760} fieldProps={{ precision: 0 }} />
+        <ProFormDigit name="backup_min_free_mb" disabled={!canConfigurePrivate} label="最低可用空间（MB）" min={0} max={1048576} fieldProps={{ precision: 0 }} />
+      </>,
     },
   ];
 

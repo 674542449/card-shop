@@ -35,6 +35,7 @@ export default function OrderDetail() {
   const { id } = useParams();
   const admin=useOutletContext();const write=allows(admin,'orders','write');const refundWrite=write&&allows(admin,'refunds','write');
   const confirmPayment = write && allows(admin, 'payments', 'write');
+  const replacementWrite = write && allows(admin, 'cards', 'write');
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +43,11 @@ export default function OrderDetail() {
   const [loadError, setLoadError] = useState('');
   const [refundOpen,setRefundOpen]=useState(false); const [refundAmount,setRefundAmount]=useState(null); const [refundReason,setRefundReason]=useState(''); const [refundReceipt,setRefundReceipt]=useState('primary');
   const [resolveReceipt,setResolveReceipt]=useState(null); const [resolveNote,setResolveNote]=useState('');
+  const [replacementOpen, setReplacementOpen] = useState(false);
+  const [replacementIds, setReplacementIds] = useState([]);
+  const [replacementReason, setReplacementReason] = useState('');
+  const [replacementToken, setReplacementToken] = useState('');
+  const [replacing, setReplacing] = useState(false);
 
   const fetchOrder = async () => {
     setLoading(true);
@@ -114,12 +120,12 @@ export default function OrderDetail() {
 
   return (
     <div>
-      {order.status !== 'paid' && order.payment_no && (
+      {order.has_payment_review && (
         <Alert
           type="warning"
           showIcon
           message="付款待核对"
-          description="收到付款回执，但尚未发货。请核对网关金额及交易状态后人工处理，避免重复付款。"
+          description={order.status === 'paid' ? '订单已经发货，但仍有额外收款待核对。请核对重复付款并处理相应退款，不要再次确认支付。' : '收到付款回执，但尚未发货。请核对网关金额及交易状态后人工处理，避免重复付款。'}
           style={{ marginBottom: 16 }}
         />
       )}
@@ -156,6 +162,15 @@ export default function OrderDetail() {
             <Button loading={actionLoading}>重新发送</Button>
           </Popconfirm>
         )}
+        {replacementWrite && order.status === 'paid' && (
+          <Button disabled={Number(order.refund_balance?.reserved || 0) > 0} title={Number(order.refund_balance?.reserved || 0) > 0 ? '订单原付款退款正在处理，请先完成或拒绝退款申请' : undefined} onClick={() => {
+            setReplacementIds([]); setReplacementReason('');
+            setReplacementToken(window.crypto?.randomUUID?.() || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+              const r = Math.floor(Math.random() * 16); return (c === 'x' ? r : (r & 3) | 8).toString(16);
+            }));
+            setReplacementOpen(true);
+          }}>售后换卡</Button>
+        )}
       </Space>
 
       <ProCard title="订单信息" style={{ marginBottom: 16 }}>
@@ -188,16 +203,36 @@ export default function OrderDetail() {
 
       <Space wrap style={{marginTop:16}}>
         <Button disabled={!write} onClick={async()=>{try{const r=await api.post(`/orders/${id}/sync`);message.success(r.data.message);fetchOrder();}catch(e){message.error(e.response?.data?.message||'对账失败');}}}>同步网关付款状态</Button>
-        <Button disabled={!refundWrite} onClick={()=>{setRefundAmount(Number(order.total_amount));setRefundReason('');setRefundReceipt('primary');setRefundOpen(true);}}>登记退款申请</Button>
+        <Button disabled={!refundWrite || !order.refund_enabled} onClick={()=>{setRefundAmount(order.refund_balance?.available || '0.00');setRefundReason('');setRefundReceipt('primary');setRefundOpen(true);}}>登记退款申请</Button>
       </Space>
+      {!order.refund_enabled && <Typography.Paragraph type="secondary" style={{marginTop:8}}>店主暂未开放新的退款申请；退款管理中的已有申请仍可继续处理。</Typography.Paragraph>}
       {order.reconciliation_error&&<Alert type="warning" message={order.reconciliation_error} style={{marginTop:12}} />}
       <Modal title="登记退款申请" open={refundOpen} onCancel={()=>setRefundOpen(false)} onOk={async()=>{try{await api.post(`/orders/${id}/refunds`,{amount:refundAmount,reason:refundReason,payment_receipt_id:refundReceipt==='primary'?null:refundReceipt});message.success('已登记，前往退款管理审核');setRefundOpen(false);fetchOrder();}catch(e){message.error(e.response?.data?.message||'登记失败');}}}>
         <p>选择退款对应的付款。金额按人民币订单金额登记；实际退款需在原渠道完成。</p>
-        <Select style={{width:'100%',marginBottom:12}} value={refundReceipt} onChange={setRefundReceipt} options={[{value:'primary',label:'订单原付款'},...(order.payment_receipts||[]).map(r=>({value:r.id,label:`${r.trade_no} · ${r.amount} CNY`}))]} />
-        <InputNumber aria-label="退款金额" min={0.01} precision={2} value={refundAmount} onChange={setRefundAmount} style={{width:'100%',marginBottom:12}} />
+        <Select style={{width:'100%',marginBottom:12}} value={refundReceipt} onChange={value => {
+          setRefundReceipt(value);
+          const balance = value === 'primary' ? order.refund_balance : order.payment_receipts?.find(r => r.id === value)?.refund_balance;
+          setRefundAmount(balance?.available || '0.00');
+        }} options={[{value:'primary',label:`订单原付款 · 可退 ${order.refund_balance?.available || '0.00'} CNY`},...(order.payment_receipts||[]).filter(r=>r.trade_no!==order.payment_no).map(r=>({value:r.id,label:`${r.trade_no} · 可退 ${r.refund_balance?.available || '0.00'} CNY`}))]} />
+        <InputNumber aria-label="退款金额" stringMode min="0.01" precision={2} max={refundReceipt==='primary'?order.refund_balance?.available:order.payment_receipts?.find(r=>r.id===refundReceipt)?.refund_balance?.available} value={refundAmount} onChange={setRefundAmount} style={{width:'100%',marginBottom:12}} />
         <Input.TextArea aria-label="退款原因" placeholder="退款原因" value={refundReason} onChange={e=>setRefundReason(e.target.value)} />
       </Modal>
       <Modal title="完成付款核对" open={!!resolveReceipt} onCancel={()=>setResolveReceipt(null)} onOk={async()=>{try{await api.post(`/orders/${id}/receipts/${resolveReceipt.id}/resolve`,{note:resolveNote});message.success('核对结果已保存');setResolveReceipt(null);fetchOrder();}catch(e){message.error(e.response?.data?.message||'保存失败');}}}><Input.TextArea value={resolveNote} onChange={e=>setResolveNote(e.target.value)} placeholder="说明核对结果和实际处置" /></Modal>
+      <Modal title="售后换卡" open={replacementOpen} confirmLoading={replacing} onCancel={() => !replacing && setReplacementOpen(false)} onOk={async () => {
+        if (!replacementIds.length || replacementIds.length > 200 || !replacementReason.trim()) { message.warning('请选择 1 至 200 张卡密并填写换卡原因'); return; }
+        setReplacing(true);
+        try {
+          const res = await api.post(`/orders/${id}/replacements`, { card_ids: replacementIds, reason: replacementReason.trim(), request_token: replacementToken });
+          message.success(res.data.message); setReplacementOpen(false); fetchOrder();
+        } catch (error) { message.error(error.response?.data?.message || '换卡失败，重试会沿用同一操作编号'); }
+        finally { setReplacing(false); }
+      }}>
+        <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="将消耗同商品的可售库存，原卡永久退出当前交付，保留历史且不会回到库存。" description="成功后买家查单、TXT、API 和后续邮件显示当前卡密；已发送的旧邮件无法撤回。" />
+        <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={order.cards || []}
+          rowSelection={{ selectedRowKeys: replacementIds, onChange: setReplacementIds }}
+          columns={[{ title: '编号', dataIndex: 'id', width: 65 }, { title: '当前卡密', dataIndex: 'content', ellipsis: true }]} />
+        <Input.TextArea aria-label="换卡原因" value={replacementReason} onChange={e => setReplacementReason(e.target.value)} maxLength={2000} placeholder="填写核实后的售后换卡原因" style={{ marginTop: 12 }} />
+      </Modal>
       <ProCard title="退款记录" style={{marginTop:16}}><Table rowKey="id" size="small" pagination={false} dataSource={order.refunds||[]} columns={[{title:'金额（人民币）',dataIndex:'amount'},{title:'状态',dataIndex:'status'},{title:'原因',dataIndex:'reason'},{title:'凭证',dataIndex:'reference'}]} /></ProCard>
       <ProCard title="付款回执" style={{ marginTop: 16 }}>
         <Table size="small" rowKey="id" pagination={false} dataSource={order.payment_receipts || []} scroll={{ x: 600 }} columns={[
@@ -210,17 +245,25 @@ export default function OrderDetail() {
       </ProCard>
       <ProCard title="通知投递" extra={<Button onClick={fetchOrder}>刷新状态</Button>} style={{ marginTop: 16 }}>
         <Table size="small" rowKey="id" pagination={false} dataSource={order.notifications || []} scroll={{ x: 700 }} columns={[
-          { title: '类型', dataIndex: 'type', render: (value) => ({ order_email: '卡密邮件', new_order: '订单通知', payment_review: '付款待核对' }[value] || value) },
+          { title: '类型', dataIndex: 'type', render: (value) => ({ order_email: '卡密邮件', refund_email: '退款处理邮件', new_order: '订单通知', payment_review: '付款待核对' }[value] || value) },
           { title: '状态', dataIndex: 'status', render: (value) => ({ pending: '等待发送 / 重试', processing: '发送中', sent: '已交给发送服务', failed: '失败，需人工重试', skipped: '通知未启用，已跳过' }[value] || value) },
           { title: '尝试次数', dataIndex: 'attempts' }, { title: '错误', dataIndex: 'last_error' },
           { title: '下次尝试', dataIndex: 'available_at', render: (value, record) => record.status === 'pending' ? fmt(value) : '-' },
         ]} />
       </ProCard>
+      {order.card_replacements?.length > 0 && <ProCard title="售后换卡历史" style={{ marginTop: 16 }}>
+        <Table rowKey="id" size="small" pagination={{ pageSize: 10 }} dataSource={order.card_replacements} scroll={{ x: 600 }} columns={[
+          { title: '操作时间', dataIndex: 'created_at', render: fmt },
+          { title: '处理人', render: (_, record) => record.admin?.username || '-' },
+          { title: '原因', dataIndex: 'reason' },
+          { title: '新旧卡编号', render: (_, record) => record.items?.map(item => `#${item.old_card_id} → #${item.new_card_id}`).join('；') },
+        ]} />
+      </ProCard>}
       {order.status === 'paid' && !order.cards_accessible && (
         <Alert type="info" showIcon message="当前账户没有卡密查看权限" description="店主可在管理员权限中单独授予卡密查看权限。" style={{ marginTop: 16 }} />
       )}
       {order.status === 'paid' && order.cards_accessible && order.cards && order.cards.length > 0 && (
-        <ProCard title="卡密信息">
+        <ProCard title="当前交付卡密">
           {order.cards.map((card, idx) => (
             <Paragraph key={idx} copyable style={{ marginBottom: 4 }}>
               {card.content ?? ''}

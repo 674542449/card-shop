@@ -424,6 +424,7 @@ class BuyerServerValidationSecurityTest extends TestCase
 
     public function test_buyer_refund_cannot_mass_assign_approval_source_or_other_payment_receipt(): void
     {
+        Setting::set('refund_enabled', '1');
         $order = $this->order($this->product());
         app(OrderFulfilmentService::class)->fulfilManually($order);
         $this->withBuyerSession($order)->post('/order/refund/'.$order->order_no, [

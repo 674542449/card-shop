@@ -43,6 +43,8 @@ class SettingController extends Controller
         'telegram_bot_token', 'telegram_chat_id', 'telegram_enabled',
         'turnstile_site_key', 'turnstile_secret_key', 'order_expire_minutes',
         'honeypot_enabled', 'honeypot_ban_minutes', 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
+        'refund_enabled', 'backup_auto_enabled', 'backup_schedule_time', 'backup_retention_count', 'backup_retention_days',
+        'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb',
     ];
 
     public function index()
@@ -98,6 +100,9 @@ class SettingController extends Controller
                 'honeypot_enabled', 'honeypot_ban_minutes',
                 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
             ],
+            'after_sales' => ['refund_enabled'],
+            'backup' => ['backup_auto_enabled', 'backup_schedule_time', 'backup_retention_count', 'backup_retention_days',
+                'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb'],
         ];
 
         $rules = [];
@@ -135,6 +140,14 @@ class SettingController extends Controller
         }
         $rules['bing_indexnow_key'] = ['nullable', 'regex:/^[A-Za-z0-9-]{8,128}$/D'];
         $rules['payment_reconciliation_enabled'] = ['nullable', 'boolean'];
+        $rules['refund_enabled'] = ['nullable', 'boolean'];
+        $rules['backup_auto_enabled'] = ['nullable', 'boolean'];
+        $rules['backup_schedule_time'] = ['nullable', 'date_format:H:i'];
+        $rules['backup_retention_count'] = ['nullable', 'integer', 'min:1', 'max:365'];
+        $rules['backup_retention_days'] = ['nullable', 'integer', 'min:1', 'max:3650'];
+        $rules['backup_sync_directory'] = ['nullable', 'string', 'max:500'];
+        $rules['backup_stale_hours'] = ['nullable', 'integer', 'min:1', 'max:8760'];
+        $rules['backup_min_free_mb'] = ['nullable', 'integer', 'min:0', 'max:1048576'];
         $rules['mail_encryption'] = ['nullable', 'in:ssl,tls,none'];
         $rules['usdt_gateway'] = ['nullable', 'in:epusdt,bepusdt'];
         $rules['site_theme'] = ['nullable', \Illuminate\Validation\Rule::in(themes_available())];

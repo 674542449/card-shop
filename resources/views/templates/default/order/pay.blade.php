@@ -78,8 +78,8 @@
     </div>
     @endif
 
-    <div class="text-center op-polling" id="payment-polling" data-order-no="{{ $order->order_no }}">
-        &#8987; 正在等待支付结果，支付成功后将自动跳转...
-    </div>
+    <div class="text-center op-polling" id="payment-polling" aria-live="polite" data-order-no="{{ $order->order_no }}" data-expires="{{ $order->expires_at->toIso8601String() }}">
+        <span data-payment-status>正在等待支付结果，支付成功后自动显示卡密。</span>
+    <button type="button" class="btn-buy-sm" data-payment-recheck>重新检查付款</button> <a href="/order/query?order_no={{ $order->order_no }}" data-payment-verify hidden>验证并查询订单</a></div>
     @endif
 @endsection

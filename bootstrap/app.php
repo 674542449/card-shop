@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('stock:check')->everyMinute()->withoutOverlapping(10);
         $schedule->command('shop:health --scheduler')->everyMinute()->withoutOverlapping(2);
         $schedule->command('payments:reconcile --limit=10')->everyFiveMinutes()->withoutOverlapping(5);
+        $schedule->command('shop:backup-schedule')->everyMinute()->withoutOverlapping(2);
     })
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->appendToGroup('web', \App\Http\Middleware\ValidateRouteModelIdentifiers::class);
@@ -94,7 +95,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        $exceptions->dontFlash(['query_password', 'cf-turnstile-response']);
+        $exceptions->dontFlash(['query_password', 'cf-turnstile-response', 'code', 'new_password', 'new_password_confirmation']);
         $exceptions->respond(fn ($response) => \App\Http\Middleware\ProtectSensitiveResponses::protect($response));
     })
     ->create();

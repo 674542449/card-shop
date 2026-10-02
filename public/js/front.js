@@ -168,28 +168,83 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // Payment status polling
     var paymentPollingEl = document.getElementById('payment-polling');
+    var recheckPayment = null;
     if (paymentPollingEl) {
         var orderNo = paymentPollingEl.dataset.orderNo;
         var checkUrl = '/order/pay/' + orderNo;
-        var pollingInterval = setInterval(function () {
-            fetch(checkUrl, { headers: { 'Accept': 'application/json' }, credentials: 'same-origin' })
+        var paymentDeadline = new Date(paymentPollingEl.dataset.expires).getTime();
+        var paymentStatus = paymentPollingEl.querySelector('[data-payment-status]');
+        var paymentRetry = paymentPollingEl.querySelector('[data-payment-recheck]');
+        var paymentVerify = paymentPollingEl.querySelector('[data-payment-verify]');
+        var paymentTimer = null;
+        var paymentBusy = false;
+        var paymentStopped = false;
+        var paymentFailures = 0;
+        function paymentMessage(message) { if (paymentStatus) paymentStatus.textContent = message; }
+        function paymentSchedule() {
+            if (!paymentStopped && Date.now() < paymentDeadline) {
+                paymentTimer = setTimeout(function () { recheckPayment(false); }, Math.min(30000, 5000 * Math.pow(2, paymentFailures)));
+            }
+        }
+        function paymentNeedsVerification() {
+            paymentStopped = true;
+            paymentMessage('查询会话已失效，请验证下单邮箱与查询密码后查看订单。');
+            if (paymentVerify) paymentVerify.hidden = false;
+        }
+        recheckPayment = function (manual) {
+            if (paymentBusy || (paymentStopped && !manual)) return;
+            if (paymentTimer) clearTimeout(paymentTimer);
+            if (manual) { paymentStopped = false; paymentFailures = 0; }
+            paymentBusy = true;
+            if (paymentRetry) paymentRetry.disabled = true;
+            paymentMessage('正在检查付款结果…');
+            var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            var timeout = controller ? setTimeout(function () { controller.abort(); }, 10000) : null;
+            var options = { headers: { 'Accept': 'application/json' }, credentials: 'same-origin', cache: 'no-store' };
+            if (controller) options.signal = controller.signal;
+            fetch(checkUrl, options)
                 .then(function (response) {
-                    if (response.redirected) { window.location.reload(); return null; }
+                    if ([401, 403, 419].includes(response.status) || response.redirected) {
+                        paymentNeedsVerification();
+                        return null;
+                    }
+                    if (!response.ok) throw new Error('payment-check-unavailable');
                     return response.json();
                 })
                 .then(function (data) {
-                    // The controller answers JSON for this request. It used to answer
-                    // HTML and this checked `indexOf('"paid"')` against the whole page —
-                    // which the embedded order JSON and the status labels could both
-                    // satisfy while the order was still pending, reloading in a loop.
-                    if (data && data.status && (data.status !== 'pending' || data.payment_review)) {
-                        clearInterval(pollingInterval);
+                    if (!data) return;
+                    if (!['pending', 'paid', 'expired', 'closed'].includes(data.status)) throw new Error('payment-check-invalid');
+                    if (data.verification_required) { paymentNeedsVerification(); return; }
+                    if (data.status !== 'pending' || data.payment_review) {
+                        paymentStopped = true;
                         window.location.reload();
+                        return;
+                    }
+                    paymentFailures = 0;
+                    if (data.expires_at) paymentDeadline = new Date(data.expires_at).getTime();
+                    if (Date.now() >= paymentDeadline) {
+                        paymentStopped = true;
+                        paymentMessage('已到支付截止时间，请重新检查订单；若已付款，请勿重复付款。');
+                    } else {
+                        paymentMessage('等待付款确认，成功后自动显示卡密。也可点击重新检查。');
                     }
                 })
-                .catch(function () {});
-        }, 5000);
-        setTimeout(function () { clearInterval(pollingInterval); }, 30 * 60 * 1000);
+                .catch(function () {
+                    paymentFailures++;
+                    paymentStopped = Date.now() >= paymentDeadline;
+                    paymentMessage(paymentStopped
+                        ? '已到支付截止时间，暂未能确认结果。请重新检查；若已付款，请勿重复付款。'
+                        : '暂时无法检查付款结果，正在自动重试。请保持此页打开或重新检查。');
+                })
+                .finally(function () {
+                    if (timeout) clearTimeout(timeout);
+                    paymentBusy = false;
+                    if (paymentRetry) paymentRetry.disabled = false;
+                    paymentSchedule();
+                });
+        };
+        if (paymentRetry) paymentRetry.addEventListener('click', function () { recheckPayment(true); });
+        recheckPayment(false);
     }
 
     // Countdown timer
@@ -203,7 +258,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (diff <= 0) {
                 if (timeEl) timeEl.textContent = '00:00';
                 if (countdownTimer) clearInterval(countdownTimer);
-                setTimeout(function () { window.location.reload(); }, 2000);
+                if (recheckPayment) recheckPayment(false);
+                else setTimeout(function () { window.location.reload(); }, 2000);
                 return;
             }
             var minutes = Math.floor(diff / 60000);
@@ -211,7 +267,7 @@ document.addEventListener('DOMContentLoaded', function () {
             if (timeEl) timeEl.textContent = String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
         }
         updateCountdown();
-        countdownTimer = setInterval(updateCountdown, 1000);
+        if (expiresAt > Date.now()) countdownTimer = setInterval(updateCountdown, 1000);
     }
 
     // Form submission guard

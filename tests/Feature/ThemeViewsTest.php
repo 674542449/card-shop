@@ -81,6 +81,7 @@ class ThemeViewsTest extends TestCase
     #[DataProvider('themes')]
     public function test_complete_catalog_search_pagination_refund_and_article_cards(string $theme): void
     {
+        Setting::set('refund_enabled', '1');
         $this->useTheme($theme); $product = $this->product();
         for ($i = 0; $i < 26; $i++) {
             Product::create(['category_id' => $product->category_id, 'name' => '全目录商品-'.$i, 'slug' => 'full-catalog-'.$i, 'price' => 10, 'is_active' => true]);

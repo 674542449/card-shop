@@ -8,9 +8,11 @@ use App\Models\Admin;
 use App\Models\OperationLog;
 use App\Rules\BcryptPassword;
 use App\Rules\Utf8Text;
+use App\Services\AdminTwoFactorService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\DB;
 
 class AuthController extends Controller
 {
@@ -40,11 +42,48 @@ class AuthController extends Controller
 
         foreach (array_keys($keys) as $key) { RateLimiter::clear($key); }
 
+        if ($admin->two_factor_confirmed_at) {
+            $request->session()->regenerate(true);
+            $request->session()->forget(['admin_id', 'admin_username', 'admin_pw', 'admin_factor']);
+            $request->session()->put('admin_challenge', ['id' => $admin->id, 'password' => AdminAuth::passwordFingerprint($admin->password),
+                'revision' => $admin->two_factor_revision, 'expires' => now()->addMinutes(5)->timestamp]);
+            return response()->json(['two_factor_required' => true, 'csrf_token' => csrf_token()])->header('Cache-Control', 'no-store');
+        }
+        return $this->completeLogin($request, $admin);
+    }
+
+    public function challenge(Request $request, AdminTwoFactorService $factors)
+    {
+        $data = $request->validate(['code' => ['required', 'string', 'max:32', new Utf8Text]]);
+        $challenge = $request->session()->get('admin_challenge');
+        if (!is_array($challenge) || ($challenge['expires'] ?? 0) < now()->timestamp) {
+            $request->session()->forget('admin_challenge');
+            return response()->json(['message' => '验证已过期，请重新输入账号密码。'], 401);
+        }
+        $keys = ['admin-factor-account|'.$challenge['id'] => [10, 900], 'admin-factor-ip|'.$request->ip() => [30, 900]];
+        if (($retry = $this->reserveCredentialAttempt($keys)) !== null) {
+            return response()->json(['message' => '验证码尝试过多，请稍后再试。'], 429)->header('Retry-After', (string) $retry);
+        }
+        $admin = Admin::find($challenge['id']);
+        if (!$admin || !$admin->is_active || !$admin->two_factor_confirmed_at ||
+            !hash_equals(AdminAuth::passwordFingerprint($admin->password), (string) ($challenge['password'] ?? '')) ||
+            !hash_equals((string) $admin->two_factor_revision, (string) ($challenge['revision'] ?? '')) || !$factors->consume($admin, $data['code'])) {
+            return response()->json(['message' => '验证码或恢复码无效，或已经使用。'], 422);
+        }
+        foreach (array_keys($keys) as $key) { RateLimiter::clear($key); }
+        $request->session()->forget('admin_challenge');
+        return $this->completeLogin($request, $admin);
+    }
+
+    private function completeLogin(Request $request, Admin $admin)
+    {
+        $request->session()->forget(['admin_challenge', 'admin_factor_setup']);
         $request->session()->regenerate(true);
         $request->session()->put('admin_id', $admin->id);
         $request->session()->put('admin_username', $admin->username);
         // 见 AdminAuth：会话绑到当时的密码哈希上，密码一变所有旧会话立即失效。
         $request->session()->put('admin_pw', AdminAuth::passwordFingerprint($admin->password));
+        $request->session()->put('admin_factor', $admin->two_factor_revision);
 
         $admin->update([
             'last_login_at' => now(),
@@ -111,8 +150,16 @@ class AuthController extends Controller
         }
         foreach (array_keys($keys) as $key) { RateLimiter::clear($key); }
 
-        $admin->update(['password' => Hash::make($request->input('new_password'))]);
-        $admin->refresh();
+        $updated = DB::transaction(function () use ($admin, $request) {
+            $locked = Admin::whereKey($admin->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->is_active && hash_equals($admin->password, $locked->password) &&
+                hash_equals((string) $admin->two_factor_revision, (string) $locked->two_factor_revision), 409, '账户安全状态已变化，请重新登录。');
+            $locked->update(['password' => Hash::make($request->input('new_password'))]);
+            return $locked;
+        });
+        // Keep the exact state this operation wrote. A later reset must invalidate it,
+        // rather than being silently adopted by a post-commit refresh().
+        $admin->setRawAttributes($updated->getAttributes(), true);
 
         // 这里原来的注释写着 regenerate() 能让「其他持有旧凭据的会话不会被悄悄留在
         // 登录状态」——那是错的，而且错得很危险：regenerate() 默认 $destroy=false，
@@ -126,6 +173,7 @@ class AuthController extends Controller
         $request->session()->put('admin_username', $admin->username);
         // 自己这条会话跟着新密码走，否则改完密码当场把自己也踢下线。
         $request->session()->put('admin_pw', AdminAuth::passwordFingerprint($admin->password));
+        $request->session()->put('admin_factor', $admin->two_factor_revision);
 
         OperationLog::log('修改密码', 'admin', $admin->id, '管理员修改了自己的密码');
 
@@ -144,6 +192,8 @@ class AuthController extends Controller
             'last_login_at' => $admin->last_login_at,
             'last_login_ip' => $admin->last_login_ip,
             'role' => $admin->role, 'permissions' => $admin->permissions,
+            'two_factor_enabled' => (bool) $admin->two_factor_confirmed_at,
+            'recovery_codes_remaining' => count($admin->two_factor_recovery_codes ?? []),
         ]);
     }
 

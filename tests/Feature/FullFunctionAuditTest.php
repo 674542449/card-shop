@@ -128,6 +128,7 @@ class FullFunctionAuditTest extends TestCase
 
     public function test_legacy_refunds_still_consume_primary_balance_when_receipt_is_added(): void
     {
+        Setting::set('refund_enabled', '1');
         $o = $this->order($this->product());
         $o->update(['status' => 'paid']);
         $service = app(RefundService::class);

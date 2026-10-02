@@ -9,6 +9,9 @@ use App\Models\OperationLog;
 use App\Models\Order;
 use App\Services\NotificationQueue;
 use App\Services\OrderFulfilmentService;
+use App\Services\OrderCardReplacementService;
+use App\Services\RefundService;
+use App\Exceptions\CheckoutException;
 use App\Support\AdminListQuery;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
@@ -87,7 +90,7 @@ class OrderController extends Controller
             'sort' => 'nullable|string|max:50',
             'dir' => 'nullable|string|max:10',
         ]);
-        $query = $this->applyFilters($request, Order::with('product'));
+        $query = $this->applyFilters($request, Order::with('product')->withPaymentReviewFlag());
 
         $sortBy = $request->get('sort', 'created_at');
         $sortDir = strtolower((string) $request->get('dir', 'desc'));
@@ -113,16 +116,42 @@ class OrderController extends Controller
         ]);
     }
 
-    public function show(Request $request, Order $order)
+    public function show(Request $request, Order $order, RefundService $refunds)
     {
-        $order->load(['product', 'cards', 'coupon', 'paymentReceipts', 'notifications', 'refunds']);
+        $order->load(['product', 'deliveryCards', 'coupon', 'paymentReceipts', 'notifications', 'refunds', 'cardReplacements.items', 'cardReplacements.admin:id,username']);
         $canReadCards = $request->attributes->get('admin')->allows('cards', 'read');
+        // Pending orders still need their locked-card status for administration.
+        // Retired cards are historical and never appear in the current summary.
+        $currentCards = $order->isPaid() ? $order->deliveryCards
+            : $order->cards()->whereNull('replaced_at')->orderBy('id')->get();
         if ($canReadCards) {
-            $order->cards->each(fn (Card $card) => $card->makeVisible('content'));
+            $currentCards->each(fn (Card $card) => $card->makeVisible('content'));
         }
+        $order->setRelation('cards', $currentCards);
+        $order->unsetRelation('deliveryCards');
         $order->setAttribute('cards_accessible', $canReadCards);
+        $order->setAttribute('has_payment_review', $order->requiresPaymentReview());
+        $order->setAttribute('refund_enabled', $refunds->enabled());
+        $order->setAttribute('refund_balance', $refunds->balance($order));
+        $order->paymentReceipts->each(fn ($receipt) => $receipt->setAttribute('refund_balance', $refunds->balance($order, $receipt)));
 
         return response()->json($order);
+    }
+
+    public function replaceCards(Request $request, Order $order, OrderCardReplacementService $service)
+    {
+        abort_unless($request->attributes->get('admin')->allows('cards', 'write'), 403, '售后换卡需要卡密修改权限。');
+        $data = $request->validate([
+            'card_ids' => 'required|array|min:1|max:200',
+            'card_ids.*' => 'required|integer|min:1|max:2147483647|distinct',
+            'reason' => 'required|string|max:2000', 'request_token' => 'required|uuid',
+        ]);
+        try {
+            $replacement = $service->replace($order, array_map('intval', $data['card_ids']), $data['reason'], $data['request_token'], $request->attributes->get('admin'));
+        } catch (CheckoutException $exception) {
+            return response()->json(['message' => $exception->getMessage()], 422);
+        }
+        return response()->json(['message' => '已完成换卡，旧卡保留售后历史且不会再次售出；当前卡密邮件已加入发送队列。', 'data' => $replacement], 201);
     }
 
     public function close(Order $order, \App\Services\OrderService $service)
@@ -172,9 +201,9 @@ class OrderController extends Controller
             return response()->json(['message' => '只能对已支付订单补发卡密。'], 422);
         }
 
-        $order->load(['product', 'cards']);
+        $order->load(['product', 'deliveryCards']);
 
-        if ($order->cards->isEmpty()) {
+        if ($order->deliveryCards->isEmpty()) {
             return response()->json(['message' => '该订单没有已发放的卡密，无法补发。'], 422);
         }
 

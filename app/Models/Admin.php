@@ -19,6 +19,7 @@ class Admin extends Model
 
     protected $hidden = [
         'password',
+        'two_factor_secret', 'two_factor_recovery_codes', 'two_factor_revision', 'two_factor_last_counter',
     ];
 
     protected function casts(): array
@@ -27,6 +28,8 @@ class Admin extends Model
             'last_login_at' => 'datetime',
             'password' => 'hashed',
             'permissions' => 'array', 'is_active' => 'boolean',
+            'two_factor_secret' => 'encrypted', 'two_factor_recovery_codes' => 'array',
+            'two_factor_last_counter' => 'integer', 'two_factor_confirmed_at' => 'datetime',
         ];
     }
 

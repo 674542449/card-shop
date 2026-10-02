@@ -157,10 +157,27 @@ api.interceptors.response.use(
 export const login = async (username, password) => {
   resetAdminSession({ broadcast: false });
   const res = await api.post('/login', { username, password });
+  if (!res.data?.two_factor_required) resetAdminSession();
+  setCsrfToken(res.data?.csrf_token);
+  return res;
+};
+
+export const loginChallenge = async (code) => {
+  const res = await api.post('/login/challenge', { code });
   resetAdminSession();
   setCsrfToken(res.data?.csrf_token);
   return res;
 };
+export const setupTwoFactor = (current_password) => api.post('/two-factor/setup', { current_password });
+const factorChange = async (path, data) => {
+  const res = await api.post(path, data);
+  resetAdminSession();
+  setCsrfToken(res.data?.csrf_token);
+  adminContext = res.data?.admin_context || '';
+  return res;
+};
+export const confirmTwoFactor = (code) => factorChange('/two-factor/confirm', { code });
+export const disableTwoFactor = (data) => factorChange('/two-factor/disable', data);
 
 export const logout = async () => {
   resetAdminSession({ broadcast: false });

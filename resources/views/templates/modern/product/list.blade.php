@@ -5,8 +5,9 @@
 @section('canonical', url('/category/' . $category->slug))
 @section('content')
 <form method="GET" action="{{ request()->url() }}" class="m-catalog-search-form" role="search">
- <label for="global-product-search">搜索全部商品</label><div class="m-catalog-search-controls"><input id="global-product-search" type="search" name="q" value="{{ request('q') }}" maxlength="200" placeholder="商品名称"><button class="m-button m-button-primary" type="submit">搜索</button>@if(request()->filled('q'))<a href="{{ request()->url() }}">清空</a>@endif</div>
+ <label for="global-product-search">搜索当前分类</label><div class="m-catalog-search-controls"><input id="global-product-search" type="search" name="q" value="{{ request('q') }}" maxlength="200" placeholder="商品名称"><button class="m-button m-button-primary" type="submit">搜索</button>@if(request()->filled('q'))<a href="{{ request()->url() }}">清空</a>@endif</div>
  </form>
+<p><a href="{{ url('/') . (request()->filled('q') ? '?' . http_build_query(['q' => request('q')]) : '') }}">在全部商品中搜索 →</a></p>
     <nav class="m-breadcrumb" aria-label="面包屑"><a href="/">商品目录</a><span aria-hidden="true">/</span><span>{{ $category->name }}</span></nav>
     <section class="m-category-heading"><div><span class="m-eyebrow">按分类探索</span><h1 class="m-page-heading">{{ $category->name }}</h1>@if($category->description)<p class="m-lead">{{ $category->description }}</p>@endif</div><a class="m-button m-button-secondary" href="/">全部商品 <span aria-hidden="true">↗</span></a></section>
     <div class="m-section-header"><h2 class="m-section-title">商品目录</h2><span class="m-muted">共 {{ $products->total() }} 件商品</span></div>

@@ -14,7 +14,7 @@ class NotificationController extends Controller
     {
         $pageSize = AdminListQuery::pageSize($request, 20, [
             'status' => 'nullable|in:pending,processing,sent,failed,skipped',
-            'type' => 'nullable|in:order_email,new_order,payment_review,low_stock',
+            'type' => 'nullable|in:order_email,refund_email,new_order,payment_review,low_stock',
         ]);
         $query = NotificationDelivery::query();
         foreach (['status', 'type'] as $field) {
@@ -33,7 +33,7 @@ class NotificationController extends Controller
             if (!in_array($locked->status, ['failed', 'skipped'], true)) {
                 return false;
             }
-            $locked->update(['status' => 'pending', 'attempts' => 0, 'available_at' => now(), 'reserved_at' => null, 'lease_token' => null, 'last_error' => null]);
+            $locked->update(['status' => 'pending', 'attempts' => 0, 'available_at' => now(), 'reserved_at' => null, 'lease_token' => null, 'last_error' => null, 'health_acknowledged_at' => null]);
             return true;
         });
         if (!$updated) {

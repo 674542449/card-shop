@@ -26,8 +26,10 @@ class ReconcilePayments extends Command
         foreach ($orders as $order) {
             try {
                 $service->sync($order);
+                $health->recordReconciliation(true);
             } catch (\Throwable) {
-            } $health->beat('reconciliation');
+                $health->recordReconciliation(false);
+            }
         }
 
         return self::SUCCESS;

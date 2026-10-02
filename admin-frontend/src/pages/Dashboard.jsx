@@ -81,7 +81,7 @@ export default function Dashboard() {
     },
     { title: '商品', dataIndex: 'product_name', ellipsis: true, width: 220 },
     { title: '金额', dataIndex: 'total_amount', width: 120, align: 'right', render: (value) => <span className="admin-amount">{money(value)}</span> },
-    { title: '状态', dataIndex: 'status', width: 100, render: (value) => <Tag color={STATUS[value]?.color}>{STATUS[value]?.text || value}</Tag> },
+    { title: '状态', dataIndex: 'status', width: 140, render: (value, record) => <Space size={4} wrap><Tag color={STATUS[value]?.color}>{STATUS[value]?.text || value}</Tag>{record.has_payment_review && <Tag color="orange">待核对</Tag>}</Space> },
     { title: '时间', dataIndex: 'created_at', width: 155 },
   ];
 
@@ -102,7 +102,7 @@ export default function Dashboard() {
         <Col xs={12} xl={8}><Stat label="今日完成退款" value={money(data.today_refund_amount)} hint={'累计 ' + money(data.total_refund_amount)} icon={<WalletOutlined />} /></Col>
         <Col xs={12} xl={8}><Stat label="退款待审核" value={data.requested_refunds || 0} hint={'已批准待退款 ' + (data.approved_refunds || 0) + ' 笔'} to="/refunds?status=requested" icon={<ClockCircleOutlined />} /></Col>
       </Row>
-      <Typography.Paragraph type="secondary">销售额按订单付款日期统计；退款按实际完成日期统计。净销售额只扣订单退款，退款金额另含额外收款退回；这些数据不代表利润。</Typography.Paragraph>
+      <Typography.Paragraph type="secondary">销售额按订单付款日期统计；退款按实际完成日期统计。净销售额只扣订单退款，退款金额另含额外收款退回；这些数据不代表利润。金额统计最多缓存 15 秒，待处理任务和最近订单实时读取。</Typography.Paragraph>
       <Row gutter={[20, 20]}>
         <Col xs={24}>
           <Space wrap size="large">

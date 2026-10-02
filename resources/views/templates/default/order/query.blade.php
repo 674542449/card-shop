@@ -8,7 +8,7 @@
         <div class="page-card-body">
             <form action="/order/query" method="POST" data-guard>
                 @csrf
-            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="form-input" id="lookup-order-no" name="order_no" value="{{ old('order_no') }}" maxlength="30" placeholder="留空查询历史订单"></div>
+            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="form-input" id="lookup-order-no" name="order_no" value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" placeholder="留空查询历史订单"></div>
 
                 <div class="pd-form">
                     <div class="form-group">

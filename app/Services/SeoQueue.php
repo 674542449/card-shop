@@ -53,7 +53,7 @@ class SeoQueue
         while ($count < $limit) {
             $job = DB::transaction(function () {
                 SeoDelivery::where('status', 'processing')->where('reserved_at', '<', now()->subMinutes(5))->where('attempts', '>=', 5)
-                    ->update(['status' => 'failed', 'lease_token' => null, 'last_error' => '发送进程中断，请人工重试。']);
+                    ->update(['status' => 'failed', 'lease_token' => null, 'last_error' => '发送进程中断，请人工重试。', 'health_acknowledged_at' => null]);
                 $job = SeoDelivery::where('attempts', '<', 5)->where(fn ($q) => $q
                     ->where(fn ($p) => $p->where('status', 'pending')->where('available_at', '<=', now()))
                     ->orWhere(fn ($p) => $p->where('status', 'processing')->where('reserved_at', '<', now()->subMinutes(5))))
@@ -77,6 +77,7 @@ class SeoQueue
                 'last_error' => $success ? null : '推送失败，请检查站点域名、密钥和搜索引擎响应。',
                 'sent_at' => $success ? now() : null, 'available_at' => now()->addSeconds([60, 300, 900, 3600, 3600][$job->attempts - 1]),
                 'reserved_at' => null, 'lease_token' => null,
+                'health_acknowledged_at' => null,
             ]);
             $count++;
         }

@@ -8,7 +8,7 @@ import dayjs from 'dayjs';
 import { getNotifications, retryNotification } from '../services/api';
 
 const statuses = { pending: '等待发送 / 重试', processing: '发送中', sent: '已交给发送服务', failed: '发送失败', skipped: '已跳过' };
-const types = { order_email: '卡密邮件', new_order: '新订单通知', payment_review: '付款待核对', low_stock: '低库存预警' };
+const types = { order_email: '卡密邮件', refund_email: '退款处理邮件', new_order: '新订单通知', payment_review: '付款待核对', low_stock: '低库存预警' };
 const format = (value) => value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-';
 
 export default function Notifications() {

@@ -12,6 +12,29 @@ use Illuminate\Support\Str;
 
 class CouponController extends Controller
 {
+    /** Catalog labels only; coupon operators do not need general catalog access. */
+    public function productOptions(Request $request)
+    {
+        $pageSize = AdminListQuery::pageSize($request, 50, [
+            'q' => 'nullable|string|max:200', 'include' => 'nullable|integer|min:1|max:2147483647',
+        ]);
+        $query = Product::query()->select(['id', 'name', 'is_active']);
+        if ($request->filled('q')) {
+            $query->where('name', 'ilike', '%'.$request->input('q').'%');
+        }
+        // Search can select live products and keep an existing inactive binding.
+        $query->where(fn ($q) => $q->where('is_active', true)
+            ->when($request->filled('include'), fn ($q) => $q->orWhere('id', $request->integer('include'))));
+        $page = $query->ordered()->paginate($pageSize);
+        $data = $page->items();
+        if ($request->filled('include') && $page->currentPage() === 1
+            && ! collect($data)->contains('id', $request->integer('include'))) {
+            $included = Product::select(['id', 'name', 'is_active'])->find($request->integer('include'));
+            if ($included) { array_unshift($data, $included); }
+        }
+        return response()->json(['data' => $data, 'total' => $page->total()]);
+    }
+
     public function index(Request $request)
     {
         $pageSize = AdminListQuery::pageSize($request, 20, [

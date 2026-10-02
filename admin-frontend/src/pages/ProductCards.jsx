@@ -47,6 +47,7 @@ export default function ProductCards() {
       },
       render: (_, record) => {
         const s = record.status;
+        if (record.replaced_at) return <Tag color="default">售后已换出</Tag>;
         if (s === 'sold') return <Tag color="green">已售</Tag>;
         if (s === 'locked') return <Tag color="orange">锁定中</Tag>;
         return <Tag color="blue">未售</Tag>;

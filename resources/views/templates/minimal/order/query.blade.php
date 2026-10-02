@@ -7,7 +7,7 @@
     <div class="n-panel n-query-panel">
         <form action="/order/query" method="POST" class="n-form" data-guard>
             @csrf
-            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="n-input" id="lookup-order-no" name="order_no" value="{{ old('order_no') }}" maxlength="30" placeholder="留空查询历史订单"></div>
+            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="n-input" id="lookup-order-no" name="order_no" value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" placeholder="留空查询历史订单"></div>
             <div class="n-field"><label for="oq-email">下单邮箱</label><input type="email" name="email" id="oq-email" class="n-input" value="{{ old('email') }}" placeholder="you@example.com" autocomplete="email" required @error('email') aria-invalid="true" @enderror>@error('email')<p class="n-field-error">{{ $message }}</p>@enderror</div>
             <div class="n-field"><label for="oq-pass">查询密码</label><input type="password" name="query_password" id="oq-pass" class="n-input" placeholder="购买时设置的密码" autocomplete="current-password" required aria-describedby="n-query-pass-hint" @error('query_password') aria-invalid="true" @enderror>@error('query_password')<p class="n-field-error">{{ $message }}</p>@enderror<p class="n-hint" id="n-query-pass-hint">使用你下单时自己设置的查询密码。</p></div>
             @if(setting('turnstile_site_key'))<div class="n-field"><div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}" data-size="compact"></div>@error('turnstile')<p class="n-field-error">{{ $message }}</p>@enderror</div>@endif

@@ -89,11 +89,15 @@ Route::middleware('check.blacklist')->group(function () {
 
 Route::prefix('api/' . admin_path())->group(function () {
     Route::post('/login', [ApiAdmin\AuthController::class, 'login']);
+    Route::post('/login/challenge', [ApiAdmin\AuthController::class, 'challenge']);
 
     Route::middleware('admin.auth')->group(function () {
         Route::post('/logout', [ApiAdmin\AuthController::class, 'logout']);
         Route::get('/me', [ApiAdmin\AuthController::class, 'me']);
         Route::post('/password', [ApiAdmin\AuthController::class, 'changePassword']);
+        Route::post('/two-factor/setup', [ApiAdmin\TwoFactorController::class, 'setup']);
+        Route::post('/two-factor/confirm', [ApiAdmin\TwoFactorController::class, 'confirm']);
+        Route::post('/two-factor/disable', [ApiAdmin\TwoFactorController::class, 'disable']);
 
         // API access credentials
         Route::get('/api-tokens', [ApiAdmin\ApiTokenController::class, 'index']);
@@ -136,6 +140,7 @@ Route::prefix('api/' . admin_path())->group(function () {
         Route::post('/orders/{order}/close', [ApiAdmin\OrderController::class, 'close']);
         Route::post('/orders/{order}/paid', [ApiAdmin\OrderController::class, 'markPaid']);
         Route::post('/orders/{order}/resend', [ApiAdmin\OrderController::class, 'resend']);
+        Route::post('/orders/{order}/replacements', [ApiAdmin\OrderController::class, 'replaceCards']);
         Route::post('/orders/{order}/sync', [ApiAdmin\OperationsController::class, 'sync'])->middleware('throttle:10,1,admin-payment-sync');
         Route::post('/orders/{order}/receipts/{receipt}/resolve', [ApiAdmin\OperationsController::class, 'resolve']);
         Route::post('/orders/{order}/refunds', [ApiAdmin\RefundController::class, 'store']);
@@ -145,11 +150,16 @@ Route::prefix('api/' . admin_path())->group(function () {
         Route::post('/admins', [ApiAdmin\AdminController::class, 'store']);
         Route::put('/admins/{admin}', [ApiAdmin\AdminController::class, 'update']);
         Route::get('/maintenance/health', [ApiAdmin\OperationsController::class, 'health']);
+        Route::post('/maintenance/health/acknowledge', [ApiAdmin\OperationsController::class, 'acknowledgeHealth']);
         Route::post('/seo-deliveries/enqueue', [ApiAdmin\OperationsController::class, 'enqueueSeo'])->middleware('throttle:2,1,admin-seo-enqueue');
         Route::get('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assets']);
         Route::post('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assetAction']);
         Route::get('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backups']);
         Route::post('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backup'])->middleware('throttle:2,10,admin-shop-backup');
+        Route::get('/maintenance/backup-runs', [ApiAdmin\MaintenanceController::class, 'backupRuns']);
+        Route::get('/maintenance/backup-runs/{run}', [ApiAdmin\MaintenanceController::class, 'backupRun']);
+        Route::post('/maintenance/backup-runs/{run}/retry', [ApiAdmin\MaintenanceController::class, 'retryBackup']);
+        Route::post('/maintenance/backup-runs/{run}/acknowledge', [ApiAdmin\MaintenanceController::class, 'acknowledgeBackup']);
         Route::get('/maintenance/backups/{name}/download', [ApiAdmin\MaintenanceController::class, 'download']);
         Route::post('/maintenance/backups/{name}/validate', [ApiAdmin\MaintenanceController::class, 'validateBackup']);
         Route::get('/seo-deliveries', [ApiAdmin\OperationsController::class, 'seo']);
@@ -170,6 +180,7 @@ Route::prefix('api/' . admin_path())->group(function () {
         Route::delete('/article-categories/{articleCategory}', [ApiAdmin\ArticleCategoryController::class, 'destroy']);
 
         // Coupons
+        Route::get('/coupons/product-options', [ApiAdmin\CouponController::class, 'productOptions']);
         Route::get('/coupons', [ApiAdmin\CouponController::class, 'index']);
         Route::post('/coupons', [ApiAdmin\CouponController::class, 'store']);
         Route::put('/coupons/{coupon}', [ApiAdmin\CouponController::class, 'update']);

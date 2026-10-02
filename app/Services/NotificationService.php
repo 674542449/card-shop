@@ -127,7 +127,7 @@ class NotificationService
         try {
             $this->configureMailer();
 
-            $order->loadMissing(['product', 'cards']);
+            $order->loadMissing('product');
 
             // The seeder and the admin Settings screen both use `email_template_body`;
             // `email_template` is kept only as a fallback for older installs.
@@ -137,7 +137,7 @@ class NotificationService
             );
             $siteName = (string) setting('site_name', '卡密商城');
 
-            $cards = $order->cards->where('status', 'sold')->pluck('content')->implode("\n");
+            $cards = $order->deliveryCards()->pluck('content')->implode("\n");
 
             $amount = number_format((float) $order->total_amount, 2, '.', '');
 
@@ -193,9 +193,30 @@ class NotificationService
         }
     }
 
-    /**
-     * Send a Telegram notification message.
-     */
+    /** Refund mail contains only buyer-facing fields, never internal notes or card contents. */
+    public function sendRefundEmail(Order $order, array $refund): bool
+    {
+        try {
+            $this->configureMailer();
+            $siteName = (string) setting('site_name', '卡密商城');
+            $label = ['requested' => '申请已提交，待审核', 'approved' => '已批准，待退款', 'completed' => '已退款', 'rejected' => '申请已拒绝'][$refund['status']] ?? '状态已更新';
+            $body = '<h2>'.e($siteName).' - 退款进度</h2><p>订单：'.e($order->order_no).'</p><p>退款金额：¥'.e($refund['amount']).'</p><p>处理结果：'.e($label).'</p>';
+            if (! empty($refund['customer_note'])) {
+                $body .= '<p>给您的说明：<br>'.nl2br(e($refund['customer_note'])).'</p>';
+            }
+            if (! empty($refund['completed_at'])) {
+                $body .= '<p>退款完成时间：'.e($refund['completed_at']).'</p>';
+            }
+            $body .= '<p><a href="'.e(rtrim((string) config('app.url'), '/').'/order/query').'">查询订单与退款记录</a></p>';
+            Mail::html($body, fn ($message) => $message->to($order->email)->subject($siteName.' - 订单 '.$order->order_no.' 退款进度'));
+            return true;
+        } catch (\Throwable $exception) {
+            Log::warning('Refund email failed', ['order_no' => $order->order_no, 'error_type' => $exception::class]);
+            return false;
+        }
+    }
+
+    /** Send a Telegram notification message. */
     public function telegramConfigured(): bool
     {
         return in_array((string) setting('telegram_enabled', '0'), ['1', 'true'], true)

@@ -28,11 +28,16 @@ class NotificationQueue
         }
     }
 
+    public function enqueueRefund(Order $order, \App\Models\OrderRefund $refund): NotificationDelivery
+    {
+        return $this->enqueue('refund-email:'.$refund->id.':'.$refund->status, 'refund_email', $order, $refund->customerProjection());
+    }
+
     public function resend(Order $order): NotificationDelivery
     {
         return DB::transaction(function () use ($order) {
             $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
-            if (!$locked->isPaid() || !$locked->cards()->where('status', 'sold')->exists()) {
+            if (!$locked->isPaid() || !$locked->deliveryCards()->exists()) {
                 throw new RuntimeException('该订单未支付或没有已发放的卡密，无法补发。');
             }
             $latest = NotificationDelivery::where('order_id', $order->id)->where('type', 'order_email')->orderByDesc('id')->lockForUpdate()->first();
@@ -40,7 +45,7 @@ class NotificationQueue
                 return $latest;
             }
             if ($latest && $latest->status === 'failed') {
-                $latest->update(['status' => 'pending', 'attempts' => 0, 'available_at' => now(), 'reserved_at' => null, 'lease_token' => null, 'last_error' => null]);
+                $latest->update(['status' => 'pending', 'attempts' => 0, 'available_at' => now(), 'reserved_at' => null, 'lease_token' => null, 'last_error' => null, 'health_acknowledged_at' => null]);
                 return $latest;
             }
             return $this->enqueue('resend:'.$order->id.':'.Str::uuid(), 'order_email', $locked);
@@ -63,7 +68,7 @@ class NotificationQueue
             // A crashed sender has a bounded lease. A final crashed attempt must also
             // become visible as failed, rather than stay processing forever.
             NotificationDelivery::where('status', 'processing')->where('reserved_at', '<', now()->subMinutes(5))
-                ->where('attempts', '>=', 5)->update(['status' => 'failed', 'lease_token' => null, 'last_error' => '发送进程中断，自动重试次数已耗尽，请人工重试。']);
+                ->where('attempts', '>=', 5)->update(['status' => 'failed', 'lease_token' => null, 'health_acknowledged_at' => null, 'last_error' => '发送进程中断，自动重试次数已耗尽，请人工重试。']);
             $delivery = NotificationDelivery::where('attempts', '<', 5)
                 ->where(function ($query) {
                     $query->where(fn ($q) => $q->where('status', 'pending')->where('available_at', '<=', now()))
@@ -87,10 +92,14 @@ class NotificationQueue
                 if (!$order?->isPaid()) {
                     throw new RuntimeException('订单未支付，不能发送卡密邮件。');
                 }
-                if ($order->cards()->where('status', 'sold')->count() !== $order->quantity) {
+                if ($order->deliveryCards()->count() !== $order->quantity) {
                     throw new RuntimeException('已发放卡密数量与订单不一致。');
                 }
                 if (!$this->sender->sendOrderEmail($order)) {
+                    throw new RuntimeException('邮件发送失败，请检查 SMTP 配置及服务器日志。');
+                }
+            } elseif ($delivery->type === 'refund_email') {
+                if (!$order || !$this->sender->sendRefundEmail($order, $delivery->payload)) {
                     throw new RuntimeException('邮件发送失败，请检查 SMTP 配置及服务器日志。');
                 }
             } elseif (!$this->sender->telegramConfigured()) {
@@ -114,6 +123,7 @@ class NotificationQueue
         }
         NotificationDelivery::whereKey($delivery->id)->where('lease_token', $delivery->lease_token)->update([
             'status' => $status, 'last_error' => $error, 'lease_token' => null, 'reserved_at' => null,
+            'health_acknowledged_at' => null,
             'sent_at' => $status === 'sent' ? now() : null,
             'available_at' => $error ? now()->addSeconds([60, 300, 900, 3600, 3600][$delivery->attempts - 1]) : now(),
         ]);

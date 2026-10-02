@@ -24,7 +24,7 @@
         </div>
         <form action="/order/query" method="POST" class="m-form" data-guard>
             @csrf
-            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="m-input" id="lookup-order-no" name="order_no" value="{{ old('order_no') }}" maxlength="30" placeholder="留空查询历史订单"></div>
+            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="m-input" id="lookup-order-no" name="order_no" value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" placeholder="留空查询历史订单"></div>
             <div class="m-field">
                 <label class="m-label" for="oq-email">下单邮箱</label>
                 <input type="email" id="oq-email" name="email" class="m-input @error('email') is-invalid @enderror" value="{{ old('email') }}" required autocomplete="email" placeholder="购买时使用的邮箱">

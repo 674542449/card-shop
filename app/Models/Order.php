@@ -73,6 +73,7 @@ class Order extends Model
             'quantity' => 'integer',
             'payment_received_at' => 'datetime',
             'reconciled_at' => 'datetime',
+            'has_payment_review' => 'boolean',
         ];
     }
 
@@ -99,6 +100,37 @@ class Order extends Model
     public function notifications(): HasMany
     {
         return $this->hasMany(NotificationDelivery::class)->orderByDesc('id');
+    }
+
+    /** Historical cards stay attached; only this relation may deliver to a buyer. */
+    public function deliveryCards(): HasMany
+    {
+        return $this->hasMany(Card::class)->where('cards.status', 'sold')
+            ->whereNull('cards.replaced_at')->orderBy('cards.id');
+    }
+
+    public function cardReplacements(): HasMany
+    {
+        return $this->hasMany(OrderCardReplacement::class)->orderByDesc('id');
+    }
+
+    public function scopeWithPaymentReviewFlag(Builder $query): Builder
+    {
+        if ($query->getQuery()->columns === null) { $query->select('orders.*'); }
+        return $query->selectRaw("((orders.status <> 'paid' AND orders.payment_no IS NOT NULL)
+            OR EXISTS (SELECT 1 FROM payment_receipts WHERE payment_receipts.order_id = orders.id
+                AND payment_receipts.review_reason IS NOT NULL AND payment_receipts.review_resolved_at IS NULL)) AS has_payment_review");
+    }
+
+    public function requiresPaymentReview(): bool
+    {
+        if (array_key_exists('has_payment_review', $this->attributes)) {
+            return (bool) $this->attributes['has_payment_review'];
+        }
+        return ($this->status !== 'paid' && $this->payment_no !== null)
+            || ($this->relationLoaded('paymentReceipts')
+                ? $this->paymentReceipts->contains(fn ($receipt) => $receipt->review_reason !== null && $receipt->review_resolved_at === null)
+                : $this->paymentReceipts()->whereNotNull('review_reason')->whereNull('review_resolved_at')->exists());
     }
 
     /**

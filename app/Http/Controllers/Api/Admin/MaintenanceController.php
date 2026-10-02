@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\OperationLog;
+use App\Models\BackupRun;
 use App\Services\AssetMaintenanceService;
+use App\Services\BackupQueue;
 use App\Services\ShopBackupService;
+use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
 class MaintenanceController extends Controller
 {
@@ -40,7 +42,8 @@ class MaintenanceController extends Controller
         $files = glob($service->directory().'/shop-*.tar.gz') ?: [];
         rsort($files);
 
-        return response()->json(['data' => array_map(fn ($f) => ['name' => basename($f), 'size' => filesize($f), 'created_at' => date(DATE_ATOM, filemtime($f))], $files)]);
+        return response()->json(['data' => array_map(fn ($f) => ['name' => basename($f), 'size' => filesize($f), 'created_at' => date(DATE_ATOM, filemtime($f))], $files),
+            'runs' => BackupRun::orderByDesc('id')->limit(20)->get(), 'health' => app(\App\Services\HeartbeatService::class)->backupHealth()]);
     }
 
     private function file(string $name, ShopBackupService $service): string
@@ -52,18 +55,52 @@ class MaintenanceController extends Controller
         return $path;
     }
 
-    public function backup(ShopBackupService $service)
+    public function backup(BackupQueue $queue)
     {
         $this->owner();
-        set_time_limit(1800);
         try {
-            $file = Cache::lock('shop:backup', 1900)->block(1, fn () => $service->create());
+            $run = $queue->enqueue('manual', request()->attributes->get('admin')->id);
         } catch (\Throwable) {
-            return response()->json(['message' => '备份失败或已有备份正在执行，请检查客户端和磁盘空间。'], 422);
+            return response()->json(['message' => '暂时无法提交备份任务，请稍后重试。'], 503);
         }
-        OperationLog::log('完整备份', 'backup', null, basename($file));
+        OperationLog::log('提交完整备份', 'backup_run', $run->id, '备份任务已入队');
+        return response()->json(['message' => '备份任务已提交，页面将显示进度。', 'run' => $run], 202);
+    }
 
-        return response()->json(['name' => basename($file)], 201);
+    public function backupRuns(Request $request)
+    {
+        $this->owner();
+        $size = AdminListQuery::pageSize($request);
+        return response()->json(BackupRun::orderByDesc('id')->paginate($size));
+    }
+
+    public function backupRun(BackupRun $run)
+    {
+        $this->owner();
+        return response()->json($run);
+    }
+
+    public function retryBackup(BackupRun $run, BackupQueue $queue)
+    {
+        $this->owner();
+        try {
+            $updated = $queue->retry($run);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        OperationLog::log('重试完整备份', 'backup_run', $run->id, '备份任务重新入队');
+        return response()->json(['message' => '备份任务已重新提交。', 'run' => $updated], 202);
+    }
+
+    public function acknowledgeBackup(BackupRun $run)
+    {
+        $this->owner();
+        $updated = BackupRun::whereKey($run->id)->whereNull('health_acknowledged_at')
+            ->where(fn ($q) => $q->where('status', 'failed')->orWhereNotNull('last_error'))
+            ->update(['health_acknowledged_at' => now()]);
+        abort_unless($updated, 422, '该任务没有待确认的失败。');
+        OperationLog::log('确认备份告警', 'backup_run', $run->id, '历史失败已确认，文件和任务记录保留');
+        return response()->json(['message' => '已确认这次失败；后续新失败仍会告警。']);
     }
 
     public function download(string $name, ShopBackupService $service)

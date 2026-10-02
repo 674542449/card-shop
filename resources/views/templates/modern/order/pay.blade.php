@@ -55,7 +55,7 @@
             <div class="m-order-message" role="status"><strong>正在准备支付渠道</strong><p>如果支付按钮迟迟未出现，请刷新本页重试。</p></div>
             <a href="/order/pay/{{ $order->order_no }}" class="m-button m-button-secondary m-button-wide">刷新支付页面</a>
             @endif
-            <div class="m-order-polling" id="payment-polling" data-order-no="{{ $order->order_no }}" aria-live="polite"><span class="m-order-status-dot" aria-hidden="true"></span><span>正在确认支付状态，成功后自动显示卡密。</span></div>
+            <div class="m-order-polling" id="payment-polling" data-order-no="{{ $order->order_no }}" data-expires="{{ $order->expires_at->toIso8601String() }}" aria-live="polite"><span class="m-order-status-dot" aria-hidden="true"></span><span data-payment-status>正在确认支付状态，成功后自动显示卡密。</span><button type="button" class="m-button m-button-secondary" data-payment-recheck>重新检查付款</button> <a href="/order/query?order_no={{ $order->order_no }}" data-payment-verify hidden>验证并查询订单</a></div>
             <noscript><p class="m-order-message m-order-message-warning">当前浏览器未启用 JavaScript，付款后请手动刷新本页；支付截止时间见订单清单。</p></noscript>
         </section>
         @endif

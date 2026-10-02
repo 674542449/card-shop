@@ -185,7 +185,7 @@ docker compose logs -f app
 **怎么确认成功**——三条都要过：
 
 ```bash
-# ① 六个容器都在跑
+# ① 七个容器都在跑
 docker compose ps
 
 # ② .env 权限正确（这条很关键，见下方说明）
@@ -195,7 +195,7 @@ docker compose exec app su -s /bin/sh -c 'test -r /var/www/html/.env && echo rea
 curl -s http://127.0.0.1/ | grep -c "csrf-token"
 ```
 
-- ① 应该看到 `app` `scheduler` `notifications` `nginx` `postgres` `redis` 六个，状态 `Up`
+- ① 应该看到 `app` `scheduler` `notifications` `nginx` `postgres` `redis` `backups` 七个，状态 `Up`
 - ② **必须输出 `readable`**。PHP-FPM 的工作进程以 `www-data` 运行，读不到 `.env` 就会
   全站 500，而启动日志会一片绿（entrypoint 里的迁移和种子是 root 跑的，照样成功）。
   这个坑真实发生过，非常难自己诊断。输出 `NOT-readable` 的话执行
@@ -442,7 +442,7 @@ cd ~/card-shop && sudo ./scripts/doctor.sh
 
 **域名不用填**——它从 `.env` 的 `APP_URL` 读。
 
-它会检查：`.env` 的每一项配置、文件权限（包括容器里的 www-data 能不能读到）、六个容器
+它会检查：`.env` 的每一项配置、文件权限（包括容器里的 www-data 能不能读到）、七个容器
 是否在跑、scheduler 的运行身份、本地和经 Cloudflare 的页面渲染、CF-RAY、HSTS、
 HTTP 跳转、源站证书、容器出站、防火墙链的结构与可达性、开机自启单元。
 
@@ -549,7 +549,7 @@ git pull
 docker compose up -d                          # ③ 让改过的 compose 配置生效（没改就是空操作）
 docker compose restart app                    # ④ 这条不能省，理由见下
 docker compose up -d --wait app                # 等待迁移完成、app 健康
-docker compose restart scheduler notifications # 重新加载调度与通知代码
+docker compose restart scheduler notifications backups # 重新加载调度与通知代码
 docker compose restart nginx                  # ⑤ 避免 502
 ```
 
@@ -579,7 +579,7 @@ git diff --name-only HEAD@{1} HEAD -- docker/ composer.json composer.lock
 
 **⑤ `restart nginx`** 是因为 nginx 启动时就把 `app:9000` 解析成了一个固定 IP。app 容器一旦
 被重建就会换 IP，而 nginx 还握着旧地址 —— 表现是升级后整站 502，而 `docker compose ps` 里
-六个容器全是 Up。
+七个容器全是 Up。
 
 升级后按第 4 步的三条验证跑一遍，**再加下面这两条**（第 4 步只能证明「站还活着」，证明不了
 「更新到位了」）：
@@ -616,23 +616,29 @@ git reset --hard $(cat /tmp/rollback.txt) && docker compose restart app nginx
 
 ### 备份与恢复
 
-后台「维护与推送 → 备份与恢复」由店主管理员创建、校验和下载完整备份。归档包括 PostgreSQL 自定义格式转储、`.env`、上传文件、归档素材和历史操作记录，保存于 `storage/app/private/shop-backups/`。这些文件含密钥，必须使用私有存储，并额外复制到受控的异机存储。
+后台「维护与推送 → 备份与恢复」由店主管理员创建、校验和下载完整备份。创建立即返回任务编号，独立备份进程执行，页面显示阶段、进度和结果，失败可重试。归档包括 PostgreSQL 自定义格式转储、`.env`、上传文件、归档素材和历史操作记录，保存于 `storage/app/private/shop-backups/`。这些文件含密钥，必须使用私有存储，并额外复制到受控的异机存储。
 
 命令行创建与演练：
 
 ```bash
-docker compose exec -T --user www-data app php artisan shop:backup
+docker compose exec -T --user www-data app php artisan shop:backup --wait
 docker compose exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --verify-only
 # 先创建一个独立空库；数据库必须已存在，恢复命令不会猜测目标库。
 docker compose exec -T postgres createdb -U cardshop cardshop_restore_check
 docker compose exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --database=cardshop_restore_check --confirm=restore:cardshop_restore_check
 ```
 
-完整恢复会覆盖明确指定的目标库；独立库演练不会改动正在使用的上传文件和配置。恢复到当前正式库前，工具会先创建一份备份，并恢复归档内的上传文件和私有归档文件；现有额外文件保留。仅显式追加 `--include-config` 才会覆盖 `.env`。正式库恢复须先暂停 Web、调度和通知进程，恢复后执行 `config:clear`、`cache:clear`，再启动服务并核对订单、库存和素材。应用代码与后台构建产物通过对应的 Git 版本恢复。备份校验会检查清单、路径、每个文件的 SHA-256 和大小。
+完整恢复会覆盖明确指定的目标库；独立库演练不会改动正在使用的上传文件和配置。恢复到当前正式库前，工具会先创建一份备份，并恢复归档内的上传文件和私有归档文件；现有额外文件保留。仅显式追加 `--include-config` 才会覆盖 `.env`。正式库恢复须先暂停 Web、调度、通知和备份进程，恢复后执行 `config:clear`、`cache:clear`，再启动服务并核对订单、库存和素材。应用代码与后台构建产物通过对应的 Git 版本恢复。备份校验会检查清单、路径、每个文件的 SHA-256 和大小。
 
 PHP 镜像安装 PostgreSQL 17 客户端，与本项目数据库一致；非 Docker 部署需在 PATH 配置同版本或更高版本的 `pg_dump`/`pg_restore`，也可使用 `PG_DUMP_BINARY`、`PG_RESTORE_BINARY` 指定完整路径。
 
-建议每日执行完整备份并检查退出码。下面保留数据库单独导出的旧方案；它不包含上传文件和 `.env`：
+店主可在「系统设置 → 自动备份」启用每日完整备份，配置服务器时区下的执行时间、保留份数和天数。默认关闭，每日 03:00、14 份、30 天；只有新备份校验成功才应用本地保留策略，保留最新成功副本。调度器错过指定分钟会当天补排，任务记录防止同一天重复创建。CLI `php artisan shop:backup` 默认只入队；终端需要等结果时执行 `php artisan shop:backup --wait`，并检查退出码。
+
+非 Docker 部署须常驻运行独立 `php artisan shop:backup-work`，Windows `start-dev.ps1` 自动管理此进程。Docker 的 `backups` 服务依赖完成迁移的 `app`，不会占用通知发送进程。维护页显示最近成功、备份失败、过期和最低可用空间告警。
+
+可选异机同步仅支持已由系统管理员挂载的目录。Docker 在 `.env` 中设置 `BACKUP_SYNC_MOUNT=/你的受控挂载目录` 后重新应用 Compose，再由店主在后台填 `/mnt/shop-backup-sync`；非 Docker 填已存在、可写且位于应用树外的绝对目录。确保容器 UID/GID 33 有写入权限，避免公开共享。留空不复制，程序不会建立 SFTP/云存储连接。同步会校验副本；本地成功与同步失败分开显示，远端副本需自行配置保留策略。不要把应用目录、Web 目录、文件系统根目录或网址用作同步目录。
+
+下面保留数据库单独导出的旧方案；它不包含上传文件和 `.env`：
 
 ```bash
 mkdir -p /opt/cardshop-backups
@@ -650,11 +656,23 @@ chmod +x /etc/cron.daily/cardshop-backup
 
 ### 运行健康与主动对账
 
-维护页面显示通知进程、调度器和付款对账心跳，以及通知积压、逾期订单。独立于商城调度器的服务器监控应每分钟执行 `php artisan shop:health --alert`，退出码 0 表示正常，1 表示异常。Docker 环境使用 `docker compose exec -T --user www-data app php artisan shop:health --alert`。`--alert` 使用已启用且配置完整的 Telegram 直接发送，每 15 分钟最多一条；未配置 Telegram 时，监控平台应依据退出码报警。不要把这项检查仅交给商城自身调度器，否则调度器停止时无法检测自身。
+维护页面显示通知、调度、备份和付款对账心跳，包含未处理的终态通知/SEO 失败、最老等待任务、对账连续失败、逾期订单、备份过期与容量。独立于商城调度器的服务器监控应每分钟执行 `php artisan shop:health --alert`，退出码 0 表示正常，1 表示异常。Docker 环境使用 `docker compose exec -T --user www-data app php artisan shop:health --alert`。`--alert` 使用已启用且配置完整的 Telegram 直接发送，每 15 分钟最多一条；未配置 Telegram 时，监控平台应依据退出码报警。不要把这项检查仅交给商城自身调度器，否则调度器停止时无法检测自身。修复原因后重试失败投递；也可由有权管理员明确确认历史告警，确认只取消对应已观察失败的告警，不把任务标为投递成功，新失败仍会提醒。
 
 系统设置的支付页可启用每 5 分钟主动对账；默认关闭。对账只查询已配置的 HTTPS 网关（本机开发地址除外），核验订单、商户、渠道和人民币金额，再执行与回调相同的幂等发货流程。后台订单页提供手动同步与错误提示。BEpusdt 使用 `/api/v1/pay/info`；EPUSDT 兼容版本必须返回可核对的交易号和金额，不兼容版本会明确拒绝自动确认，继续使用签名回调或人工核对。重复付款保留独立回执并进入待核对列表。
 
 USDT 网关类型必须与实际安装版本一致。原版 EPUSDT 的下单接口无法指定网络，商城只显示「网关默认网络」入口；BEpusdt 才会向网关传递买家选择的 TRC20、BEP20 或 Polygon，并显式固定 `fiat=CNY`。USDT 创建请求必须使用 HTTPS，只有 `localhost`、`127.0.0.1` 和 `::1` 回环开发地址可以使用 HTTP；请为容器间网关配置 HTTPS，不要通过关闭证书验证规避此要求。创建响应没有协议签名，依靠 TLS 及已返回的订单、金额、币种、流水绑定校验。签名有效但交易号或 EPay 收款方式与订单不符的回执保留待核对，不自动发卡；人工处理结论不会被重复通知重开。切换后先核对网关钱包和网络配置，再用实际网关验收收款与回调。订单取消会释放库存，但不会撤销网关已经受理的付款；有效付款仍按回调与对账流程处理。
+
+### v1.0.3 功能升级
+
+更新前完成私有备份，按更新流程执行新增迁移、使用本版后台产物，并重载 Web、调度、通知和新的备份进程。退款开关默认关闭，包括升级后未配置此键的店铺；店主须在「系统设置 → 订单设置」主动启用。关闭时已有申请可继续处理，后台也不能创建新退款。实际打款仍由操作员在原渠道执行，完成退款要求登记凭证。
+
+管理员在「账户设置 → 登录双重验证」用当前密码开始绑定，扫描验证器二维码并提交验证码后才生效。密钥在数据库加密，恢复码只展示一次且每个只能用一次，务必离线保存；同一验证码不允许重放，账户与 IP 限流都在服务器执行。启用/停用会让其他会话失效，启用后密码校验只建立五分钟验证挑战，不能访问后台数据。丢失设备及恢复码时，在受控服务器控制台执行 `php artisan admin:2fa-reset 用户名`，交互确认后重置并撤销旧会话；自动运维明确指定时可用 `--force`。服务器需同步准确时间并保留原 `APP_KEY`，更换密钥会影响验证器秘密和其他加密数据。
+
+售后换卡由具备 `orders:write` 和 `cards:write` 的管理员操作。原已交付卡保持已售状态并退役，不重新入库或删除；替换卡使用当前可售库存，独立历史保留新旧编号、原因和操作者。原款全额退完不能继续换卡。财务汇总按订单付款计算，换卡不再记一次销售。
+
+已启用双重验证或发生售后换卡的店铺，不能只回退到不支持这些功能的旧代码：旧版无法执行验证器校验，也不识别退役卡。需要恢复旧版本时，先暂停全部业务进程，再按匹配版本的数据库备份和代码完成整套恢复，核对恢复点之后的订单并重置管理员会话。已经发送的卡密邮件无法撤回，退役标记也不等于使外部卡密失效，外部有效性须由商品供应方处理。
+
+API 对接应使用 `Idempotency-Key` 处理下单网络重试，详情见 README。映射长期保留，不自动复用旧键；如需一次新的购买请生成新键。下单重放不代表旧支付链接仍有效，查询订单确认当前状态。
 
 ### v1.0.2 请求、编辑器与邮件升级
 
