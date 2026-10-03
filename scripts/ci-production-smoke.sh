@@ -8,8 +8,15 @@ if [ "${GITHUB_ACTIONS:-}" != true ] || [ "${CI:-}" != true ]; then
 fi
 : "${SHOP_APP_IMAGE:?The already-loaded application image is required}"
 : "${SHOP_WEB_IMAGE:?The already-loaded Nginx image is required}"
+: "${SHOP_EXPECTED_ARCH:?Set amd64 or arm64 for native acceptance}"
+case "$SHOP_EXPECTED_ARCH" in amd64|arm64) ;; *) exit 2 ;; esac
+test "$(dpkg --print-architecture)" = "$SHOP_EXPECTED_ARCH"
+test "$(getconf LONG_BIT)" = 64
 docker image inspect "$SHOP_APP_IMAGE" >/dev/null
 docker image inspect "$SHOP_WEB_IMAGE" >/dev/null
+for SMOKE_IMAGE in "$SHOP_APP_IMAGE" "$SHOP_WEB_IMAGE"; do
+    test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$SMOKE_IMAGE")" = "linux/$SHOP_EXPECTED_ARCH"
+done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SMOKE_TEMP_ROOT="$(realpath "${RUNNER_TEMP:-/tmp}")"
 SMOKE_DIRECTORY="$(mktemp -d "$SMOKE_TEMP_ROOT/cardshop-smoke.XXXXXX")"
@@ -143,7 +150,10 @@ http_acceptance
 for SMOKE_SERVICE in app nginx postgres redis scheduler notifications backups seo reconciliation; do
     SMOKE_CID="$("${DC[@]}" ps -q "$SMOKE_SERVICE")"
     [ -n "$SMOKE_CID" ] && [ "$(docker inspect -f '{{.State.Running}}' "$SMOKE_CID")" = true ]
+    SMOKE_IMAGE_ID="$(docker inspect -f '{{.Image}}' "$SMOKE_CID")"
+    test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$SMOKE_IMAGE_ID")" = "linux/$SHOP_EXPECTED_ARCH"
 done
+test "$("${DC[@]}" exec -T app php -r 'echo PHP_INT_SIZE;' | tr -d '\r\n')" = 8
 SMOKE_APP_CID="$("${DC[@]}" ps -q app)"
 [ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$SMOKE_APP_CID")" = true ]
 [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/run/secrets"}}{{.RW}}{{end}}{{end}}' "$SMOKE_APP_CID")" = false ]

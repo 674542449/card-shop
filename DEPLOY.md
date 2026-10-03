@@ -8,7 +8,7 @@
 
 | 项目 | 要求 |
 | --- | --- |
-| 服务器 | Ubuntu 或 Debian；最低 1 核 / 1 GB / 20 GB，推荐 2 核 / 2 GB / 40 GB 起 |
+| 服务器 | 64 位 Ubuntu 或 Debian，AMD64 / x86_64 或 ARM64 / aarch64；最低 1 核 / 1 GB / 20 GB，推荐 2 核 / 2 GB / 40 GB 起 |
 | 域名 | 已接入 Cloudflare，能修改 DNS、SSL/TLS 与 Turnstile 配置 |
 | 工具 | Git、Bash、curl、openssl、Docker Engine、支持 `up --wait` 的 Compose CLI 插件 |
 | 权限 | 能 SSH 登录，执行 Docker 命令，并使用 sudo 管理证书和防火墙 |
@@ -16,6 +16,8 @@
 | 外部服务 | 易支付或 USDT 网关至少一个；建议准备支持 SSL/TLS 的 SMTP 服务 |
 
 宿主机无需安装 PHP、Composer 或 Node.js，镜像包含运行环境、依赖和数据库备份工具。首次安装需要网络下载发布镜像，1 GB 机器应预留 swap 和足够磁盘空间。
+
+应用与 Nginx 的正式镜像使用同一版本的多架构标签，Docker 会为服务器自动选择 `linux/amd64` 或 `linux/arm64`，无需添加 `platform: linux/amd64`。`uname -m` 显示 `x86_64` 对应 AMD64，`aarch64` 对应 ARM64；32 位 ARM 不在支持范围。Apple Silicon 上可使用 Linux ARM64 容器进行开发，正式生产验收环境为 Linux。
 
 ## 第 1 步：准备域名与 Docker
 
@@ -44,7 +46,7 @@ docker compose version
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-git checkout v1.0.6
+git checkout v1.0.7
 sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
 sudo cp .env.example /etc/cardshop/runtime.env
 sudo chown root:33 /etc/cardshop/runtime.env
@@ -70,11 +72,13 @@ TLS_CERT_DIR=/opt/cf
 SHOP_ENV_FILE=/etc/cardshop/runtime.env
 SHOP_SECRETS_DIR=/etc/cardshop/secrets
 SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
-SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.6
-SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.6
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.7
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.7
 ```
 
 发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
+
+固定摘要时，使用发布任务输出的**多架构索引摘要**，可在两种服务器上自动选择架构；单个平台的镜像摘要只适用于对应架构。可用 `docker buildx imagetools inspect "$SHOP_APP_IMAGE"` 检查索引中的两个平台（先在终端设置镜像变量，环境文件不会自动导出为 Shell 变量）。应用与 Nginx 必须使用同一版本，PostgreSQL / Redis 由 Compose 拉取原生架构镜像。
 
 下文在项目目录先定义 Compose 简写，新终端需重新定义：
 

@@ -16,7 +16,16 @@ concurrency:
 
 jobs:
   verify:
-    runs-on: ubuntu-24.04
+    name: Verify (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     services:
       postgres:
@@ -54,6 +63,12 @@ jobs:
       PG_RESTORE_BINARY: /usr/lib/postgresql/17/bin/pg_restore
     steps:
       - uses: actions/checkout@v4
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          test "$(dpkg --print-architecture)" = "$EXPECTED_ARCH"
+          test "$(getconf LONG_BIT)" = 64
       - uses: shivammathur/setup-php@v2
         with:
           php-version: "8.3"
@@ -112,9 +127,18 @@ jobs:
           docker compose -f docker-compose.production.yml config --quiet
 
   image:
+    name: Production image (${{ matrix.arch }})
     needs: verify
     if: github.event_name != 'pull_request'
-    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     permissions:
       contents: read
@@ -129,12 +153,12 @@ jobs:
           context: .
           file: docker/php/Dockerfile.production
           target: runtime
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           load: true
           push: false
           tags: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
-          cache-from: type=gha,scope=runtime
-          cache-to: type=gha,mode=max,scope=runtime
+          cache-from: type=gha,scope=runtime-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=runtime-${{ matrix.arch }}
           provenance: false
       - name: Build Nginx static assets
         id: web
@@ -143,15 +167,16 @@ jobs:
           context: .
           file: docker/php/Dockerfile.production
           target: web
-          platforms: linux/amd64
+          platforms: linux/${{ matrix.arch }}
           load: true
           push: false
           tags: ghcr.io/${{ github.repository }}-nginx:ci-${{ github.sha }}
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
+          cache-from: type=gha,scope=web-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=web-${{ matrix.arch }}
           provenance: false
       - name: Production first installation and restart acceptance
         env:
+          SHOP_EXPECTED_ARCH: ${{ matrix.arch }}
           SHOP_APP_IMAGE: ghcr.io/${{ github.repository }}:ci-${{ github.sha }}
           SHOP_WEB_IMAGE: ghcr.io/${{ github.repository }}-nginx:ci-${{ github.sha }}
         run: bash scripts/ci-production-smoke.sh
@@ -161,20 +186,62 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Publish the exact smoke-tested release images
+      - name: Push tested images and retain immutable digests
         id: publish
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           IMAGE_ROOT: ghcr.io/${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_ARCH: ${{ matrix.arch }}
         run: |
-          docker tag "$IMAGE_ROOT:ci-$GITHUB_SHA" "$IMAGE_ROOT:$RELEASE_TAG"
-          docker tag "$IMAGE_ROOT-nginx:ci-$GITHUB_SHA" "$IMAGE_ROOT-nginx:$RELEASE_TAG"
-          docker push "$IMAGE_ROOT:$RELEASE_TAG"
-          docker push "$IMAGE_ROOT-nginx:$RELEASE_TAG"
-          APP_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_ROOT:$RELEASE_TAG")"
-          WEB_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_ROOT-nginx:$RELEASE_TAG")"
-          echo "app=$APP_DIGEST" >> "$GITHUB_OUTPUT"
-          echo "web=$WEB_DIGEST" >> "$GITHUB_OUTPUT"
+          STAGING_TAG="$RELEASE_TAG-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$RELEASE_ARCH"
+          docker tag "$IMAGE_ROOT:ci-$GITHUB_SHA" "$IMAGE_ROOT:$STAGING_TAG"
+          docker tag "$IMAGE_ROOT-nginx:ci-$GITHUB_SHA" "$IMAGE_ROOT-nginx:$STAGING_TAG"
+          docker push "$IMAGE_ROOT:$STAGING_TAG"
+          docker push "$IMAGE_ROOT-nginx:$STAGING_TAG"
+          APP_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_ROOT:$STAGING_TAG")"
+          WEB_DIGEST="$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_ROOT-nginx:$STAGING_TAG")"
+          mkdir -p "$RUNNER_TEMP/release-digests"
+          jq -n --arg arch "$RELEASE_ARCH" --arg app "$APP_DIGEST" --arg web "$WEB_DIGEST" \
+            '{arch:$arch,app:$app,web:$web}' > "$RUNNER_TEMP/release-digests/$RELEASE_ARCH.json"
           echo "Application: $APP_DIGEST" >> "$GITHUB_STEP_SUMMARY"
           echo "Nginx: $WEB_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: release-digests-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release-digests/*.json
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish verified multi-platform indexes
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-digests-*
+          path: ${{ runner.temp }}/release-digests
+          merge-multiple: true
+      - name: Assemble and verify both platforms without rebuilding
+        env:
+          IMAGE_ROOT: ghcr.io/${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          DIGEST_DIRECTORY: ${{ runner.temp }}/release-digests
+        run: bash scripts/publish-multiarch.sh

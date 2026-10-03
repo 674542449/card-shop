@@ -1,5 +1,15 @@
 # 下单与后台功能回归检查
 
+## 2026-10-04 双架构发布验收（v1.0.7）
+
+CI 使用 `ubuntu-24.04`（AMD64）和 `ubuntu-24.04-arm`（ARM64）原生 runner 分别执行完整 PHP、后台 Node、支付轮询、Shell 及 PostgreSQL 恢复测试。两套测试均成功后，各自构建应用和 Nginx，运行 `ci-production-smoke.sh` 检查九个服务镜像架构、64 位 PHP、首次安装、HTTP / 后台资源、任务心跳与重启不变量。
+
+正式标签的两个镜像任务只有通过验收才上传平台镜像和不可变摘要；汇总任务验证两个平台齐全且摘要等于已测镜像，再发布多架构索引。任一架构失败均阻断汇总发布；既有正式索引与本次摘要不同则拒绝覆盖。
+
+`node --test tests/js/*.test.cjs` 共 12 个测试，其中新增 7 个索引校验用例，覆盖正确双架构、缺 ARM64、重复架构、摘要被替换、错误操作系统、错误 ARM 变体及单平台 manifest。工作流使用 actionlint 校验，发布和验收脚本通过 Bash 语法检查。正式验收结果以对应 GitHub Actions 的两套 Verify、两套 Production image 和 Publish 任务为准，不将 Windows 本地测试记作 ARM 验收。
+
+这验证的是 Linux AMD64 / ARM64 容器；32 位 ARM、macOS 原生 PHP 部署和真实支付渠道不在本次平台验收范围。
+
 ## 2026-10-03 后台完整性复核（v1.0.6）
 
 完整模块和保留 / 删除决定见 [后台功能清单](../docs/ADMIN-FUNCTIONS.md)。本轮增加 `AdminReviewRegressionTest`、两个真实独立 PHP 进程并发场景，以及挂载实际 React / Ant Design 页面的 `adminPages.test.mjs`，验证：

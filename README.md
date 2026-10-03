@@ -4,7 +4,9 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 后端使用 **Laravel 12 + PostgreSQL + Redis**，管理后台使用 **React + Ant Design**。提供三套独立前台模板和 Docker Compose 安装方案，支持易支付支付宝/微信及 EPUSDT / BEpusdt USDT 收款。
 
-**当前正式版本：[v1.0.6](https://github.com/674542449/card-shop/releases/tag/v1.0.6)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
+正式 Docker 镜像支持 **Linux AMD64（Intel / AMD）与 ARM64**，同一版本标签自动选择服务器架构。两种架构分别执行原生测试、镜像构建和生产容器首次安装 / 重启验收；不支持 32 位 ARM。
+
+**当前正式版本：[v1.0.7](https://github.com/674542449/card-shop/releases/tag/v1.0.7)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
 
 ## 功能介绍
 
@@ -185,7 +187,7 @@ sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
 
 前台页面位于 `resources/views/templates/`，资源位于 `public/themes/` 和 `public/js/`；后台源码位于 `admin-frontend/`，构建产物位于 `public/admin-assets/`。数据库结构定义位于 `database/migrations/`，业务逻辑位于 `app/Services/`，路由位于 `routes/`。
 
-本版完善后台对账重试、备份历史与运行健康，修复订单详情串单、设置加载失败、分类与素材并发处理及 IPv6 黑名单匹配问题，并清理无调用的旧后台实现。完整 PHP 回归 469 个测试、4703 项断言通过；后台组件与真实 HTTP 场景的验证结果及环境限制见 [测试记录](tests/README.md)。CI 另验证生产镜像首次初始化与运行。
+本版补齐 AMD64 / ARM64 原生回归、镜像构建和容器验收，通过后合并发布多架构镜像。后台功能、支付及架构验收的实际结果和环境限制见 [测试记录](tests/README.md)。
 
 贡献和发版规则见 [维护者发布说明](RELEASING.md)。代码在 `main` 维护，正式版本通过 Git 标签和 GitHub Release 提供。
 
