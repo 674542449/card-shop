@@ -85,7 +85,7 @@ class TrapScanners
             return $next($request);
         }
 
-        $ip = $request->ip();
+        $ip = \App\Support\IpAddress::normalize($request->ip());
 
         if ($this->bannable($ip)) {
             // 同一个扫描器一分钟内会连打几十条，没必要每条都写库。用一个短 TTL 的
@@ -148,7 +148,8 @@ class TrapScanners
     private function bannable(string $ip): bool
     {
         // 白名单：永久放行（自己的办公网、监控等）。
-        $whitelist = array_filter(array_map('trim', explode(',', (string) setting('honeypot_whitelist', ''))));
+        $whitelist = array_map([\App\Support\IpAddress::class, 'normalize'],
+            array_filter(array_map('trim', explode(',', (string) setting('honeypot_whitelist', '')))));
         if (in_array($ip, $whitelist, true)) {
             return false;
         }

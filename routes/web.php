@@ -152,6 +152,9 @@ Route::prefix('api/' . admin_path())->group(function () {
         Route::post('/admins', [ApiAdmin\AdminController::class, 'store'])->defaults('_admin_capability', 'accounts');
         Route::put('/admins/{admin}', [ApiAdmin\AdminController::class, 'update'])->defaults('_admin_capability', 'accounts');
         Route::get('/maintenance/health', [ApiAdmin\OperationsController::class, 'health'])->defaults('_admin_capability', 'maintenance:read');
+        Route::get('/maintenance/reconciliation-jobs', [ApiAdmin\OperationsController::class, 'reconciliationJobs'])->defaults('_admin_capability', 'reconciliation.read');
+        Route::post('/maintenance/reconciliation-jobs/{job}/retry', [ApiAdmin\OperationsController::class, 'retryReconciliation'])
+            ->middleware('throttle:20,1,admin-reconciliation-retry')->defaults('_admin_capability', 'reconciliation.retry');
         Route::post('/maintenance/health/acknowledge', [ApiAdmin\OperationsController::class, 'acknowledgeHealth'])->defaults('_admin_capability', 'health.acknowledge');
         Route::post('/seo-deliveries/enqueue', [ApiAdmin\OperationsController::class, 'enqueueSeo'])->middleware('throttle:2,1,admin-seo-enqueue')->defaults('_admin_capability', 'content:write');
         Route::get('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assets'])->defaults('_admin_capability', 'maintenance:read');

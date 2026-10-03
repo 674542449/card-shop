@@ -1,5 +1,38 @@
 # 下单与后台功能回归检查
 
+## 2026-10-03 后台完整性复核（v1.0.6）
+
+完整模块和保留 / 删除决定见 [后台功能清单](../docs/ADMIN-FUNCTIONS.md)。本轮增加 `AdminReviewRegressionTest`、两个真实独立 PHP 进程并发场景，以及挂载实际 React / Ant Design 页面的 `adminPages.test.mjs`，验证：
+
+- IPv6 等价地址和 IPv4 映射黑名单、扫描白名单；新对账接口的组合权限、状态、开关、幂等拒绝和响应脱敏。
+- 单订单查询失败保留失败任务；查询成功解除失败任务而不改订单支付状态，不抢占处理中任务。
+- 超过 20 条新记录后的旧备份失败仍可分页查看、过滤及确认。
+- 非空分类不能在接口或数据库层级联删除商品 / 文章；并发新增商品和删除分类不会丢失已保存商品；并发同名分类分别生成可用网址。
+- 新上传素材不能归档；在引用扫描后出现新引用时恢复文件并拒绝归档。
+- 快速切单不显示迟到的旧响应、旧换卡弹窗不跨单保留；设置加载失败不显示可编辑空表单，重试恢复服务器值且不产生意外保存。
+
+最终完整 PHP 回归 **469 个测试、4703 项断言通过，零失败、零跳过**（启用真实 PostgreSQL 恢复测试，耗时 4 分 55.659 秒）。
+
+真实 HTTP 使用独立库 `cardshop_security_http_20261003`、Redis 12/13、`APP_ENV=local`、真实 Cookie/CSRF、回环虚拟网关和虚构卡密。支付回放 **103 次请求、67 项业务检查通过**，逐项比较订单、卡状态、回执、卡密邮件和优惠占用；金额篡改、零额 / 少付、重复参数、错误签名 / 商户 / 币种、交易复用、USDT 绑定、跨令牌取卡、过期优惠及越权人工操作未导致未授权交付。正确付款和合法取卡作为正向对照。后台另有 **31 次真实 HTTP 请求**通过，包含 **21 个读取入口**、新接口 CSRF/权限/重复重试和业务数据不变校验。
+
+首轮支付脚本曾把“付款待核对通知”误算成“卡密发货通知”，产生 3 项失败判断。保留首轮证据后，按通知类型修正检查并重新完整回放，不通过删除场景隐藏失败。
+
+后台 Node **20 个测试**、付款轮询 Node **5 个测试**通过；后台生产构建和产物清单检查通过。构建仍提示个别依赖分包大于 500 kB，这是性能提示，不是构建失败。25 份变更 PHP 文件语法检查通过。
+
+本机证据位于 `.local/security-retry-20261003/`：`repeat.junit.xml`、`full-final.junit.xml`、`http-first-run.json`、`http-results.json`、`admin-http-results.json`、`node-final.log` 和 `build-final.log`。原始 864 项断言对应 **80 个测试**，不是 864 次独立攻击。
+
+可重复运行的项目回归（PowerShell）：
+
+```powershell
+. ./dev-env.ps1
+$env:SHOP_RUN_RESTORE_INTEGRATION = '1'
+php vendor/phpunit/phpunit/phpunit --no-progress
+npm --prefix admin-frontend test
+node --test tests/js/payment-polling.test.cjs
+```
+
+PHP 回归强制隔离库 `cardshop_testing` 与 Redis 10/11，真实恢复测试还需要 PostgreSQL 客户端及测试账户的建库权限。生产 Docker/Nginx、真实支付渠道及对外邮件 / Telegram 未在本轮验收；没有可复用浏览器标签，本轮没有新增浏览器目测结论。上述结果只说明已执行场景的观察，不能证明不存在其他漏洞。
+
 ## 2026-10-03 架构优化验收（v1.0.5）
 
 本地完整 PHP 回归 **460 个测试、4629 项断言**通过，显式启用真实 PostgreSQL 隔离恢复测试，无跳过。后台 Node 18 项、付款轮询 Node 5 项及 Composer 启动 Shell 7 类回归通过；98 份变更 PHP 文件语法、后台生产构建、产物清单、Composer/npm 已知漏洞审计通过。

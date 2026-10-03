@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
 import { ProCard, ProDescriptions } from '@ant-design/pro-components';
 import { Alert, Button, Tag, Spin, message, Popconfirm, Space, Typography, Result, Table, Modal, Input, InputNumber, Select } from 'antd';
@@ -34,6 +34,11 @@ const paymentMethodMap = {
 
 export default function OrderDetail() {
   const { id } = useParams();
+  // A different order must own fresh data, dialogs and mutation state.
+  return <OrderDetailPage key={id} id={id} />;
+}
+
+function OrderDetailPage({ id }) {
   const admin=useOutletContext();const write=allows(admin,'orders','write');const refundWrite=canCapability(admin,'orders.refund');
   const confirmPayment = canCapability(admin,'orders.mark_paid');
   const replacementWrite = canCapability(admin,'orders.replace_cards');
@@ -49,23 +54,28 @@ export default function OrderDetail() {
   const [replacementReason, setReplacementReason] = useState('');
   const [replacementToken, setReplacementToken] = useState('');
   const [replacing, setReplacing] = useState(false);
+  const loadRequest = useRef(null);
 
   const fetchOrder = async () => {
+    loadRequest.current?.abort();
+    const controller = new AbortController();
+    loadRequest.current = controller;
     setLoading(true);
     setLoadError('');
     setOrder(null);
     try {
-      const res = await getOrder(id);
-      setOrder(res.data?.data || res.data);
+      const res = await getOrder(id, { signal: controller.signal });
+      if (!controller.signal.aborted) setOrder(res.data?.data || res.data);
     } catch (err) {
-      setLoadError(err.response?.status === 404 ? '订单不存在或已不可用' : '获取订单信息失败，请重试');
+      if (!controller.signal.aborted) setLoadError(err.response?.status === 404 ? '订单不存在或已不可用' : '获取订单信息失败，请重试');
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchOrder();
+    return () => loadRequest.current?.abort();
   }, [id]);
 
   const handleClose = async () => {

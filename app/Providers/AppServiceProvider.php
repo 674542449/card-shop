@@ -30,7 +30,15 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         foreach ([\App\Models\Article::class, \App\Models\Product::class, \App\Models\Category::class, \App\Models\Setting::class] as $model) {
-            $model::saving(fn ($record) => app(\App\Services\AssetMaintenanceService::class)->restoreReferences($record->getAttributes()));
+            $model::saved(function ($record) {
+                $values = $record->getAttributes();
+                $restore = fn () => app(\App\Services\AssetMaintenanceService::class)->restoreReferences($values);
+                if (\Illuminate\Support\Facades\DB::transactionLevel() > 0) {
+                    \Illuminate\Support\Facades\DB::afterCommit($restore);
+                } else {
+                    $restore();
+                }
+            });
         }
         \App\Models\Article::saved(function ($article) {
             if ($article->is_published && ($article->wasRecentlyCreated || $article->wasChanged(['is_published', 'slug', 'content', 'title', 'seo_title', 'seo_description']))) {

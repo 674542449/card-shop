@@ -61,7 +61,7 @@ class BlacklistController extends Controller
             'value.ip' => '请输入有效的 IPv4 或 IPv6 地址。',
             'value.email' => '请输入有效的邮箱地址。',
         ]);
-        $data['value'] = $data['type'] === 'email' ? mb_strtolower($data['value']) : $data['value'];
+        $data['value'] = $data['type'] === 'email' ? mb_strtolower($data['value']) : \App\Support\IpAddress::normalize($data['value']);
         $duplicate = Blacklist::where('type', $data['type'])
             ->whereRaw('lower(value) = ?', [mb_strtolower($data['value'])]);
         if ($blacklist) {

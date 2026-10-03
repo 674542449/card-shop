@@ -69,11 +69,10 @@ class ArticleController extends Controller
             'seo_keywords' => 'nullable|string|max:200',
         ]);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['title'], 'articles');
-        }
-
-        $article = Article::create($data);
+        $article = SlugGenerator::persist('articles', $data, $data['title'], function ($values) {
+            $this->lockCategory($values['article_category_id']);
+            return Article::create($values);
+        });
         OperationLog::log('创建文章', 'article', $article->id, $article->title);
 
         return response()->json($article, 201);
@@ -102,11 +101,10 @@ class ArticleController extends Controller
             'seo_keywords' => 'nullable|string|max:200',
         ]);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['title'], 'articles', $article->id);
-        }
-
-        $article->update($data);
+        SlugGenerator::persist('articles', $data, $data['title'], function ($values) use ($article) {
+            $this->lockCategory($values['article_category_id']);
+            $article->update($values);
+        }, $article->id);
         OperationLog::log('更新文章', 'article', $article->id, $article->title);
 
         return response()->json($article);
@@ -118,5 +116,12 @@ class ArticleController extends Controller
         $article->delete();
 
         return response()->json(['message' => 'ok']);
+    }
+
+    private function lockCategory(int $id): void
+    {
+        if (! ArticleCategory::whereKey($id)->sharedLock()->first(['id'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['article_category_id' => '文章分类已删除，请重新选择。']);
+        }
     }
 }

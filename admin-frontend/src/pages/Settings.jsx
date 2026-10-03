@@ -1,7 +1,7 @@
 import useWritePermission from '../hooks/useWritePermission';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ProForm, ProFormText, ProFormTextArea, ProFormDigit, ProFormSelect, ProFormSwitch } from '@ant-design/pro-components';
-import { Card, Tabs, Spin, message, Alert, Button, Input, Space, Typography } from 'antd';
+import { Card, Tabs, Spin, message, Alert, Button, Input, Space, Typography, Result } from 'antd';
 import { SendOutlined, CheckCircleFilled, LoadingOutlined, ExclamationCircleFilled } from '@ant-design/icons';
 import { Link, useOutletContext } from 'react-router-dom';
 import { getSettings, updateSettings, sendTestEmail } from '../services/api';
@@ -93,6 +93,8 @@ export default function Settings() {
   const admin = useOutletContext();
   const canConfigurePrivate = canWrite && admin?.role === 'owner';
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadRevision, setLoadRevision] = useState(0);
   const [initialValues, setInitialValues] = useState({});
   const [testTo, setTestTo] = useState('');
   const [testing, setTesting] = useState(false);
@@ -106,8 +108,12 @@ export default function Settings() {
   useEffect(() => settingsSaver.subscribe(setAutoSave), []);
 
   useEffect(() => {
+    let current = true;
+    setLoading(true);
+    setLoadError('');
     (canWrite ? settingsSaver.flush().catch(() => {}) : Promise.resolve()).then(() => getSettings())
       .then((res) => {
+        if (!current) return;
         const data = res.data?.data || res.data;
         // Switch fields are stored as the strings '0'/'1'; antd's Switch needs a real
         // boolean or it renders "0" as checked, since a non-empty string is truthy.
@@ -133,9 +139,10 @@ export default function Settings() {
         setInitialValues(normalised);
         form.setFieldsValue(normalised);
       })
-      .catch(() => message.error('加载设置失败'))
-      .finally(() => setLoading(false));
-  }, [form]);
+      .catch(() => { if (current) setLoadError('加载设置失败，请重试后再编辑。'); })
+      .finally(() => { if (current) setLoading(false); });
+    return () => { current = false; };
+  }, [form, canWrite, canConfigurePrivate, loadRevision]);
 
   /**
    * 把队列里攒的改动发出去。
@@ -144,15 +151,15 @@ export default function Settings() {
    * 「重试」按钮再调一次这个函数就能把它们重新发一遍。不做自动重试——网关挂了的话
    * 自动重试只会变成每 800ms 打一次。
    */
-  const flush = useCallback(() => canWrite ? settingsSaver.flush().catch(() => {}) : Promise.resolve(), [canWrite]);
+  const flush = useCallback(() => canWrite && !loading && !loadError ? settingsSaver.flush().catch(() => {}) : Promise.resolve(), [canWrite, loading, loadError]);
 
   /** ProForm 的 onValuesChange：只把改动的字段入队，然后防抖。 */
   const handleValuesChange = useCallback(
     (changed) => {
-      if (canWrite) settingsSaver.enqueue(Object.fromEntries(Object.entries(changed)
+      if (canWrite && !loading && !loadError) settingsSaver.enqueue(Object.fromEntries(Object.entries(changed)
         .filter(([key]) => canConfigurePrivate || !OWNER_SETTINGS.has(key))));
     },
-    [canWrite, canConfigurePrivate]
+    [canWrite, canConfigurePrivate, loading, loadError]
   );
 
   // 离开页面时把没发出去的改动补发一次，否则「改完立刻点别的菜单」会丢掉最后 800ms
@@ -167,14 +174,14 @@ export default function Settings() {
   // because the server reads them from the database. Saving first is therefore part
   // of the operation rather than a separate thing to remember, so the button does it.
   const handleTestEmail = async () => {
-    if (!canConfigurePrivate) return;
+    if (!canConfigurePrivate || loading || loadError) return;
     if (!testTo) {
       message.warning('请填写接收测试邮件的地址');
       return;
     }
     setTesting(true);
     try {
-      settingsSaver.enqueue(form.getFieldsValue(), false);
+      // Only flush edited fields; writing the whole form can overwrite newer settings.
       await settingsSaver.flush();
       const res = await sendTestEmail(testTo);
       message.success(res.data?.message || '测试邮件已发送');
@@ -193,6 +200,9 @@ export default function Settings() {
       </div>
     );
   }
+
+  if (loadError) return <Result status="error" title={loadError}
+    extra={<Button onClick={() => setLoadRevision(value => value + 1)}>重新加载设置</Button>} />;
 
   const tabItems = [
     {
@@ -454,7 +464,7 @@ export default function Settings() {
       key: 'backup', label: '自动备份', children: <>
         <Alert type="info" showIcon message="完整备份由独立后台进程执行" description="启用前确认备份进程正常。文件包含数据库、环境配置和卡密，应妥善保管。异机同步仅支持预先挂载的目录。" style={{ marginBottom: 16 }} />
         <ProFormSwitch name="backup_auto_enabled" disabled={!canConfigurePrivate} label="启用每日完整备份" />
-        <ProFormText name="backup_schedule_time" disabled={!canConfigurePrivate} label="每日执行时间（服务器时区）" rules={[{ pattern: /^([01]\d|2[0-3]):[0-5]\d$/, message: '请输入 HH:mm' }]} />
+        <ProFormText name="backup_schedule_time" disabled={!canConfigurePrivate} label="每日执行时间（北京时间 / Asia/Shanghai）" rules={[{ pattern: /^([01]\d|2[0-3]):[0-5]\d$/, message: '请输入 HH:mm' }]} />
         <ProFormDigit name="backup_retention_count" disabled={!canConfigurePrivate} label="保留份数" min={1} max={365} fieldProps={{ precision: 0 }} />
         <ProFormDigit name="backup_retention_days" disabled={!canConfigurePrivate} label="保留天数" min={1} max={3650} fieldProps={{ precision: 0 }} />
         <ProFormText name="backup_sync_directory" disabled={!canConfigurePrivate} label="异机挂载目录（可选）" extra="填写已挂载、存在且可写的绝对目录，不能是网址或应用目录；留空仅保存本地。远端副本需另行设置保留策略。" />

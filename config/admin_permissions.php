@@ -16,6 +16,8 @@ return [
         'orders.mark_paid' => ['all' => ['orders:write', 'payments:write']],
         'orders.replace_cards' => ['all' => ['orders:write', 'cards:write']],
         'orders.refund' => ['all' => ['orders:write', 'refunds:write']],
+        'reconciliation.read' => ['all' => ['maintenance:read', 'orders:read']],
+        'reconciliation.retry' => ['all' => ['maintenance:write', 'orders:write']],
         'settings.test_email' => ['owner' => true, 'all' => ['settings:write']],
         'backups.read' => ['owner' => true, 'all' => ['maintenance:read']],
         'backups.write' => ['owner' => true, 'all' => ['maintenance:write']],

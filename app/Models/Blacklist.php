@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
+use App\Support\IpAddress;
 
 class Blacklist extends Model
 {
@@ -30,6 +31,9 @@ class Blacklist extends Model
 
     protected static function booted(): void
     {
+        static::saving(function (Blacklist $model) {
+            $model->value = $model->type === 'ip' ? IpAddress::normalize($model->value) : mb_strtolower($model->value);
+        });
         static::creating(function (Blacklist $model) {
             $model->created_at = $model->freshTimestamp();
         });
@@ -42,7 +46,7 @@ class Blacklist extends Model
                 if (!is_string($value)) {
                     continue;
                 }
-                $value = $type === 'email' ? mb_strtolower($value) : $value;
+                $value = $type === 'email' ? mb_strtolower($value) : IpAddress::normalize($value);
                 try {
                     Cache::store('redis')->forget("blacklist:{$type}:" . md5($value));
                 } catch (\Throwable) {
@@ -71,6 +75,7 @@ class Blacklist extends Model
      */
     public static function isBlocked(string $ip, ?string $email = null): bool
     {
+        $ip = IpAddress::normalize($ip);
         $query = static::active()->where(function ($outer) use ($ip, $email) {
             $outer->where(function ($q) use ($ip) {
                 $q->where('type', 'ip')->where('value', $ip);
@@ -107,7 +112,9 @@ class Blacklist extends Model
      */
     public static function banIp(string $ip, string $reason, ?int $minutes = null, string $source = 'honeypot'): void
     {
-        $existing = static::where('type', 'ip')->where('value', $ip)->first();
+        $ip = IpAddress::normalize($ip);
+        $existing = static::where('type', 'ip')->where('value', $ip)
+            ->orderByRaw("case when source = 'honeypot' then 1 else 0 end")->first();
 
         // A manual/permanent ban outranks the honeypot; do not touch it.
         if ($existing && $existing->source !== 'honeypot') {

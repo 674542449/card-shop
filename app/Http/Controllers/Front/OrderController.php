@@ -12,7 +12,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 
 class OrderController extends Controller
@@ -302,26 +301,6 @@ class OrderController extends Controller
     private function matchOrders(string $email, string $password, ?string $orderNo = null)
     {
         return app(\App\Services\OrderLookupService::class)->search($email, $password, $orderNo)['orders'];
-    }
-
-    /**
-     * A real bcrypt hash of a value nobody knows, used only to spend the time a
-     * genuine verification would have spent.
-     *
-     * Computed once and cached rather than hard-coded: a hand-written hash that did
-     * not parse would make password_verify() return false immediately and pay none
-     * of the cost, which is the entire point of it.
-     */
-    private function timingPaddingHash(): string
-    {
-        try {
-            return Cache::rememberForever(
-                'order-auth-timing-padding',
-                fn () => Hash::make(Str::random(40))
-            );
-        } catch (\Throwable $e) {
-            return Hash::make(Str::random(40));
-        }
     }
 
     /**

@@ -6,10 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\OperationLog;
 use App\Models\Order;
 use App\Models\PaymentReceipt;
+use App\Models\PaymentReconciliationJob;
 use App\Models\SeoDelivery;
 use App\Models\NotificationDelivery;
 use App\Services\HeartbeatService;
 use App\Services\PaymentReconciliationService;
+use App\Services\PaymentReconciliationQueue;
 use App\Services\SeoQueue;
 use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
@@ -25,6 +27,7 @@ class OperationsController extends Controller
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+        app(PaymentReconciliationQueue::class)->completeManualCheck($order);
         OperationLog::log('网关对账', 'order', $order->id, $order->order_no);
 
         return response()->json($result);
@@ -51,6 +54,23 @@ class OperationsController extends Controller
     public function health(HeartbeatService $service)
     {
         return response()->json($service->health());
+    }
+
+    public function reconciliationJobs(Request $request)
+    {
+        $size = AdminListQuery::pageSize($request, 20, ['status' => 'nullable|in:pending,processing,completed,failed']);
+        return response()->json(PaymentReconciliationJob::with('order:id,order_no,status')
+            ->when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
+            ->orderByDesc('id')->paginate($size)
+            ->through(fn ($job) => (new AdminRecordResource($job))->resolve($request)));
+    }
+
+    public function retryReconciliation(PaymentReconciliationJob $job, PaymentReconciliationQueue $queue)
+    {
+        try { $queue->retry($job); }
+        catch (\RuntimeException $e) { return response()->json(['message' => $e->getMessage()], 422); }
+        OperationLog::log('重试付款对账', 'order', $job->order_id, '失败任务 '.$job->id.' 重新入队');
+        return response()->json(['message' => '对账任务已重新入队，请查看处理结果。'], 202);
     }
 
     public function seo(Request $request)

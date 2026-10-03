@@ -112,7 +112,6 @@ export default function AdminLayout({ admin }) {
         <div className="admin-sidebar-note">
           <span className="admin-sidebar-note-label">经营工作台</span>
           <p>管理商品、订单与内容，<br />让每一次交付都顺畅。</p>
-          <a href="/" target="_blank" rel="noopener noreferrer">打开前台 <ExportOutlined /></a>
         </div>
       )}
       menuItemRender={(item, dom) => (

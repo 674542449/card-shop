@@ -3,7 +3,7 @@
 namespace App\Http\Resources\Admin;
 
 use App\Models\{Admin, ApiToken, BackupRun, Coupon, NotificationDelivery, Order, OrderCardReplacement,
-    OrderCardReplacementItem, OrderRefund, PaymentReceipt, Product, SeoDelivery};
+    OrderCardReplacementItem, OrderRefund, PaymentReceipt, PaymentReconciliationJob, Product, SeoDelivery};
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Arr;
@@ -17,6 +17,7 @@ class AdminRecordResource extends JsonResource
         BackupRun::class => ['id', 'source', 'requested_by', 'status', 'progress', 'phase', 'attempts', 'lease_expires_at', 'filename', 'size', 'sync_status', 'last_error', 'started_at', 'finished_at', 'synced_at', 'health_acknowledged_at', 'created_at', 'updated_at'],
         NotificationDelivery::class => ['id', 'type', 'order_id', 'product_id', 'status', 'attempts', 'available_at', 'reserved_at', 'sent_at', 'last_error', 'health_acknowledged_at', 'created_at', 'updated_at'],
         SeoDelivery::class => ['id', 'provider', 'url', 'status', 'attempts', 'available_at', 'reserved_at', 'sent_at', 'last_error', 'health_acknowledged_at', 'created_at', 'updated_at'],
+        PaymentReconciliationJob::class => ['id', 'order_id', 'status', 'attempts', 'available_at', 'queued_at', 'finished_at', 'last_error', 'created_at', 'updated_at'],
         PaymentReceipt::class => ['id', 'order_id', 'channel', 'trade_no', 'amount', 'received_at', 'actual_amount', 'currency', 'network', 'transaction_hash', 'review_reason', 'review_code', 'review_resolved_at', 'resolution_note', 'refund_balance', 'created_at', 'updated_at'],
         OrderRefund::class => ['id', 'order_id', 'payment_receipt_id', 'amount', 'status', 'source', 'reason', 'reference', 'note', 'customer_note', 'admin_id', 'completed_at', 'created_at', 'updated_at'],
         OrderCardReplacement::class => ['id', 'order_id', 'admin_id', 'reason', 'created_at', 'updated_at'],

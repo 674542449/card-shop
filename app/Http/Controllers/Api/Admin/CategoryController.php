@@ -8,6 +8,7 @@ use App\Models\OperationLog;
 use App\Support\SlugGenerator;
 use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class CategoryController extends Controller
 {
@@ -54,11 +55,7 @@ class CategoryController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['name'], 'categories');
-        }
-
-        $category = Category::create($data);
+        $category = SlugGenerator::persist('categories', $data, $data['name'], fn ($values) => Category::create($values));
         OperationLog::log('创建分类', 'category', $category->id, $category->name);
 
         return response()->json($category, 201);
@@ -78,11 +75,7 @@ class CategoryController extends Controller
             'is_active' => 'boolean',
         ]);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['name'], 'categories', $category->id);
-        }
-
-        $category->update($data);
+        SlugGenerator::persist('categories', $data, $data['name'], fn ($values) => $category->update($values), $category->id);
         OperationLog::log('更新分类', 'category', $category->id, $category->name);
 
         return response()->json($category);
@@ -90,12 +83,16 @@ class CategoryController extends Controller
 
     public function destroy(Category $category)
     {
-        if ($category->products()->count() > 0) {
+        $deleted = DB::transaction(function () use ($category) {
+            $locked = Category::whereKey($category->id)->lockForUpdate()->first();
+            if (! $locked || $locked->products()->exists()) { return false; }
+            $locked->delete();
+            OperationLog::log('删除分类', 'category', $locked->id, $locked->name);
+            return true;
+        });
+        if (! $deleted) {
             return response()->json(['message' => '该分类下有商品，无法删除。'], 422);
         }
-
-        OperationLog::log('删除分类', 'category', $category->id, $category->name);
-        $category->delete();
 
         return response()->json(['message' => 'ok']);
     }

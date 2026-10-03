@@ -232,20 +232,6 @@ export const deleteCategory = (id) =>
 export const getProducts = (params) =>
   api.get('/products', { params });
 
-// Coupon selectors must include products beyond the first 200 rows, including
-// inactive products already referenced by an existing coupon.
-export const getAllProducts = async () => {
-  const products = [];
-  for (let page = 1; ; page += 1) {
-    const res = await getProducts({ page, per_page: 200 });
-    const body = res.data ?? {};
-    const rows = Array.isArray(body) ? body : (body.data ?? []);
-    products.push(...rows);
-    if (rows.length === 0 || products.length >= (body.total ?? rows.length)) break;
-  }
-  return products;
-};
-
 export const getProduct = (id) =>
   api.get(`/products/${id}`);
 
@@ -281,8 +267,8 @@ export const setCardStatus = (id, status) =>
 export const getOrders = (params) =>
   api.get('/orders', { params });
 
-export const getOrder = (id) =>
-  api.get(`/orders/${id}`);
+export const getOrder = (id, config) =>
+  api.get(`/orders/${id}`, config);
 
 export const closeOrder = (id) =>
   api.post(`/orders/${id}/close`);

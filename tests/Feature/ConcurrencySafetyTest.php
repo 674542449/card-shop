@@ -87,6 +87,31 @@ class ConcurrencySafetyTest extends TestCase
         $this->assertSame(1, Card::where('status', 'locked')->count());
     }
 
+    public function test_concurrent_admin_autoslugs_both_save_with_distinct_urls(): void
+    {
+        [$product, $token] = $this->fixtures([]);
+        $results = $this->race('admin-slug', $product, $token, 1);
+        $this->assertSame([201, 201], array_column($results, 'status'), json_encode($results));
+        $this->assertEqualsCanonicalizing(['concurrent-admin-category', 'concurrent-admin-category-2'], array_column($results, 'slug'));
+        $this->assertSame(2, Category::where('name', 'Concurrent admin category')->count());
+    }
+
+    public function test_concurrent_category_delete_and_product_create_cannot_lose_a_saved_child(): void
+    {
+        [$product, $token] = $this->fixtures([]);
+        $category = Category::create(['name' => 'Concurrent parent', 'slug' => 'concurrent-parent']);
+        $results = $this->race('admin-category', $product, $token, 1, (string) $category->id);
+        if ($results[1]['status'] === 201) {
+            $this->assertSame(422, $results[0]['status']);
+            $this->assertDatabaseHas('categories', ['id' => $category->id]);
+            $this->assertDatabaseHas('products', ['category_id' => $category->id, 'name' => 'Concurrent child']);
+        } else {
+            $this->assertSame([200, 422], array_column($results, 'status'), json_encode($results));
+            $this->assertDatabaseMissing('categories', ['id' => $category->id]);
+            $this->assertDatabaseMissing('products', ['category_id' => $category->id]);
+        }
+    }
+
     public function test_concurrent_orders_cannot_exceed_token_quantity_quota(): void
     {
         [$product, $token] = $this->fixtures(['max_pending_orders' => 10, 'max_pending_quantity' => 3]);

@@ -72,8 +72,11 @@ class MaintenanceController extends Controller
     public function backupRuns(Request $request)
     {
         $this->owner();
-        $size = AdminListQuery::pageSize($request);
-        return response()->json(BackupRun::orderByDesc('id')->paginate($size)->through(fn ($run) => (new AdminRecordResource($run))->resolve($request)));
+        $size = AdminListQuery::pageSize($request, 20, ['status' => 'nullable|in:pending,running,completed,failed', 'needs_attention' => 'nullable|boolean']);
+        return response()->json(BackupRun::when($request->filled('status'), fn ($q) => $q->where('status', $request->status))
+            ->when($request->boolean('needs_attention'), fn ($q) => $q->whereNull('health_acknowledged_at')
+                ->where(fn ($failure) => $failure->where('status', 'failed')->orWhereNotNull('last_error')))
+            ->orderByDesc('id')->paginate($size)->through(fn ($run) => (new AdminRecordResource($run))->resolve($request)));
     }
 
     public function backupRun(BackupRun $run)

@@ -10,6 +10,11 @@ if (config('database.connections.pgsql.database') !== 'cardshop_testing'
 }
 \Illuminate\Support\Facades\Http::preventStrayRequests();
 [$script, $operation, $productId, $tokenId, $quantity, $orderNo, $barrier, $slot] = $argv;
+if (str_starts_with($operation, 'admin-')) {
+    $admin = \App\Models\Admin::create(['username' => 'concurrent-admin-'.$slot,
+        'password' => \Illuminate\Support\Facades\Hash::make('dummy-concurrency-password'), 'role' => 'owner', 'is_active' => true]);
+    session(['admin_id' => $admin->id]);
+}
 file_put_contents($barrier.'/ready-'.$slot, 'ready');
 $deadline = microtime(true) + 15;
 while (!file_exists($barrier.'/go')) {
@@ -17,7 +22,27 @@ while (!file_exists($barrier.'/go')) {
     usleep(20000);
 }
 try {
-    if ($operation === 'web-order') {
+    if ($operation === 'admin-slug') {
+        \App\Models\Category::creating(fn () => usleep(400000));
+        $response = app(\App\Http\Controllers\Api\Admin\CategoryController::class)->store(
+            \Illuminate\Http\Request::create('/api/admin/categories', 'POST', ['name' => 'Concurrent admin category']));
+        echo json_encode(['status' => $response->getStatusCode(), 'slug' => $response->getData()->slug]);
+    } elseif ($operation === 'admin-category') {
+        \App\Models\Category::deleting(fn () => usleep(400000));
+        \App\Models\Product::creating(fn () => usleep(400000));
+        try {
+            if ($slot === '0') {
+                $response = app(\App\Http\Controllers\Api\Admin\CategoryController::class)->destroy(\App\Models\Category::findOrFail($orderNo));
+            } else {
+                $response = app(\App\Http\Controllers\Api\Admin\ProductController::class)->store(
+                    \Illuminate\Http\Request::create('/api/admin/products', 'POST', [
+                        'category_id' => (int) $orderNo, 'name' => 'Concurrent child', 'price' => '10.00']));
+            }
+            echo json_encode(['status' => $response->getStatusCode()]);
+        } catch (\Illuminate\Validation\ValidationException) {
+            echo json_encode(['status' => 422]);
+        }
+    } elseif ($operation === 'web-order') {
         // Hold the first request after its quota check so an overlapping request
         // really enters the vulnerable window, rather than relying on CPU timing.
         \App\Models\Order::creating(fn () => usleep(400000));

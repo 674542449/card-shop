@@ -42,3 +42,4 @@ Thumbs.db
 /public/testimg/
 .cardshop-secrets/
 /storage/framework/shop-write.lock
+/storage/framework/asset-maintenance.lock

@@ -45,6 +45,8 @@ class CheckBlacklist
         // was one shift key away from being bypassed.
         if ($type === 'email') {
             $value = mb_strtolower($value);
+        } else {
+            $value = \App\Support\IpAddress::normalize($value);
         }
 
         $cacheKey = "blacklist:{$type}:" . md5($value);

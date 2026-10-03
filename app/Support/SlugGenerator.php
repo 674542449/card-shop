@@ -4,6 +4,7 @@ namespace App\Support;
 
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Builds URL slugs that are guaranteed not to collide with an existing row.
@@ -16,6 +17,20 @@ use Illuminate\Support\Str;
  */
 class SlugGenerator
 {
+    /** Keep selection and persistence in one transaction across concurrent editors. */
+    public static function persist(string $table, array $data, string $source, \Closure $save, ?int $ignoreId = null): mixed
+    {
+        return DB::transaction(function () use ($table, $data, $source, $save, $ignoreId) {
+            DB::select('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', ['admin-slug', $table]);
+            if (empty($data['slug'])) {
+                $data['slug'] = self::unique($source, $table, $ignoreId);
+            } elseif (self::exists($table, 'slug', $data['slug'], $ignoreId)) {
+                throw ValidationException::withMessages(['slug' => '该网址标识已被使用，请更换或留空自动生成。']);
+            }
+            return $save($data);
+        }, 3);
+    }
+
     /**
      * @param  string    $source     Human-readable name/title to slugify.
      * @param  string    $table      Table holding the unique index.

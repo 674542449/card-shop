@@ -8,6 +8,7 @@ use App\Models\OperationLog;
 use App\Support\SlugGenerator;
 use App\Support\AdminListQuery;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ArticleCategoryController extends Controller
 {
@@ -44,11 +45,7 @@ class ArticleCategoryController extends Controller
             'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
         ]);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['name'], 'article_categories');
-        }
-
-        $category = ArticleCategory::create($data);
+        $category = SlugGenerator::persist('article_categories', $data, $data['name'], fn ($values) => ArticleCategory::create($values));
         OperationLog::log('创建文章分类', 'article_category', $category->id, $category->name);
 
         return response()->json($category, 201);
@@ -65,11 +62,7 @@ class ArticleCategoryController extends Controller
             'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
         ]);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['name'], 'article_categories', $articleCategory->id);
-        }
-
-        $articleCategory->update($data);
+        SlugGenerator::persist('article_categories', $data, $data['name'], fn ($values) => $articleCategory->update($values), $articleCategory->id);
         OperationLog::log('更新文章分类', 'article_category', $articleCategory->id, $articleCategory->name);
 
         return response()->json($articleCategory);
@@ -77,12 +70,16 @@ class ArticleCategoryController extends Controller
 
     public function destroy(ArticleCategory $articleCategory)
     {
-        if ($articleCategory->articles()->count() > 0) {
+        $deleted = DB::transaction(function () use ($articleCategory) {
+            $locked = ArticleCategory::whereKey($articleCategory->id)->lockForUpdate()->first();
+            if (! $locked || $locked->articles()->exists()) { return false; }
+            $locked->delete();
+            OperationLog::log('删除文章分类', 'article_category', $locked->id, $locked->name);
+            return true;
+        });
+        if (! $deleted) {
             return response()->json(['message' => '该分类下有文章，无法删除。'], 422);
         }
-
-        OperationLog::log('删除文章分类', 'article_category', $articleCategory->id, $articleCategory->name);
-        $articleCategory->delete();
 
         return response()->json(['message' => 'ok']);
     }

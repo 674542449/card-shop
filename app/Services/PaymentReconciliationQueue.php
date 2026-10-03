@@ -53,6 +53,26 @@ class PaymentReconciliationQueue
             'available_at' => now(), 'queued_at' => now(), 'reserved_at' => null, 'lease_token' => null, 'last_error' => null, 'finished_at' => null]);
     }
 
+    public function retry(PaymentReconciliationJob $job): void
+    {
+        if (! $this->enabled()) {
+            throw new \RuntimeException('请先在系统设置中启用自动付款对账，再重试任务。');
+        }
+        $updated = PaymentReconciliationJob::whereKey($job->id)->where('status', 'failed')
+            ->update(['status' => 'pending', 'attempts' => 0, 'available_at' => now(), 'queued_at' => now(),
+                'reserved_at' => null, 'lease_token' => null, 'last_error' => null, 'finished_at' => null]);
+        if (! $updated) { throw new \RuntimeException('仅失败的对账任务可以重试。'); }
+    }
+
+    public function completeManualCheck(Order $order): void
+    {
+        // A successful explicit check resolves an exhausted job, without touching
+        // a worker's active lease or pretending an unsuccessful query was paid.
+        PaymentReconciliationJob::where('order_id', $order->id)->where('status', 'failed')
+            ->update(['status' => 'completed', 'last_error' => null, 'reserved_at' => null,
+                'lease_token' => null, 'finished_at' => now()]);
+    }
+
     public function process(int $limit = 10): int
     {
         app(HeartbeatService::class)->beat('reconciliation');

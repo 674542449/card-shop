@@ -105,12 +105,11 @@ class ProductController extends Controller
         $wholesalePrices = $data['wholesale_prices'] ?? [];
         unset($data['wholesale_prices']);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['name'], 'products');
-        }
-
-        $product = DB::transaction(function () use ($data, $wholesalePrices) {
-            $product = Product::create($data);
+        $product = SlugGenerator::persist('products', $data, $data['name'], function ($values) use ($wholesalePrices) {
+            if (! Category::whereKey($values['category_id'])->sharedLock()->first(['id'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['category_id' => '商品分类已删除，请重新选择。']);
+            }
+            $product = Product::create($values);
             foreach ($wholesalePrices as $wp) {
                 $product->wholesalePrices()->create($wp);
             }
@@ -163,12 +162,11 @@ class ProductController extends Controller
         $wholesalePrices = $data['wholesale_prices'] ?? [];
         unset($data['wholesale_prices']);
 
-        if (empty($data['slug'])) {
-            $data['slug'] = SlugGenerator::unique($data['name'], 'products', $product->id);
-        }
-
-        DB::transaction(function () use ($product, $data, $replaceTiers, $wholesalePrices) {
-            $product->fill($data);
+        SlugGenerator::persist('products', $data, $data['name'], function ($values) use ($product, $replaceTiers, $wholesalePrices) {
+            if (! Category::whereKey($values['category_id'])->sharedLock()->first(['id'])) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['category_id' => '商品分类已删除，请重新选择。']);
+            }
+            $product->fill($values);
             if ($product->isDirty(['low_stock_threshold', 'is_active'])) {
                 $product->forceFill(['low_stock_notified' => false]);
             }
@@ -185,7 +183,7 @@ class ProductController extends Controller
                     ]);
                 }
             }
-        });
+        }, $product->id);
 
         OperationLog::log('更新商品', 'product', $product->id, $product->name);
 
