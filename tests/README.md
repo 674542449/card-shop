@@ -1,5 +1,47 @@
 # 下单与后台功能回归检查
 
+## 当前正式版验收
+
+当前正式版本为 [v1.0.8](https://github.com/674542449/card-shop/releases/tag/v1.0.8)，发布提交 `ac78eaf725f3c36df96ded42f51bf0e79936409a`，结果核对于 **2026-10-04**。本节为当前版本的发布证据；下方按版本保留历史验证记录，历史计数和环境限制不代替本节结果。
+
+| 验证项目 | AMD64 | ARM64 |
+| --- | --- | --- |
+| 原生执行环境 | `ubuntu-24.04` | `ubuntu-24.04-arm` |
+| PHP（含真实 PostgreSQL 恢复） | 475 个测试 / 4772 项断言 | 475 个测试 / 4772 项断言 |
+| 后台 React / Ant Design DOM 与 Node 回归 | 26 个测试 | 26 个测试 |
+| 支付轮询及镜像索引 Node 回归 | 12 个测试 | 12 个测试 |
+| Shell 回归、构建资源、依赖审计 | 通过 | 通过 |
+| 应用 / Nginx 构建、九服务首次安装和重启验收 | 通过 | 通过 |
+
+[main 提交验证](https://github.com/674542449/card-shop/actions/runs/37170109558)和[正式标签流水线](https://github.com/674542449/card-shop/actions/runs/37170509224)均成功。标签流水线的两个 Verify、两个 Production image 和 Publish 共五个任务全部通过。随后独立读取 GHCR 索引，确认各自恰好含 `linux/amd64` 与 `linux/arm64`，平台子镜像摘要与本次已验收产物一致。
+
+发布的多架构索引可直接用于固定部署（应用与 Nginx 须成对使用）：
+
+```env
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop@sha256:92489f4b9ed26b8b7fa153acb31f9d55cde00aaa97684572c6c8f10b9ab5c416
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx@sha256:beb25e7fa31c4c889158dc1f3cc4a37498ef0a672b4afde084d0231a2ec2bd09
+```
+
+对应标签分别是 `ghcr.io/674542449/card-shop:v1.0.8` 与 `ghcr.io/674542449/card-shop-nginx:v1.0.8`。上述为多架构索引摘要，不是某一个 CPU 平台的子镜像摘要。
+
+本次只更新文档，没有将既有结果称为新一轮业务回归。测试通过表示列出的场景已通过，不证明不存在其他漏洞；真实网关到账、外部邮件 / Telegram、正式域名代理与浏览器目测仍需目标环境验收。
+
+### 复现入口
+
+已准备好本地 PHP、Node、PostgreSQL、Redis、测试环境和项目外测试 keyring 时，在项目根目录执行：
+
+```powershell
+# 仅本机已配置的 Windows 环境有此辅助脚本。
+. ./dev-env.ps1
+$env:SHOP_RUN_RESTORE_INTEGRATION = '1'
+php vendor/phpunit/phpunit/phpunit --no-progress
+npm --prefix admin-frontend test
+node --test tests/js/*.test.cjs
+php scripts/validate-admin-assets.php
+```
+
+PHP 测试使用隔离库 `cardshop_testing` 和 Redis 10/11；恢复集成测试需要 PostgreSQL 17 客户端及测试账户建库权限。新环境的完整依赖、临时 keyring、Shell 回归和生产容器步骤以 [CI 工作流](../.github/workflows/ci.yml) 为准；生产验收脚本为 [ci-production-smoke.sh](../scripts/ci-production-smoke.sh)。本地辅助脚本和 `.local/` 证据不随仓库分发，公开结果以以上 Actions 链接为准。
+
 ## 2026-10-04 后台工作流精简（v1.0.8）
 
 系统设置合并支付和邮件分组；任务中心集中通知、付款对账与 SEO 推送，运维保留健康、素材及备份；首页集中需要人工处理的待办。卡密新增停用状态，暂停销售与线下售出分别操作。

@@ -1,5 +1,7 @@
 # 前台模板开发
 
+适用正式版本：**v1.0.8**，核对日期：2026-10-04。
+
 CardShop 提供 `default`、`modern`、`minimal` 三套模板。前台使用 Blade，资源位于 `public/themes/` 和 `public/js/`，无需单独启动前台 Node 服务。
 
 ## 切换模板
@@ -15,6 +17,13 @@ resources/views/templates/your-theme/
     layout.blade.php
     home.blade.php
     product/list.blade.php
+    product/show.blade.php
+    order/query.blade.php
+    order/pay.blade.php
+    order/result.blade.php
+    order/detail.blade.php
+    article/list.blade.php
+    article/show.blade.php
     partials/
 public/themes/your-theme/
     style.css
@@ -32,6 +41,8 @@ public/themes/your-theme/
 按移动端和桌面尺寸检查分类搜索、商品数量与优惠试算、下单、付款等待、查单、取消、卡密复制与 TXT 下载、文章及深色模式。退款关闭和开启两种状态均需检查；原款售后换卡后显示当前有效卡密。
 
 页面试算只用于展示，提交仍由服务端计价。不要将查询密码放入 URL，不要用客户端状态决定付款成功或卡密交付；富文本继续通过应用净化流程渲染。
+
+下单表单须保留服务端签名下单标识，网络失败重试同一操作时复用，避免重复占用库存；付款创建处于执行中或结果不确定时，引导查原订单，不重新显示可重复创建交易的付款入口。库存展示使用服务端可售数量，停用、锁定与已售卡均不可购买。验证时包含“最后一张可售卡暂停后售罄、恢复后可购”的场景。
 
 演示数据仅在本地开发使用，见 [演示数据说明](../database/seeders/DEMO.md)。测试范围见 [测试记录](../tests/README.md)。
 

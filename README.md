@@ -8,6 +8,8 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 **当前正式版本：[v1.0.8](https://github.com/674542449/card-shop/releases/tag/v1.0.8)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
 
+文档核对日期：**2026-10-04**，功能与安装说明以 `v1.0.8` 为准。[正式发布流水线](https://github.com/674542449/card-shop/actions/runs/37170509224)的 AMD64、ARM64 测试与容器验收均通过；每个平台完成 475 个 PHP 测试 / 4772 项断言、26 个后台 Node 测试和 12 个其他 Node 测试。详细范围、镜像摘要和未覆盖场景见 [当前版本验收记录](tests/README.md#当前正式版验收)。
+
 ## 功能介绍
 
 | 功能 | 能做什么 |
@@ -62,6 +64,8 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 完整的后台模块、权限边界和核查结果见 [管理后台功能清单](docs/ADMIN-FUNCTIONS.md)。任务中心统一提供通知投递、付款对账、SEO 推送的查询与重试，各模块权限独立。“运维”集中运行健康、上传素材与完整备份；首页集中付款核对、退款审核、通知失败和低库存待办。
 
+问题卡密可在商品卡密页“暂停销售”，恢复后才重新计入可售库存；“登记线下售出”用于已在商城外售出的卡密，不创建商城订单或增加销售额。订单锁定、已交付及售后换出的卡密不能通过这两个操作重新入库。
+
 店主管理站点、支付、邮件、安全配置和管理员账户。员工按职责分配查看或操作权限，卡密与人工收款使用独立权限；只读账户界面隐藏写入操作，服务端逐接口校验。商品定价和优惠码会直接影响实付金额，应授予可信经营人员。
 
 管理员可以在「账户与密码 → 登录双重验证」绑定验证器，确认验证码后生效；恢复码只展示一次且每个只能使用一次。启用、停用或重置会撤销其他登录会话。
@@ -80,7 +84,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 `modern` 与 `minimal` 各自提供页面结构和样式。管理后台采用暖纸色与陶土色交互，集中处理商品、交易、内容和系统维护。
 
-以下为虚拟商品与订单的演示截图。
+以下为虚拟商品与订单的演示截图。后台截图保留早期布局用于展示视觉风格；`v1.0.8` 的菜单和待办分组以 [后台功能清单](docs/ADMIN-FUNCTIONS.md) 为准。
 
 <details open>
 <summary><strong>modern 商品首页</strong></summary>
@@ -183,6 +187,7 @@ npm test
 npm run build
 cd ..
 sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp
+php scripts/validate-admin-assets.php
 ```
 
 前台页面位于 `resources/views/templates/`，资源位于 `public/themes/` 和 `public/js/`；后台源码位于 `admin-frontend/`，构建产物位于 `public/admin-assets/`。数据库结构定义位于 `database/migrations/`，业务逻辑位于 `app/Services/`，路由位于 `routes/`。
