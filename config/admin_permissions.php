@@ -40,6 +40,7 @@ return [
         ['path' => '/settings', 'capability' => 'settings:read'],
         ['path' => '/api-tokens', 'capability' => 'tokens:read'],
         ['path' => '/notifications', 'capability' => 'notifications:read'],
-        ['path' => '/operations', 'any' => ['maintenance:read', 'content:read']],
+        ['path' => '/tasks', 'any' => ['notifications:read', 'reconciliation.read', 'content:read']],
+        ['path' => '/operations', 'capability' => 'maintenance:read'],
     ],
 ];

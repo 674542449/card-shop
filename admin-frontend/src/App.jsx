@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useState } from 'react';
-import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
 import { ConfigProvider, Spin } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import AdminLayout from './layouts/AdminLayout';
@@ -21,7 +21,13 @@ const Logs = lazyPage('/logs');
 const Settings = lazyPage('/settings');
 const ApiTokens = lazyPage('/api-tokens');
 const Account = lazyPage('/account');
-const Notifications = lazyPage('/notifications');
+const TaskCenter = lazyPage('/tasks');
+function LegacyNotifications() {
+  const { search } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set('tab', 'notifications');
+  return <Navigate to={'/tasks?' + params.toString()} replace />;
+}
 const Refunds = lazyPage('/refunds');
 const AdminAccounts = lazyPage('/admins');
 const Operations = lazyPage('/operations');
@@ -158,7 +164,8 @@ export default function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="api-tokens" element={<ApiTokens />} />
           <Route path="account" element={<Account />} />
-          <Route path="notifications" element={<Notifications />} />
+          <Route path="notifications" element={<LegacyNotifications />} />
+          <Route path="tasks" element={<TaskCenter />} />
                 <Route path="refunds" element={<Refunds />} />
                 <Route path="admins" element={<AdminAccounts />} />
                 <Route path="operations" element={<Operations />} />

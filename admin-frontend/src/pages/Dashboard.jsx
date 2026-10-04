@@ -3,6 +3,8 @@ import Link from '../components/PermissionLink';
 import { Alert, Button, Card, Col, Row, Skeleton, Table, Tag, Typography, Empty, Space } from 'antd';
 import { ArrowRightOutlined, ClockCircleOutlined, FileTextOutlined, ReloadOutlined, ShoppingOutlined, WalletOutlined, PlusOutlined } from '@ant-design/icons';
 import { getDashboard } from '../services/api';
+import { useOutletContext } from 'react-router-dom';
+import { allows } from '../permissions';
 
 const STATUS = {
   pending: { text: '待支付', color: 'gold' },
@@ -53,6 +55,7 @@ function RevenueBars({ labels = [], data = [] }) {
 }
 
 export default function Dashboard() {
+  const admin = useOutletContext();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState({});
   const [failed, setFailed] = useState(false);
@@ -91,26 +94,24 @@ export default function Dashboard() {
         <div><span className="admin-eyebrow">{dateLabel}</span><h2>每一笔订单，都井然有序。</h2><p>看看今天的经营进展，再照顾好接下来要做的事。</p></div>
         <Button icon={<ReloadOutlined />} onClick={load}>刷新数据</Button>
       </section>
+      <Card title="需要处理" className="admin-todo-card" style={{ marginBottom: 20 }}>
+        <Row gutter={[16, 16]}>
+          {allows(admin, 'orders') && <Col xs={24} sm={12} xl={6}><Stat label="付款待核对" value={data.payment_review_orders || 0} tone={data.payment_review_orders > 0 ? 'attention' : undefined} hint="核对异常收款与交付" to="/orders?payment_review=1" icon={<WalletOutlined />} /></Col>}
+          {allows(admin, 'refunds') && <Col xs={24} sm={12} xl={6}><Stat label="售后待审核（退款）" value={data.requested_refunds || 0} tone={data.requested_refunds > 0 ? 'attention' : undefined} hint="查看退款申请" to="/refunds?status=requested" icon={<ClockCircleOutlined />} /><Link to="/refunds?status=approved">已批准待退款：{data.approved_refunds || 0} 笔 →</Link></Col>}
+          {allows(admin, 'notifications') && <Col xs={24} sm={12} xl={6}><Stat label="通知发送失败" value={data.failed_notifications || 0} tone={data.failed_notifications > 0 ? 'attention' : undefined} hint="修复配置后重试" to="/tasks?tab=notifications&status=failed" icon={<FileTextOutlined />} /></Col>}
+          {allows(admin, 'catalog') && <Col xs={24} sm={12} xl={6}><Stat label="低库存商品" value={data.low_stock_count || 0} tone={data.low_stock_count > 0 ? 'attention' : undefined} hint="检查并补充库存" to="/products?low_stock=1" icon={<ShoppingOutlined />} /></Col>}
+        </Row>
+        {!['orders', 'refunds', 'notifications', 'catalog'].some(area => allows(admin, area)) && <Typography.Text type="secondary">当前账户没有待办模块的查看权限。</Typography.Text>}
+      </Card>
       <Row gutter={[16, 16]} className="admin-stat-row">
         <Col xs={12} xl={6}><Stat label="今日销售额" value={money(data.today_revenue)} tone="money" hint={'本月 ' + money(data.month_revenue)} icon={<WalletOutlined />} /></Col>
         <Col xs={12} xl={6}><Stat label="今日订单" value={data.today_orders ?? 0} hint={'累计 ' + (data.total_orders ?? 0) + ' 笔'} icon={<FileTextOutlined />} /></Col>
-        <Col xs={12} xl={6}><Stat label="待支付订单" value={pending} tone={pending > 0 ? 'attention' : undefined} hint={pending > 0 ? '查看待付款的订单' : '没有待处理的订单'} to={pending > 0 ? '/orders?status=pending' : undefined} icon={<ClockCircleOutlined />} /></Col>
+        <Col xs={12} xl={6}><Stat label="今日净销售额" value={money(data.today_net_revenue)} hint={'本月 ' + money(data.month_net_revenue)} icon={<WalletOutlined />} /></Col>
         <Col xs={12} xl={6}><Stat label="在售商品" value={data.total_products ?? 0} hint="查看已上架的商品" to="/products?is_active=1" icon={<ShoppingOutlined />} /></Col>
       </Row>
-      <Row gutter={[16, 16]} className="admin-stat-row">
-        <Col xs={12} xl={8}><Stat label="今日净销售额" value={money(data.today_net_revenue)} hint={'本月 ' + money(data.month_net_revenue)} icon={<WalletOutlined />} /></Col>
-        <Col xs={12} xl={8}><Stat label="今日完成退款" value={money(data.today_refund_amount)} hint={'累计 ' + money(data.total_refund_amount)} icon={<WalletOutlined />} /></Col>
-        <Col xs={12} xl={8}><Stat label="退款待审核" value={data.requested_refunds || 0} hint={'已批准待退款 ' + (data.approved_refunds || 0) + ' 笔'} to="/refunds?status=requested" icon={<ClockCircleOutlined />} /></Col>
-      </Row>
+      <Typography.Paragraph type="secondary">今日完成退款 {money(data.today_refund_amount)} · 累计退款 {money(data.total_refund_amount)} · <Link to="/orders?status=pending">待付款 {pending} 笔</Link>（等待买家付款，超时自动释放库存）</Typography.Paragraph>
       <Typography.Paragraph type="secondary">销售额按订单付款日期统计；退款按实际完成日期统计。净销售额只扣订单退款，退款金额另含额外收款退回；这些数据不代表利润。金额统计最多缓存 15 秒，待处理任务和最近订单实时读取。</Typography.Paragraph>
       <Row gutter={[20, 20]}>
-        <Col xs={24}>
-          <Space wrap size="large">
-            <Link to="/orders?payment_review=1">付款待核对：{data.payment_review_orders || 0} 笔</Link>
-            <Link to="/products?low_stock=1">低库存商品：{data.low_stock_count || 0} 件</Link>
-            <Link to="/notifications?status=failed">发送失败：{data.failed_notifications || 0} 条</Link>
-          </Space>
-        </Col>
         {Number(data.low_stock_count) > 0 && <Col xs={24}>
           <Card title="库存预警" extra={<Link to="/products?low_stock=1">查看全部</Link>}>
             <Table rowKey="id" size="small" pagination={false} dataSource={data.low_stock_products || []} scroll={{ x: 500 }} columns={[

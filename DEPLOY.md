@@ -46,7 +46,7 @@ docker compose version
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-git checkout v1.0.7
+git checkout v1.0.8
 sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
 sudo cp .env.example /etc/cardshop/runtime.env
 sudo chown root:33 /etc/cardshop/runtime.env
@@ -72,8 +72,8 @@ TLS_CERT_DIR=/opt/cf
 SHOP_ENV_FILE=/etc/cardshop/runtime.env
 SHOP_SECRETS_DIR=/etc/cardshop/secrets
 SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
-SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.7
-SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.7
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.8
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.8
 ```
 
 发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
@@ -206,7 +206,7 @@ shop exec app php artisan admin:2fa-reset admin
 | 站点 | 名称、Logo、前台模板、公告、联系方式和默认 SEO |
 | 易支付 | 网关地址、商户 ID、商户密钥 |
 | USDT | 网关地址、Token、与实际安装一致的 EPUSDT / BEpusdt 类型 |
-| 邮件发送 | SMTP 主机、端口、加密方式、账号和发件人；保存后发送测试邮件 |
+| 邮件设置（发送与模板） | SMTP 主机、端口、加密方式、账号和发件人；保存后发送测试邮件 |
 | 安全防护 | 为正式主机名配置 Turnstile 的 Site Key / Secret Key |
 | Telegram | 自行创建 Bot，填入 Bot Token 和目标 Chat ID 后启用 |
 | SEO | 正式站点网址、百度 Token、IndexNow 密钥，按需要启用推送 |
@@ -223,7 +223,7 @@ Turnstile 小组件允许的主机名需包含实际商城域名，再将配对�
 
 - **退款申请**：默认关闭，店主在「系统设置 → 订单设置 → 启用退款申请」决定是否启用。关闭后前台和后台均不能创建新申请，已有记录可继续处理；完成退款前须实际打款并登记凭证。
 - **每日备份**：默认关闭，在「系统设置 → 自动备份」开启，设置应用时区（Asia/Shanghai，北京时间）下的执行时间和保留策略。
-- **主动对账**：默认关闭，在「系统设置 → EPay 支付 → 每 5 分钟核对近期付款」启用；该总开关也作用于 USDT，调度器每 5 分钟核对近期付款。
+- **主动对账**：默认关闭，在「系统设置 → 支付设置 → 每 5 分钟核对近期付款」启用；该总开关也作用于 USDT，调度器每 5 分钟核对近期付款。
 - **员工管理**：按职责授予权限，卡密查看/修改和人工收款分别授权，不要向普通内容编辑员授予资金权限。
 
 ### 上架商品和验收
@@ -255,11 +255,11 @@ shop exec -T --user www-data app php artisan shop:health --alert
 
 `shop:health` 检查工作进程心跳、通知/SEO 失败与积压、连续对账失败、逾期订单、备份和空间。退出码 `0` 正常、`1` 异常；`--alert` 可通过已启用的 Telegram 发送告警，每 15 分钟最多一条。应由独立服务器监控执行，避免只依赖商城自己的调度器。
 
-通知入队与发货在同一事务完成，独立进程每次失败后按 1/5/15/60 分钟重试，最多 5 次。后台「通知投递」可重试失败任务；重新入队不代表已经送达。修复失败原因后，有权管理员可以确认已观察的历史告警，新的失败仍会提醒。
+通知入队与发货在同一事务完成，独立进程每次失败后按 1/5/15/60 分钟重试，最多 5 次。后台「任务中心 → 通知投递」可重试失败任务；重新入队不代表已经送达。修复失败原因后，有权管理员可以确认已观察的历史告警，新的失败仍会提醒。
 
 ### 完整备份与校验
 
-店主在 **维护与推送 → 备份与恢复** 创建、查看进度、校验和下载备份。归档包含数据库、可读取的运行配置、上传文件、私有素材和历史操作归档，保存在 `storage/app/private/shop-backups/`，必须作为含密钥的私有数据保管。外部 keyring 不进入归档，运行环境文件和完整 keyring 也应独立安全备份。
+店主在 **运维 → 备份与恢复** 创建、查看进度、校验和下载备份。归档包含数据库、可读取的运行配置、上传文件、私有素材和历史操作归档，保存在 `storage/app/private/shop-backups/`，必须作为含密钥的私有数据保管。外部 keyring 不进入归档，运行环境文件和完整 keyring 也应独立安全备份。
 
 ```bash
 shop exec -T --user www-data backups php artisan shop:backup --wait

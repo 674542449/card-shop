@@ -17,7 +17,7 @@ class CardController extends Controller
     public function index(Request $request, Product $product)
     {
         $pageSize = AdminListQuery::pageSize($request, 50, [
-            'status' => 'nullable|in:unsold,locked,sold',
+            'status' => 'nullable|in:unsold,locked,sold,disabled',
             'content' => 'nullable|string|max:500',
         ]);
         $query = $product->cards()->with('order:id,order_no,status');
@@ -40,11 +40,12 @@ class CardController extends Controller
         // ones a manual status change refuses to touch, so the operator needs to
         // see how many there are.
         $locked = $product->cards()->where('status', 'locked')->count();
+        $disabled = $product->cards()->where('status', 'disabled')->count();
 
         return response()->json([
             'data' => CardResource::collection($cards->items())->resolve($request),
             'total' => $cards->total(),
-            'stats' => compact('total', 'unsold', 'sold', 'locked'),
+            'stats' => compact('total', 'unsold', 'sold', 'locked', 'disabled'),
             'product' => ['id' => $product->id, 'name' => $product->name],
         ]);
     }
@@ -80,7 +81,7 @@ class CardController extends Controller
     }
 
     /**
-     * Flip a single card between 已售出 and 未售出 by hand.
+     * Pause inventory or register an offline sale without altering order delivery.
      *
      * For stock the operator corrects outside the order flow: a card sold over
      * chat, or one wrongly marked sold. Cards that belong to an order are not
@@ -89,7 +90,7 @@ class CardController extends Controller
     public function updateStatus(Request $request, Card $card)
     {
         $data = $request->validate([
-            'status' => 'required|in:unsold,sold',
+            'status' => 'required|in:unsold,sold,disabled',
         ]);
 
         $target = $data['status'];
@@ -127,13 +128,21 @@ class CardController extends Controller
             // delete-order feature is ever added, every delivered card of a deleted
             // order becomes sold with a null order_id and passes this check. Add a
             // separate "was delivered" marker before allowing order deletion.
-            if ($target === 'unsold' && $fresh->order_id !== null) {
+            if ($fresh->order_id !== null || $fresh->replaced_at !== null) {
                 return '该卡密已随订单发货给买家，不能改回未售出，否则会被重复售出。';
+            }
+
+            // Never use pause/resume to erase a recorded offline sale.
+            if ($target === 'disabled' && $fresh->status !== 'unsold') {
+                return '仅可暂停未售卡密；线下已售记录请先核实是否需要撤销。';
+            }
+            if ($target === 'sold' && $fresh->status !== 'unsold') {
+                return '停用卡密不能登记售出，请先核实并恢复销售。';
             }
 
             $fresh->update($target === 'sold'
                 ? ['status' => 'sold', 'sold_at' => now()]
-                : ['status' => 'unsold', 'sold_at' => null]);
+                : ['status' => $target, 'sold_at' => null]);
 
             return ['card' => $fresh, 'changed' => true];
         });
@@ -142,7 +151,7 @@ class CardController extends Controller
             return response()->json(['message' => $outcome], 422);
         }
 
-        $label = $target === 'sold' ? '已售出' : '未售出';
+        $label = ['sold' => '线下已售', 'unsold' => '可售', 'disabled' => '停用'][$target];
 
         if ($outcome['changed']) {
             OperationLog::log('修改卡密状态', 'card', $outcome['card']->id, "卡密 #{$outcome['card']->id} 状态改为{$label}");

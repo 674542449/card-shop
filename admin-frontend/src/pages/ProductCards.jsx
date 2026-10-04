@@ -45,11 +45,13 @@ export default function ProductCards() {
         unsold: { text: '未售', status: 'Default' },
         locked: { text: '锁定中', status: 'Processing' },
         sold: { text: '已售', status: 'Success' },
+        disabled: { text: '停用', status: 'Warning' },
       },
       render: (_, record) => {
         const s = record.status;
         if (record.replaced_at) return <Tag color="default">售后已换出</Tag>;
-        if (s === 'sold') return <Tag color="green">已售</Tag>;
+        if (s === 'disabled') return <Tag color="default">停用</Tag>;
+        if (s === 'sold') return <Tag color="green">{record.order_id ? '订单已售' : '线下已售'}</Tag>;
         if (s === 'locked') return <Tag color="orange">锁定中</Tag>;
         return <Tag color="blue">未售</Tag>;
       },
@@ -75,22 +77,14 @@ export default function ProductCards() {
 
         // 锁定中的卡密由待支付订单持有，只有支付或过期释放才能改变它的状态。
         // 这类行不提供手动操作，而不是让服务端去拒绝。
-        if (record.status !== 'locked' && record.order_id == null) {
-          const toSold = record.status !== 'sold';
-          actions.push(
-            <Popconfirm
-              key="status"
-              title={toSold ? '确认标记为已售？' : '确认标记为未售？'}
-              description={
-                toSold
-                  ? '该卡密将从可售库存中移除，不再发放给新订单。'
-                  : '该卡密将重新回到可售库存，可能再次被发货给其他买家。'
-              }
-              okText="确认"
-              cancelText="取消"
-              onConfirm={() => handleToggleStatus(record)}
-            >
-              <Button type="link" htmlType="button" style={{ padding: 0, height: 'auto' }}>{toSold ? '标记已售' : '标记未售'}</Button>
+        if (record.order_id == null && !record.replaced_at) {
+          const choices = record.status === 'unsold'
+            ? [['disabled', '暂停销售', '该卡密将停用，不会用于新订单或售后换卡。'], ['sold', '登记线下售出', '仅登记已经在线下交付的卡密，不生成订单，也不计入商城销售额。']]
+            : record.status === 'disabled' ? [['unsold', '恢复销售', '请确认卡密有效且尚未交付，恢复后可以再次出售。']]
+            : record.status === 'sold' ? [['unsold', '撤销线下售出', '仅用于登记错误且从未交付的卡密；已交付的卡密不能重新出售。']] : [];
+          for (const [status, label, description] of choices) actions.push(
+            <Popconfirm key={status} title={label + '？'} description={description} okText="确认" cancelText="取消" onConfirm={() => handleToggleStatus(record, status)}>
+              <Button type="link" htmlType="button" style={{ padding: 0, height: 'auto' }}>{label}</Button>
             </Popconfirm>
           );
         }
@@ -118,11 +112,10 @@ export default function ProductCards() {
     },
   ];
 
-  const handleToggleStatus = async (record) => {
-    const next = record.status === 'sold' ? 'unsold' : 'sold';
+  const handleToggleStatus = async (record, next) => {
     try {
       const res = await setCardStatus(record.id, next);
-      message.success(res.data?.message || (next === 'sold' ? '已标记为已售' : '已标记为未售'));
+      message.success(res.data?.message || '卡密状态已更新');
       actionRef.current?.reload();
     } catch (err) {
       // A sold card that still belongs to a real order is refused with 422 and a
@@ -163,6 +156,7 @@ export default function ProductCards() {
                 <Tag color="blue">未售 {stats.unsold}</Tag>
                 {stats.locked > 0 && <Tag color="orange">锁定中 {stats.locked}</Tag>}
                 <Tag color="green">已售 {stats.sold}</Tag>
+                <Tag>停用 {stats.disabled ?? 0}</Tag>
               </Space>
             )}
           </Space>

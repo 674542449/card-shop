@@ -6,7 +6,8 @@ import { allows, canVisit, canCapability, permittedMenu } from '../src/permissio
 const pages = [{path:'/',capability:'overview:read'}, {path:'/account',capability:'self'},
   {path:'/admins',capability:'accounts'}, {path:'/products/{id}/cards',capability:'cards:read'},
   {path:'/products',capability:'catalog:read',children:true}, {path:'/orders',capability:'orders:read',children:true},
-  {path:'/operations',any:['maintenance:read','content:read']}];
+  {path:'/operations',capability:'maintenance:read'},
+  {path:'/tasks',any:['notifications:read','reconciliation.read','content:read']}];
 const account = (role, permissions = [], capabilities = []) => ({role, permissions, permission_definition:{pages,
   capabilities: role === 'owner' ? ['self','accounts','cards:read','catalog:read','orders:read','overview:read','maintenance:read','content:read']
     : ['self', ...permissions, ...permissions.filter(p=>p.endsWith(':write')).map(p=>p.replace(':write',':read')), ...capabilities]}});
@@ -18,7 +19,8 @@ test('staff menus and direct routes match server permission boundaries', () => {
   assert.equal(canVisit(admin,'/products/12/cards'),false);
   assert.equal(canVisit(admin,'/orders/12'),false);
   assert.equal(canVisit(admin,'/admins'),false);
-  assert.equal(canVisit(admin,'/operations'),true);
+  assert.equal(canVisit(admin,'/operations'),false);
+  assert.equal(canVisit(admin,'/tasks'),true);
   const tree={route:{routes:[{path:'/trade',routes:[{path:'/orders'}]},{path:'/catalog',routes:[{path:'/products'}]},{path:'/account'}]}};
   assert.deepEqual(permittedMenu(admin,tree).route.routes.map(n=>n.path),['/catalog','/account']);
   assert.equal(canVisit(account('owner'),'/admins'),true);

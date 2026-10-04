@@ -271,22 +271,16 @@ export default function Settings() {
       ),
     },
     {
-      key: 'epay',
-      label: 'EPay 支付',
+      key: 'payment',
+      label: '支付设置',
       children: (
         <>
-          <ProFormSwitch name="payment_reconciliation_enabled" disabled={!canConfigurePrivate} label="每 5 分钟核对近期付款" extra="需要 HTTPS 网关。尚未确认付款的订单会自动核对，异常结果可在订单详情查看。" />
+          <ProFormSwitch name="payment_reconciliation_enabled" disabled={!canConfigurePrivate} label="每 5 分钟核对近期付款" extra="总开关：同时作用于 EPay 和 USDT，每 5 分钟核对近期付款。需要支持查询的 HTTPS 网关，异常结果可在订单详情和任务中心查看。" />
+          <Typography.Title level={5}>EPay 支付</Typography.Title>
           <ProFormText name="epay_api_url" disabled={!canConfigurePrivate} label="EPay 网关地址" />
           <ProFormText name="epay_merchant_id" disabled={!canConfigurePrivate} label="EPay 商户ID" />
           <ProFormText name="epay_merchant_key" disabled={!canConfigurePrivate} label="EPay 商户密钥" />
-        </>
-      ),
-    },
-    {
-      key: 'epusdt',
-      label: 'USDT 支付',
-      children: (
-        <>
+          <Typography.Title level={5}>USDT 支付</Typography.Title>
           <ProFormSelect
             name="usdt_gateway" disabled={!canConfigurePrivate}
             label="网关类型"
@@ -317,7 +311,7 @@ export default function Settings() {
     },
     {
       key: 'mail',
-      label: '邮件发送',
+      label: '邮件设置',
       children: (
         <>
           <Alert
@@ -376,7 +370,7 @@ export default function Settings() {
           <Card size="small" title="发送测试邮件" style={{ marginTop: 8 }}>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
               点击后会先保存当前设置，再用它发一封测试邮件。这是唯一能确认邮件配置是否可用的方式——
-              正式发货时如果发送失败，系统只会记录日志，不会打断订单。
+              正式发货失败会进入通知重试队列，可在任务中心查看，不会打断订单。
             </Typography.Paragraph>
             <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
               <Input
@@ -399,14 +393,7 @@ export default function Settings() {
               </Button>
             </Space.Compact>
           </Card>
-        </>
-      ),
-    },
-    {
-      key: 'mail-template',
-      label: '邮件模板',
-      children: (
-        <>
+          <Typography.Title level={5} style={{ marginTop: 24 }}>邮件模板</Typography.Title>
           <Alert
             type="info"
             showIcon

@@ -2,16 +2,17 @@ import React,{useState,useEffect,useRef,useCallback} from 'react';
 import {Tabs,Card,Alert,Button,Descriptions,message,Space,Popconfirm,Progress,Typography} from 'antd';
 import {ProTable} from '@ant-design/pro-components';
 import api from '../services/api';
-import {Link,useOutletContext} from 'react-router-dom';
+import {useOutletContext} from 'react-router-dom';
+import Link from '../components/PermissionLink';
 import {allows,canCapability} from '../permissions';
 const failure=e=>e.response?.data?.message||'请求失败，请检查连接后重试。';
 const bytes=value=>value==null?'未知':(value/1024/1024).toFixed(1)+' MB';
 
 export default function Operations(){
- const admin=useOutletContext();const maintenance=allows(admin,'maintenance');const write=allows(admin,'maintenance','write');const content=allows(admin,'content');const contentWrite=allows(admin,'content','write');const owner=admin?.role==='owner';
- const reconciliation=canCapability(admin,'reconciliation.read');const reconciliationWrite=canCapability(admin,'reconciliation.retry');
+ const admin=useOutletContext();const maintenance=allows(admin,'maintenance');const write=allows(admin,'maintenance','write');const contentWrite=allows(admin,'content','write');const owner=admin?.role==='owner';
+ const reconciliation=canCapability(admin,'reconciliation.read');
  const [health,setHealth]=useState(null);const [healthError,setHealthError]=useState('');const [busy,setBusy]=useState(false);const [backupHealth,setBackupHealth]=useState(null);const [backupError,setBackupError]=useState('');
- const seoRef=useRef();const assetsRef=useRef();const backupRef=useRef();const backupRunsRef=useRef();const reconciliationRef=useRef();const mounted=useRef(true);
+ const assetsRef=useRef();const backupRef=useRef();const backupRunsRef=useRef();const mounted=useRef(true);
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const load=useCallback(async()=>{try{const r=await api.get('/maintenance/health');if(mounted.current){setHealth(r.data);setHealthError('');}}catch(e){if(mounted.current)setHealthError(failure(e));}},[]);
  useEffect(()=>{if(!maintenance)return;load();const timer=setInterval(load,30000);return()=>clearInterval(timer);},[maintenance,load]);
@@ -25,28 +26,22 @@ export default function Operations(){
  return <Tabs items={[
  {key:'health',label:'运行健康',children:<Card title="后台任务与积压" extra={<Button onClick={load}>刷新</Button>}>
  {healthError&&<Alert type="error" showIcon message={healthError}/>}
- {health&&<><Descriptions column={1}>
+ {health&&<><Space wrap style={{marginBottom:16}}>
+ {allows(admin,'notifications')&&<Link to="/tasks?tab=notifications&status=failed">处理失败通知</Link>}
+ {reconciliation&&<Link to="/tasks?tab=reconciliation&status=failed">处理失败对账</Link>}
+ {allows(admin,'content')&&<Link to="/tasks?tab=seo&status=failed">处理失败推送</Link>}
+ </Space><Descriptions column={1}>
  {['notifications','scheduler','reconciliation','seo'].map(k=><Descriptions.Item key={k} label={{notifications:'通知发送',scheduler:'定时调度',reconciliation:'付款对账',seo:'搜索推送进程'}[k]}>{['reconciliation','seo'].includes(k)&&!health[k]?.enabled?(k==='seo'?'未配置推送且无等待任务':'自动对账未启用'):health[k]?.healthy?'近期收到心跳':'未收到近期心跳'} · {health[k]?.last_seen_at||'尚未运行'}</Descriptions.Item>)}
  <Descriptions.Item label="等待通知">{health.notification_pending} · 最早：{health.oldest_notification_at||'无积压'}</Descriptions.Item>
  <Descriptions.Item label="待处理通知失败"><Space>{health.notification_failed}{ackButton('notifications',health.notification_failed)}</Space></Descriptions.Item>
  <Descriptions.Item label="等待搜索推送">{health.seo_pending} · 最早：{health.oldest_seo_at||'无积压'}</Descriptions.Item>
  <Descriptions.Item label="待处理推送失败"><Space>{health.seo_failed}{ackButton('seo',health.seo_failed)}</Space></Descriptions.Item>
  <Descriptions.Item label="对账连续失败"><Space>{health.reconciliation?.consecutive_failures||0}{ackButton('reconciliation',health.reconciliation?.failure_warning?1:0)}</Space></Descriptions.Item>
- <Descriptions.Item label="对账任务">等待 / 处理中：{health.reconciliation?.pending||0} · 失败：{health.reconciliation?.failed||0} · 最早等待：{health.reconciliation?.oldest_pending_at||'无积压'}{health.reconciliation?.backlog_warning?' · 等待超过 15 分钟':''}{reconciliation?'；失败任务可在“付款对账任务”中查看和重试。':''}</Descriptions.Item>
+ <Descriptions.Item label="对账任务">等待 / 处理中：{health.reconciliation?.pending||0} · 失败：{health.reconciliation?.failed||0} · 最早等待：{health.reconciliation?.oldest_pending_at||'无积压'}{health.reconciliation?.backlog_warning?' · 等待超过 15 分钟':''}{reconciliation?'；失败任务可在任务中心查看和重试。':''}</Descriptions.Item>
  <Descriptions.Item label="逾期未释放订单">{health.overdue_orders}</Descriptions.Item>
  <Descriptions.Item label="完整备份">{health.backups?.healthy?'正常':'需要处理'} · 最近成功：{health.backups?.last_success_at||'尚无备份'} · 磁盘可用：{bytes(health.backups?.free_bytes)}</Descriptions.Item>
  </Descriptions>{!health.healthy&&<Alert type="warning" showIcon message="后台任务或备份异常，请检查失败任务、配置和进程。服务器可运行 php artisan shop:health --alert 获取监控结果。"/>}</>}
  </Card>},
- {key:'reconciliation',label:'付款对账任务',children:<>
- <Alert type="info" showIcon message="查询付款结果不会重新创建支付；重试失败任务前，请先修复网关配置并启用自动付款对账。" style={{marginBottom:16}}/>
- <ProTable actionRef={reconciliationRef} rowKey="id" pagination={{defaultPageSize:20,showSizeChanger:true,pageSizeOptions:[20,50,100,200]}}
- request={async p=>{try{const r=await api.get('/maintenance/reconciliation-jobs',{params:{page:p.current,per_page:p.pageSize,status:p.status}});return {data:r.data.data,total:r.data.total,success:true};}catch(e){message.error(failure(e));return {data:[],total:0,success:false};}}}
- columns={[{title:'任务',dataIndex:'id',search:false},{title:'订单',search:false,render:(_,r)=>r.order?<Link to={'/orders/'+r.order_id}>{r.order.order_no}</Link>:'订单不可用'},
- {title:'状态',dataIndex:'status',valueType:'select',valueEnum:{pending:'等待',processing:'查询中',completed:'核对完成',failed:'失败'}},{title:'尝试次数',dataIndex:'attempts',search:false},
- {title:'下次尝试',dataIndex:'available_at',search:false},{title:'完成时间',dataIndex:'finished_at',search:false},{title:'提示',dataIndex:'last_error',search:false},
- {title:'操作',search:false,render:(_,r)=>reconciliationWrite&&r.status==='failed'?<Button onClick={()=>run(async()=>{await api.post('/maintenance/reconciliation-jobs/'+r.id+'/retry');reconciliationRef.current?.reload();load();},'对账任务已重新入队')}>重试</Button>:null}]} /></>},
- {key:'seo',label:'搜索引擎推送',children:<ProTable actionRef={seoRef} rowKey="id" pagination={{defaultPageSize:20,showSizeChanger:true,pageSizeOptions:[20,50,100,200]}} toolBarRender={()=>contentWrite?[<Button key="enqueue" onClick={()=>run(async()=>{const r=await api.post('/seo-deliveries/enqueue');message.info(r.data.message);seoRef.current?.reload();},'')}>提交现有页面</Button>]:[]} request={async p=>{try{const r=await api.get('/seo-deliveries',{params:{page:p.current,per_page:p.pageSize,status:p.status}});return {data:r.data.data,total:r.data.total,success:true};}catch(e){message.error(failure(e));return {data:[],total:0,success:false};}}}
- columns={[{title:'引擎',dataIndex:'provider',search:false},{title:'页面',dataIndex:'url',search:false},{title:'状态',dataIndex:'status',valueType:'select',valueEnum:{pending:'等待',processing:'发送中',sent:'已提交',failed:'失败'}},{title:'尝试次数',dataIndex:'attempts',search:false},{title:'提示',dataIndex:'last_error',search:false},{title:'告警确认',search:false,render:(_,r)=>r.health_acknowledged_at||'未确认'},{title:'操作',search:false,render:(_,r)=>contentWrite&&r.status==='failed'?<Button onClick={()=>run(async()=>{await api.post('/seo-deliveries/'+r.id+'/retry');seoRef.current?.reload();if(maintenance)load();})}>重试</Button>:null}]} />},
  {key:'assets',label:'上传素材',children:<><Alert type="info" message="仅未被引用且上传超过 7 天的素材可以归档，归档后可恢复。" style={{marginBottom:16}}/>
  <ProTable actionRef={assetsRef} rowKey="path" search={false} pagination={{pageSize:20}} request={async()=>{try{const r=await api.get('/maintenance/assets');return {data:r.data.data,success:true};}catch(e){message.error(failure(e));return {data:[],success:false};}}}
  columns={[{title:'路径',dataIndex:'path'},{title:'大小',render:(_,r)=>bytes(r.size)},{title:'状态',render:(_,r)=>r.quarantined?'已归档':r.referenced?'使用中':r.can_quarantine?'可归档':r.quarantine_reason},{title:'操作',render:(_,r)=>!write?null:r.quarantined?<Button onClick={()=>run(async()=>{await api.post('/maintenance/assets',{path:r.path,action:'restore'});assetsRef.current?.reload();})}>恢复</Button>:r.can_quarantine?<Popconfirm title="归档这份未引用素材？之后可以恢复。" onConfirm={()=>run(async()=>{await api.post('/maintenance/assets',{path:r.path,action:'quarantine'});assetsRef.current?.reload();})}><Button>归档</Button></Popconfirm>:<Button disabled title={r.quarantine_reason}>归档</Button>}]} /></>},
@@ -70,5 +65,5 @@ export default function Operations(){
  <ProTable actionRef={backupRef} rowKey="name" search={false} request={async()=>{try{const r=await api.get('/maintenance/backups');if(mounted.current){setBackupHealth(r.data.health);setBackupError('');}return {data:r.data.data,success:true};}catch(e){if(mounted.current)setBackupError(failure(e));return {data:[],success:false};}}}
  toolBarRender={()=>[<Button key="create" loading={busy} disabled={active} onClick={submit}>{active?'备份任务正在执行或等待':'创建完整备份'}</Button>]}
  columns={[{title:'备份',dataIndex:'name'},{title:'大小',render:(_,r)=>bytes(r.size)},{title:'时间',dataIndex:'created_at'},{title:'操作',render:(_,r)=><Space><Button onClick={()=>run(async()=>{const x=await api.post('/maintenance/backups/'+r.name+'/validate');message.info(x.data.message);},'')}>校验</Button><Button onClick={()=>run(async()=>{const x=await api.get('/maintenance/backups/'+r.name+'/download',{responseType:'blob'});const a=document.createElement('a');const url=URL.createObjectURL(x.data);a.href=url;a.download=r.name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},'')}>下载</Button></Space>}]} /></>}
- ].filter(tab=>tab.key==='seo'?content:tab.key==='backups'?owner:tab.key==='reconciliation'?reconciliation:maintenance)}/>;
+ ].filter(tab=>tab.key==='backups'?owner:maintenance)}/>;
 }
