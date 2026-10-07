@@ -1,10 +1,10 @@
 # 下单与后台功能回归检查
 
-## 2026-10-07 前端、后台与支付复核（main，未发布）
+## 2026-10-07 前端、后台与支付复核（v1.0.9）
 
 发现、修复、前后对照及真实 HTTP 证据见 [复核报告](../docs/BUG-AUDIT-2026-10-07.md)。本轮业务测试使用隔离数据库、Redis 与虚构网关；所有新增 PHP 测试随仓库提交，后台真实 DOM 回归增至 29 个，其他 Node 回归 12 个、Composer 启动 Shell 7 类场景通过。后台产物重新构建并通过清单及源码标记校验。
 
-实际 HTTP **164 次请求**通过，付款和追加场景 **79 项业务检查**通过；包含真实 Cookie/CSRF、三模板、后台21个读取入口、退款回执再交付保护与原生 Go 数字签名。`source-map-js` 固定1.2.2后 npm审计为0，Composer未命中已知公告。正式镜像仍是下方不可变 `v1.0.8`，不把旧平台验收记为本轮结果。
+实际 HTTP **164 次请求**通过，付款和追加场景 **79 项业务检查**通过；包含真实 Cookie/CSRF、三模板、后台21个读取入口、退款回执再交付保护与原生 Go 数字签名。`source-map-js` 固定1.2.2后 npm审计为0，Composer未命中已知公告。本版业务源码的双架构原生测试和生产容器验收已通过，下方单独记录正式标签发布证据。
 
 最终完整 PHP 回归 **517 个测试、5021 项断言，零错误、零失败、零跳过**，包含真实 PostgreSQL 恢复，耗时5分09.474秒、峰值80 MB。原始日志与JUnit为 `.local/audit-20261007-final-complete.log` / `.xml`。后台29个Node、其他12个Node及Shell7类回归均通过；最终构建耗时30.43秒，资源清单和源码标记一致。Composer严格校验与平台要求检查通过，BCMath已列为必需扩展。
 
@@ -12,7 +12,31 @@
 
 ## 当前正式版验收
 
-当前正式版本为 [v1.0.8](https://github.com/674542449/card-shop/releases/tag/v1.0.8)，发布提交 `ac78eaf725f3c36df96ded42f51bf0e79936409a`，结果核对于 **2026-10-04**。本节为当前版本的发布证据；下方按版本保留历史验证记录，历史计数和环境限制不代替本节结果。
+本次正式版本为 [v1.0.9](https://github.com/674542449/card-shop/releases/tag/v1.0.9)，核对日期 **2026-10-07**。业务源码提交 `f9035463aea8d86dcd0991f0679c0b32047a1c9b` 的 [原生 AMD64 / ARM64 验证](https://github.com/674542449/card-shop/actions/runs/37581266793)通过，包括两套 Verify、两套 Production image 的测试、构建和九服务首次安装 / 重启验收。该 main 流水线没有发布镜像索引。
+
+版本号与介绍文档同步后，会对发布提交重新执行两种架构的验证。GitHub Release 先保留草稿，正式标签流水线、两个平台镜像及索引摘要核对全部成功后才公开；最终链接与固定摘要在发布完成后补入本节。
+
+本地业务回归为 **517 个 PHP 测试 / 5021 项断言**、**29 个后台 Node 测试**、**12 个其他 Node 测试**，以及 **164 次真实 HTTP 请求 / 79 项业务检查**；与正式平台验收分开记录。真实网关到账、外部邮件 / Telegram、正式域名代理与浏览器目测仍需目标环境验收。
+
+### 复现入口
+
+已准备好本地 PHP、Node、PostgreSQL、Redis、测试环境和项目外测试 keyring 时，在项目根目录执行：
+
+```powershell
+# 仅本机已配置的 Windows 环境有此辅助脚本。
+. ./dev-env.ps1
+$env:SHOP_RUN_RESTORE_INTEGRATION = '1'
+php vendor/phpunit/phpunit/phpunit --no-progress
+npm --prefix admin-frontend test
+node --test tests/js/*.test.cjs
+php scripts/validate-admin-assets.php
+```
+
+PHP 测试使用隔离库 `cardshop_testing` 和 Redis 10/11；恢复集成测试需要 PostgreSQL 17 客户端及测试账户建库权限。新环境的完整依赖、临时 keyring、Shell 回归和生产容器步骤以 [CI 工作流](../.github/workflows/ci.yml) 为准；生产验收脚本为 [ci-production-smoke.sh](../scripts/ci-production-smoke.sh)。本地辅助脚本和 `.local/` 证据不随仓库分发，公开结果以以上 Actions 链接为准。
+
+## v1.0.8 历史发布验收
+
+历史正式版本为 [v1.0.8](https://github.com/674542449/card-shop/releases/tag/v1.0.8)，发布提交 `ac78eaf725f3c36df96ded42f51bf0e79936409a`，结果核对于 **2026-10-04**。本节为该历史版本的发布证据；下方按版本保留历史验证记录，历史计数和环境限制不代替本节结果。
 
 | 验证项目 | AMD64 | ARM64 |
 | --- | --- | --- |
@@ -35,22 +59,6 @@ SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx@sha256:beb25e7fa31c4c889158dc1f
 对应标签分别是 `ghcr.io/674542449/card-shop:v1.0.8` 与 `ghcr.io/674542449/card-shop-nginx:v1.0.8`。上述为多架构索引摘要，不是某一个 CPU 平台的子镜像摘要。
 
 本次只更新文档，没有将既有结果称为新一轮业务回归。测试通过表示列出的场景已通过，不证明不存在其他漏洞；真实网关到账、外部邮件 / Telegram、正式域名代理与浏览器目测仍需目标环境验收。
-
-### 复现入口
-
-已准备好本地 PHP、Node、PostgreSQL、Redis、测试环境和项目外测试 keyring 时，在项目根目录执行：
-
-```powershell
-# 仅本机已配置的 Windows 环境有此辅助脚本。
-. ./dev-env.ps1
-$env:SHOP_RUN_RESTORE_INTEGRATION = '1'
-php vendor/phpunit/phpunit/phpunit --no-progress
-npm --prefix admin-frontend test
-node --test tests/js/*.test.cjs
-php scripts/validate-admin-assets.php
-```
-
-PHP 测试使用隔离库 `cardshop_testing` 和 Redis 10/11；恢复集成测试需要 PostgreSQL 17 客户端及测试账户建库权限。新环境的完整依赖、临时 keyring、Shell 回归和生产容器步骤以 [CI 工作流](../.github/workflows/ci.yml) 为准；生产验收脚本为 [ci-production-smoke.sh](../scripts/ci-production-smoke.sh)。本地辅助脚本和 `.local/` 证据不随仓库分发，公开结果以以上 Actions 链接为准。
 
 ## 2026-10-04 后台工作流精简（v1.0.8）
 

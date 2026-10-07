@@ -6,13 +6,13 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 正式 Docker 镜像支持 **Linux AMD64（Intel / AMD）与 ARM64**，同一版本标签自动选择服务器架构。两种架构分别执行原生测试、镜像构建和生产容器首次安装 / 重启验收；不支持 32 位 ARM。
 
-**当前正式版本：[v1.0.8](https://github.com/674542449/card-shop/releases/tag/v1.0.8)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
+**当前正式版本：[v1.0.9](https://github.com/674542449/card-shop/releases/tag/v1.0.9)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
 
-文档核对日期：**2026-10-04**，功能与安装说明以 `v1.0.8` 为准。[正式发布流水线](https://github.com/674542449/card-shop/actions/runs/37170509224)的 AMD64、ARM64 测试与容器验收均通过；每个平台完成 475 个 PHP 测试 / 4772 项断言、26 个后台 Node 测试和 12 个其他 Node 测试。详细范围、镜像摘要和未覆盖场景见 [当前版本验收记录](tests/README.md#当前正式版验收)。
+文档核对日期：**2026-10-07**，功能与安装说明以 `v1.0.9` 为准。本版包含前端、后台与支付复核修复；业务源码已通过 [AMD64 / ARM64 原生测试与容器验收](https://github.com/674542449/card-shop/actions/runs/37581266793)。本地完整回归为 517 个 PHP 测试 / 5021 项断言、29 个后台 Node 测试和 12 个其他 Node 测试。正式标签验收和固定镜像摘要见 [当前版本验收记录](tests/README.md#当前正式版验收)。
 
 ## 功能介绍
 
-`main` 已补入 **2026-10-07 前端、后台与支付复核修复**，包括退款回执再交付保护、库存删除权限、后台异步切换及 USDT 数字签名兼容性；结果与限制见 [本轮复核报告](docs/BUG-AUDIT-2026-10-07.md)。这些修改尚未归入新的正式标签，以上 `v1.0.8` 镜像摘要不包含本轮修复。
+本版修复退款后重复发卡、库存删除权限、库存锁释放竞争、后台切换串数据、USDT 数字签名兼容性及付款异常页恢复入口，完整范围与验证限制见 [复核报告](docs/BUG-AUDIT-2026-10-07.md)。
 
 | 功能 | 能做什么 |
 | --- | --- |
@@ -58,7 +58,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 退款按每笔付款回执的剩余余额控制，未完成申请预占额度。买家可查看公开处理说明和完成时间，内部备注不公开。**批准退款不会自动调用支付网关转账**：操作员须在支付渠道完成实际打款，再登记凭证。已交付卡密不会重新入库。
 
-`main` 的最新修复会在未交付订单的全部收款退回后关闭订单并释放预留库存和优惠次数；部分退款仍保留核对，已交付卡密继续保持已售。新到账回执保留独立核对记录，不复用已退回的资金再次发卡。
+未交付订单的全部收款退回后，系统会关闭订单并释放预留库存和优惠次数；部分退款仍保留核对，已交付卡密继续保持已售。新到账回执保留独立核对记录，不复用已退回的资金再次发卡。
 
 售后换卡同时要求订单与卡密修改权限，从同商品可售库存中领取新卡，旧卡保持已售并在商城退役，保留原因、操作者及新旧编号。原款退款处理中或已全额退完的订单不能换卡；重复操作编号不会重复领取库存。网页、TXT、API 和后续邮件统一提供当前卡密，订单数量与销售金额不变。
 
@@ -88,7 +88,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 `modern` 与 `minimal` 各自提供页面结构和样式。管理后台采用暖纸色与陶土色交互，集中处理商品、交易、内容和系统维护。
 
-以下为虚拟商品与订单的演示截图。后台截图保留早期布局用于展示视觉风格；`v1.0.8` 的菜单和待办分组以 [后台功能清单](docs/ADMIN-FUNCTIONS.md) 为准。
+以下为虚拟商品与订单的演示截图。后台截图保留早期布局用于展示视觉风格；`v1.0.9` 的菜单和待办分组以 [后台功能清单](docs/ADMIN-FUNCTIONS.md) 为准。
 
 <details open>
 <summary><strong>modern 商品首页</strong></summary>
@@ -180,7 +180,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 | React Router / Vite | 7.18.4 / 7.3.6 |
 | CommonMark / HTMLPurifier | 2.10.3 / 4.19.0 |
 | DOMPurify / jsdom | 3.4.16 / 30.1.1，后者为开发依赖 |
-| source-map-js | `main` 构建/测试依赖固定 1.2.2，已避开已知拒绝服务公告 |
+| source-map-js | 构建/测试依赖固定 1.2.2，已避开已知拒绝服务公告 |
 | 构建环境 | 推荐 Node.js 24 LTS；允许版本见 `admin-frontend/package.json` |
 
 依赖由 `composer.lock` 和 `admin-frontend/package-lock.json` 锁定，Compose 配置见 `docker-compose.yml`。源码修改需重新构建并提交完整后台产物与标记：
@@ -197,7 +197,7 @@ php scripts/validate-admin-assets.php
 
 前台页面位于 `resources/views/templates/`，资源位于 `public/themes/` 和 `public/js/`；后台源码位于 `admin-frontend/`，构建产物位于 `public/admin-assets/`。数据库结构定义位于 `database/migrations/`，业务逻辑位于 `app/Services/`，路由位于 `routes/`。
 
-本版统一支付与邮件设置、集中后台任务入口、增加卡密停用与线下售出操作，并精简首页人工待办。后台功能、支付及架构验收的实际结果和环境限制见 [测试记录](tests/README.md)。
+本版完善退款与交付边界、库存权限和并发保护、后台异步交互以及两种 USDT 协议的数字签名兼容性。后台功能、支付及架构验收的实际结果和环境限制见 [测试记录](tests/README.md)。
 
 贡献和发版规则见 [维护者发布说明](RELEASING.md)。代码在 `main` 维护，正式版本通过 Git 标签和 GitHub Release 提供。
 

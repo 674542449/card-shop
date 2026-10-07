@@ -2,7 +2,7 @@
 
 从一台空的 Linux 服务器和一个正式域名开始，完成 HTTPS、商城初始化、后台配置和首次下单验收。功能介绍见 [README](README.md)，对接接口见 [API 文档](docs/API.md)。
 
-适用正式版本：**v1.0.8**，核对日期：2026-10-04。应用和 Nginx 多架构镜像已完成发布，验收链接与固定摘要见 [当前版本验收记录](tests/README.md#当前正式版验收)。
+适用正式版本：**v1.0.9**，核对日期：2026-10-07。应用和 Nginx 使用同一正式版本的多架构镜像，验收链接与固定摘要见 [当前版本验收记录](tests/README.md#当前正式版验收)。
 
 本文使用 **Docker Compose + Cloudflare 橙云代理**，示例域名为 **`shop.example.com`**。所有域名、服务器 IP 和账号都应替换成自己的值。服务器命令在受控的 root 管理终端执行：SSH 登录后先运行 `sudo -i`；标注「外部电脑」的验证在你自己的电脑执行。这样 Compose 能读取仅 root 与容器组可读的外部环境文件，店铺员工不需要服务器权限。
 
@@ -48,7 +48,7 @@ docker compose version
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-git checkout v1.0.8
+git checkout v1.0.9
 sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
 sudo cp .env.example /etc/cardshop/runtime.env
 sudo chown root:33 /etc/cardshop/runtime.env
@@ -74,8 +74,8 @@ TLS_CERT_DIR=/opt/cf
 SHOP_ENV_FILE=/etc/cardshop/runtime.env
 SHOP_SECRETS_DIR=/etc/cardshop/secrets
 SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
-SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.8
-SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.8
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.9
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.9
 ```
 
 发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
@@ -218,7 +218,7 @@ shop exec app php artisan admin:2fa-reset admin
 
 EPUSDT 使用网关默认网络；BEpusdt 支持买家选择 TRC20/BEP20/Polygon，人民币计价固定为 CNY。USDT 创建交易要求 HTTPS，只有回环开发地址允许 HTTP。自动对账默认关闭，启用前须确认网关返回的订单、商户、渠道及金额可以核对；不兼容的网关使用签名回调或人工核对。
 
-EPUSDT 选项指传统 **API Token + MD5** 协议，不兼容改用 `pid` / `secret_key` 和 HMAC-SHA256 的 GMWallet 新接口。请核对服务实际协议；BEpusdt 与传统 EPUSDT 的 JSON 数字签名格式也不同。`main` 的最新签名与退款保护修复见 [复核报告](docs/BUG-AUDIT-2026-10-07.md)，本文固定的 `v1.0.8` 镜像不包含后续未发版修改。
+EPUSDT 选项指传统 **API Token + MD5** 协议，不兼容改用 `pid` / `secret_key` 和 HMAC-SHA256 的 GMWallet 新接口。请核对服务实际协议；BEpusdt 与传统 EPUSDT 的 JSON 数字签名格式也不同。本版的签名与退款保护规则见 [复核报告](docs/BUG-AUDIT-2026-10-07.md)。
 
 SMTP 使用 `ssl` 或 `tls` 并保留证书验证；未配置后台 SMTP 主机时可使用部署环境的 `MAIL_*`。不要在生产使用日志或数组邮件传输发送卡密。邮件模板支持 `{{site_name}}`、`{{order_no}}`、`{{product_name}}`、`{{quantity}}`、`{{total_amount}}` / `{{amount}}`、`{{cards}}`。
 
