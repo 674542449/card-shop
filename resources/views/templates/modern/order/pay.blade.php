@@ -33,10 +33,11 @@
         @if($expired)
         <section class="m-order-payment-card m-order-dead">
             <span class="m-order-state-symbol" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="16" cy="16" r="12"/>@if($order->status === 'closed')<path d="m12 12 8 8m0-8-8 8"/>@else<path d="M16 9v7l5 3"/>@endif</svg></span>
-            <h2 class="m-section-title">{{ ($paymentReview ?? false) ? '等待人工核对' : '这笔订单已结束' }}</h2>
+            <h2 class="m-section-title">{{ $deadTitle ?? (($paymentReview ?? false) ? '等待人工核对' : '这笔订单已结束') }}</h2>
             <p class="m-muted">{{ $deadReason ?? '订单已经超过支付时限，请重新下单。' }}</p>
             <a href="/" class="m-button m-button-primary m-button-wide">{{ ($paymentReview ?? false) ? '返回商品目录' : '重新挑选商品' }} <span aria-hidden="true">↗</span></a>
-            <a href="/order/query" class="m-order-text-link">返回订单查询</a>
+            <a href="/order/pay/{{ $order->order_no }}" class="m-button m-button-secondary m-button-wide">刷新订单状态</a>
+            <a href="/order/query?order_no={{ $order->order_no }}" class="m-order-text-link">验证并查询订单</a>
         </section>
         @else
         <section class="m-order-payment-card">

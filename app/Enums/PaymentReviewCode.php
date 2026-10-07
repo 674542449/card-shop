@@ -9,10 +9,11 @@ enum PaymentReviewCode: string
     case OrderState = 'order_state';
     case InsufficientStock = 'insufficient_stock';
     case CouponUnavailable = 'coupon_unavailable';
+    case RefundConflict = 'refund_conflict';
     case LegacyUnknown = 'legacy_unknown';
 
     public static function resolvedByDelivery(): array
     {
-        return [self::BindingMismatch->value, self::OrderState->value, self::InsufficientStock->value, self::CouponUnavailable->value];
+        return [self::BindingMismatch->value, self::OrderState->value, self::InsufficientStock->value, self::CouponUnavailable->value, self::RefundConflict->value];
     }
 }

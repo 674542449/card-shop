@@ -27,7 +27,7 @@ const { createMemoryRouter, RouterProvider, Outlet } = await import('react-route
 const directory = fileURLToPath(new URL('../node_modules/.cache/', import.meta.url));
 await mkdir(directory, { recursive: true });
 const output = directory + `/admin-review-${process.pid}.mjs`;
-await build({ stdin: { contents: "export {default as OrderDetail} from './src/pages/OrderDetail.jsx'; export {default as Settings} from './src/pages/Settings.jsx'; export {default as TaskCenter} from './src/pages/TaskCenter.jsx'; export {default as Operations} from './src/pages/Operations.jsx'; export {default as Dashboard} from './src/pages/Dashboard.jsx'; export {default as ProductCards} from './src/pages/ProductCards.jsx';", resolveDir: fileURLToPath(new URL('../', import.meta.url)), loader: 'jsx' },
+await build({ stdin: { contents: "export {default as OrderDetail} from './src/pages/OrderDetail.jsx'; export {default as Settings} from './src/pages/Settings.jsx'; export {default as TaskCenter} from './src/pages/TaskCenter.jsx'; export {default as Operations} from './src/pages/Operations.jsx'; export {default as Dashboard} from './src/pages/Dashboard.jsx'; export {default as ProductCards} from './src/pages/ProductCards.jsx'; export {default as Products} from './src/pages/Products.jsx';", resolveDir: fileURLToPath(new URL('../', import.meta.url)), loader: 'jsx' },
   outfile: output, bundle: true, format: 'esm', platform: 'node', packages: 'external', plugins: [{ name: 'fixture-boundaries', setup(b) {
     b.onResolve({ filter: /services\/api$/ }, () => ({ path: 'api', namespace: 'fixture' }));
     b.onResolve({ filter: /components\/(RichTextEditor|ImageUploader)$/ }, () => ({ path: 'editor', namespace: 'fixture' }));
@@ -35,9 +35,10 @@ await build({ stdin: { contents: "export {default as OrderDetail} from './src/pa
       `const call = name => (...args) => globalThis.reviewApi[name](...args);
        export const getOrder=call('getOrder'), closeOrder=call('closeOrder'), markPaid=call('markPaid'), resendOrder=call('resendOrder'), getSettings=call('getSettings'), updateSettings=call('updateSettings'), sendTestEmail=call('sendTestEmail');
        export const getNotifications=call('getNotifications'), retryNotification=call('retryNotification'), getDashboard=call('getDashboard'), getProductCards=call('getProductCards'), importCards=call('importCards'), deleteCard=call('deleteCard'), batchDeleteCards=call('batchDeleteCards'), setCardStatus=call('setCardStatus');
+       export const getProducts=call('getProducts'), getProduct=call('getProduct'), createProduct=call('createProduct'), updateProduct=call('updateProduct'), deleteProduct=call('deleteProduct'), getCategories=call('getCategories');
        export default { get: call('get'), post: call('post') };`, loader: 'js' }));
   }}] });
-const { OrderDetail, Settings, TaskCenter, Operations, Dashboard, ProductCards } = await import(pathToFileURL(output));
+const { OrderDetail, Settings, TaskCenter, Operations, Dashboard, ProductCards, Products } = await import(pathToFileURL(output));
 after(async () => { await unlink(output); dom.window.close(); });
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const fixtureOrder = id => ({ id, order_no: `DUMMY-ORDER-${id}`, status: 'paid', payment_method: 'alipay', quantity: 1, unit_price: '10.00', total_amount: '10.00', cards: [], refund_balance: { reserved: '0.00', available: '10.00' } });
@@ -51,7 +52,7 @@ const owner = { role: 'owner', permission_definition: { capabilities: ['orders.r
   {path:'/orders',capability:'orders:read',children:true}, {path:'/refunds',capability:'refunds:read'}, {path:'/tasks',any:['notifications:read','content:read','reconciliation.read']}, {path:'/products',capability:'catalog:read',children:true},
 ] } };
 async function mount(path, admin = owner) {
-  const router = createMemoryRouter([{ element: React.createElement(Outlet, { context: admin }), children: [{ path: '/orders/:id', element: React.createElement(OrderDetail) }, { path: '/settings', element: React.createElement(Settings) }, { path: '/tasks', element: React.createElement(TaskCenter) }, { path: '/operations', element: React.createElement(Operations) }, { path: '/', element: React.createElement(Dashboard) }, { path: '/products/:productId/cards', element: React.createElement(ProductCards) }] }], { initialEntries: [path] });
+  const router = createMemoryRouter([{ element: React.createElement(Outlet, { context: admin }), children: [{ path: '/orders/:id', element: React.createElement(OrderDetail) }, { path: '/settings', element: React.createElement(Settings) }, { path: '/tasks', element: React.createElement(TaskCenter) }, { path: '/operations', element: React.createElement(Operations) }, { path: '/', element: React.createElement(Dashboard) }, { path: '/products/:productId/cards', element: React.createElement(ProductCards) }, { path: '/products', element: React.createElement(Products) }] }], { initialEntries: [path] });
   const root = createRoot(document.getElementById('root'));
   await act(async () => { root.render(React.createElement(RouterProvider, { router })); });
   return { router, async close() { await act(async () => root.unmount()); router.dispose(); } };
@@ -201,4 +202,69 @@ test('inventory pause and offline sale are distinct actions and order stock stay
     await click('确认');
     assert.deepEqual(writes,[[1,'disabled']]);
   } finally {await view.close();}
+});
+
+test('switching inventory products discards selection and the previous import dialog', {timeout:10000}, async () => {
+  const reads=[];
+  globalThis.reviewApi={getProductCards:async id=>{reads.push(id);return {data:{data:[{id:Number(id)*100,content:'DUMMY-PRODUCT-'+id,status:'unsold',order_id:null}],total:1,product:{name:'Product '+id}}};}};
+  const view=await mount('/products/1/cards');
+  try {
+    await settleTables();
+    const checkbox=document.querySelector('tr[data-row-key="100"] input[type="checkbox"]');
+    assert.ok(checkbox);
+    await act(async()=>checkbox.click());
+    assert.ok(text().includes('批量删除'));
+    await click('导入卡密');
+    assert.ok(document.querySelector('[role="dialog"]'));
+    await act(async()=>{await view.router.navigate('/products/2/cards');});
+    await settleTables();
+    assert.ok(reads.includes('2'));
+    assert.equal(document.querySelector('[role="dialog"]'),null);
+    assert.ok(!text().includes('批量删除'));
+    assert.ok(text().includes('DUMMY-PRODUCT-2'));
+    assert.ok(!text().includes('DUMMY-PRODUCT-1'));
+  } finally {await view.close();}
+});
+
+test('late inventory responses cannot populate another product and old requests are aborted', {timeout:10000}, async () => {
+  const requests=[];
+  globalThis.reviewApi={getProductCards(id,params,config){const request={id,config,...deferred()};requests.push(request);return request.promise;}};
+  const view=await mount('/products/1/cards');
+  try {
+    await settleTables();
+    await act(async()=>{await view.router.navigate('/products/2/cards');});
+    await settleTables();
+    assert.equal(requests[0].config?.signal.aborted,true);
+    const payload=id=>({data:{data:[{id,content:'DUMMY-PRODUCT-'+id,status:'unsold'}],total:1,product:{name:'Product '+id}}});
+    await act(async()=>{requests.find(r=>r.id==='2').resolve(payload(2));});
+    await act(async()=>{requests[0].resolve(payload(1));});
+    assert.ok(text().includes('DUMMY-PRODUCT-2'));
+    assert.ok(!text().includes('DUMMY-PRODUCT-1'));
+  } finally {
+    for(const request of requests) request.resolve({data:{data:[],total:0}});
+    await view.close();
+  }
+});
+
+test('product editor keeps the latest selection when earlier detail requests finish late', {timeout:15000}, async () => {
+  const requests=[];
+  globalThis.reviewApi={getCategories:async()=>({data:{data:[{id:1,name:'Fixture'}]}}),getProducts:async()=>({data:{data:[{id:1,name:'First product'},{id:2,name:'Second product'}],total:2}}),
+    getProduct(id,config){const request={id,config,...deferred()};requests.push(request);return request.promise;}};
+  const view=await mount('/products');
+  try {
+    await settleTables();
+    const edit=async id=>{const button=[...document.querySelectorAll(`tr[data-row-key="${id}"] button`)].find(e=>e.textContent==='编辑');assert.ok(button);await act(async()=>button.click());};
+    await edit(1);await edit(2);
+    assert.equal(requests[0].config.signal.aborted,true);
+    await act(async()=>requests[1].resolve({data:{id:2,name:'Second product',price:'10.00',category_id:1,is_active:true}}));
+    await act(async()=>requests[0].resolve({data:{id:1,name:'First product',price:'1.00',category_id:1,is_active:true}}));
+    const drawerName=()=>document.querySelector('.ant-drawer [id$="_name"]');
+    assert.ok(drawerName());
+    assert.equal(drawerName().value,'Second product');
+    await click('新增商品');
+    assert.equal(drawerName().value,'');
+  } finally {
+    for(const request of requests)request.resolve({data:{}});
+    await view.close();
+  }
 });

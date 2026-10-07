@@ -100,7 +100,8 @@ class EpusdtService
             'order_id' => $order->order_no,
             // A float, not a formatted string. The gateway signs the raw JSON values
             // it received, so the type has to survive the round trip: a JSON number
-            // reaches Go as float64 and stringifies the same way PHP does here, while
+            // reaches Go as float64; BEpusdt's signature also needs Go's numeric
+            // notation (scientific from 1e6), while
             // a JSON string would be rejected by a float64 field.
             'amount' => (float) $order->total_amount,
             'notify_url' => url('/payment/epusdt/notify'),
@@ -209,7 +210,8 @@ class EpusdtService
 
         $parts = [];
         foreach ($params as $key => $value) {
-            $parts[] = "{$key}={$value}";
+            $encoded = $this->flavour === 'bepusdt' ? \App\Support\UsdtSignatureValue::canonical($value) : \App\Support\UsdtSignatureValue::decimal($value);
+            $parts[] = "{$key}={$encoded}";
         }
         $signStr = implode('&', $parts);
 

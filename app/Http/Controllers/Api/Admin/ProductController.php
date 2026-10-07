@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use App\Support\SlugGenerator;
 use App\Support\AdminListQuery;
 use Illuminate\Support\Facades\DB;
+use App\Policies\AdminPolicy;
 
 class ProductController extends Controller
 {
@@ -204,6 +205,17 @@ class ProductController extends Controller
                 return false;
             }
 
+            // Lock all inventory before checking it. A simultaneous offline sale
+            // must not slip between the check and the product's cascading delete.
+            $protectedInventory = false;
+            $locked->cards()->select(['id', 'status', 'order_id', 'replaced_at'])->lockForUpdate()
+                ->chunkById(500, function ($inventory) use (&$protectedInventory) {
+                    AdminPolicy::authorize(request()->attributes->get('admin'), 'cards:write');
+                    $protectedInventory = $inventory->contains(fn ($card) => $card->status !== 'unsold' || $card->order_id !== null || $card->replaced_at !== null);
+                    return !$protectedInventory;
+                });
+            if ($protectedInventory) return false;
+
             // Scoped to unsold. A locked or sold card belongs to an order, and an
             // order is exactly what the guard above has just ruled out.
             $locked->cards()->where('status', 'unsold')->delete();
@@ -214,7 +226,7 @@ class ProductController extends Controller
         });
 
         if (!$deleted) {
-            return response()->json(['message' => '该商品有关联订单，无法删除。'], 422);
+            return response()->json(['message' => '该商品有关联订单或停用、锁定、已售卡密，无法删除；请先核对库存或将商品下架。'], 422);
         }
 
         OperationLog::log('删除商品', 'product', $product->id, $product->name);

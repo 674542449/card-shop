@@ -232,8 +232,8 @@ export const deleteCategory = (id) =>
 export const getProducts = (params) =>
   api.get('/products', { params });
 
-export const getProduct = (id) =>
-  api.get(`/products/${id}`);
+export const getProduct = (id, config) =>
+  api.get(`/products/${id}`, config);
 
 export const createProduct = (data) =>
   api.post('/products', data);
@@ -245,8 +245,8 @@ export const deleteProduct = (id) =>
   api.delete(`/products/${id}`);
 
 // Product Cards
-export const getProductCards = (productId, params) =>
-  api.get(`/products/${productId}/cards`, { params });
+export const getProductCards = (productId, params, config) =>
+  api.get(`/products/${productId}/cards`, { ...config, params });
 
 export const importCards = (productId, data) =>
   api.post(`/products/${productId}/cards/import`, data);

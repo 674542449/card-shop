@@ -57,8 +57,28 @@ class Order extends Model
 
     public function scopePaymentReview(Builder $query): Builder
     {
-        return $query->where(fn ($q) => $q->where(fn ($p) => $p->where('status', '!=', 'paid')->whereNotNull('payment_no'))
-            ->orWhereHas('paymentReceipts', fn ($r) => $r->unresolvedReview()));
+        return $query->whereRaw(self::paymentReviewCondition());
+    }
+
+    private static function paymentReviewCondition(): string
+    {
+        // Retain legacy references without receipts; unreturned collections and
+        // unresolved receipts need review, fully returned collections do not.
+        return "((orders.status <> 'paid' AND orders.payment_no IS NOT NULL AND (
+            NOT EXISTS (SELECT 1 FROM payment_receipts primary_payment
+                WHERE primary_payment.order_id = orders.id AND primary_payment.trade_no = orders.payment_no)
+            OR EXISTS (SELECT 1 FROM payment_receipts primary_payment
+                WHERE primary_payment.order_id = orders.id
+                AND CASE WHEN primary_payment.amount ~ '^[0-9]+([.][0-9]+)?$'
+                    THEN CAST(primary_payment.amount AS numeric) <= 0
+                        OR CAST(primary_payment.amount AS numeric) > COALESCE((SELECT SUM(order_refunds.amount)
+                            FROM order_refunds WHERE order_refunds.order_id = orders.id AND order_refunds.status = 'completed'
+                            AND (order_refunds.payment_receipt_id = primary_payment.id
+                                OR (order_refunds.payment_receipt_id IS NULL AND primary_payment.trade_no = orders.payment_no))), 0)
+                    ELSE TRUE END)))
+            OR EXISTS (SELECT 1 FROM payment_receipts WHERE payment_receipts.order_id = orders.id
+                AND (payment_receipts.review_code IS NOT NULL OR payment_receipts.review_reason IS NOT NULL)
+                AND payment_receipts.review_resolved_at IS NULL))";
     }
 
     public function refunds(): HasMany { return $this->hasMany(OrderRefund::class); }
@@ -118,10 +138,7 @@ class Order extends Model
     public function scopeWithPaymentReviewFlag(Builder $query): Builder
     {
         if ($query->getQuery()->columns === null) { $query->select('orders.*'); }
-        return $query->selectRaw("((orders.status <> 'paid' AND orders.payment_no IS NOT NULL)
-            OR EXISTS (SELECT 1 FROM payment_receipts WHERE payment_receipts.order_id = orders.id
-                AND (payment_receipts.review_code IS NOT NULL OR payment_receipts.review_reason IS NOT NULL)
-                AND payment_receipts.review_resolved_at IS NULL)) AS has_payment_review");
+        return $query->selectRaw(self::paymentReviewCondition().' AS has_payment_review');
     }
 
     public function requiresPaymentReview(): bool
@@ -129,10 +146,7 @@ class Order extends Model
         if (array_key_exists('has_payment_review', $this->attributes)) {
             return (bool) $this->attributes['has_payment_review'];
         }
-        return ($this->status !== 'paid' && $this->payment_no !== null)
-            || ($this->relationLoaded('paymentReceipts')
-                ? $this->paymentReceipts->contains(fn ($receipt) => ($receipt->review_code !== null || $receipt->review_reason !== null) && $receipt->review_resolved_at === null)
-                : $this->paymentReceipts()->unresolvedReview()->exists());
+        return self::whereKey($this->id)->paymentReview()->exists();
     }
 
     /**

@@ -97,6 +97,31 @@ class ThemeViewsTest extends TestCase
         $this->get('/')->assertDontSee($product->slug)->assertDontSee('full-catalog-25');
     }
 
+    #[DataProvider('themes')]
+    public function test_payment_initialization_panels_offer_safe_recovery_without_recreating_payment(string $theme): void
+    {
+        $this->useTheme($theme);
+        $product = $this->product();
+        $order = Order::create(['order_no' => 'DUMMY-RECOVERY', 'product_id' => $product->id, 'email' => 'fixture@example.test',
+            'query_password' => bcrypt('fixture-password'), 'quantity' => 1, 'unit_price' => '12.00', 'total_amount' => '12.00',
+            'status' => 'pending', 'payment_method' => 'alipay', 'ip' => '192.0.2.5', 'expires_at' => now()->addMinutes(10)]);
+        $attempt = \App\Models\PaymentAttempt::create(['order_id' => $order->id, 'method' => 'alipay', 'status' => 'processing']);
+        foreach (['processing', 'uncertain'] as $status) {
+            $attempt->update(['status' => $status]);
+            $page = $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('刷新订单状态')->assertSee('验证并查询订单');
+            $dom = $this->dom($page->getContent());
+            $this->assertSame(1, $dom->query('//a[@href="/order/pay/DUMMY-RECOVERY"]')->length);
+            $this->assertGreaterThanOrEqual(1, $dom->query('//a[@href="/order/query?order_no=DUMMY-RECOVERY"]')->length);
+            $this->assertSame(0, $dom->query('//*[@id="countdown-timer"]')->length);
+            $this->assertSame(0, $dom->query('//a[@target="_blank"][contains(.,"前往支付")]')->length);
+            $this->assertSame($status, $attempt->fresh()->status);
+            $this->assertSame('pending', $order->fresh()->status);
+        }
+        $attempt->update(['status' => 'succeeded', 'response_payload' => ['url' => 'https://gateway.example.test/recovered']]);
+        $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('https://gateway.example.test/recovered');
+        $this->assertSame(1, \App\Models\PaymentAttempt::where('order_id', $order->id)->count());
+    }
+
     private function product(array $attributes = []): Product
     {
         $category = Category::create([

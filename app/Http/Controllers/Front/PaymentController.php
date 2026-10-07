@@ -167,6 +167,7 @@ class PaymentController extends Controller
         // stranded.
         $details = ['currency' => 'USDT'];
         $actual = $params['actual_amount'] ?? null;
+        if (is_float($actual)) $actual = \App\Support\UsdtSignatureValue::decimal($actual);
         if (is_scalar($actual) && preg_match('/^\d{1,16}(?:\.\d{1,8})?$/D', (string) $actual) && bccomp((string) $actual, '0', 8) > 0) {
             $details['actual_amount'] = (string) $actual;
         }
@@ -275,6 +276,7 @@ class PaymentController extends Controller
         }
 
         unset($params['signature']);
+        $bepusdt = setting('usdt_gateway', 'epusdt') === 'bepusdt';
 
         ksort($params);
         $signStr = '';
@@ -283,7 +285,8 @@ class PaymentController extends Controller
                 return false;
             }
             if (is_scalar($v) && $v !== '' && $v !== null) {
-                $signStr .= $k . '=' . $v . '&';
+                $encoded = $bepusdt ? \App\Support\UsdtSignatureValue::canonical($v) : \App\Support\UsdtSignatureValue::decimal($v);
+                $signStr .= $k . '=' . $encoded . '&';
             }
         }
         $signStr = rtrim($signStr, '&') . $apiToken;

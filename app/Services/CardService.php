@@ -59,11 +59,9 @@ class CardService
 
             return $cards;
         } finally {
-            // Release lock only if we still own it (compare-and-delete)
-            $currentValue = Redis::get($lockKey);
-            if ($currentValue === $lockValue) {
-                Redis::del($lockKey);
-            }
+            // Compare and delete in one Redis command. A TTL expiry/new owner
+            // between separate GET/DEL operations must not lose its mutex.
+            Redis::eval("if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) end return 0", 1, $lockKey, $lockValue);
         }
     }
 

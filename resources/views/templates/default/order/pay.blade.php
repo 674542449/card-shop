@@ -38,6 +38,7 @@
             <div class="op-status-glyph" aria-hidden="true">&#9200;</div>
             <h3 class="op-status-title">{{ $deadTitle ?? '订单已过期' }}</h3>
             <p class="op-status-desc">{{ $deadReason ?? '此订单已超过支付时限，请重新下单。' }}</p>
+            <p><a href="/order/pay/{{ $order->order_no }}" class="btn-buy-sm">刷新订单状态</a> <a href="/order/query?order_no={{ $order->order_no }}" class="btn-buy-sm">验证并查询订单</a></p>
             <a href="/" class="btn-submit" style="display:inline-block;width:auto;padding:8px 30px;">返回首页</a>
         </div>
     </div>

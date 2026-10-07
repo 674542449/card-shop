@@ -93,6 +93,15 @@ class RefundService
                     }
                 }
             }
+            if ($status === 'completed' && !$order->isPaid() && !$order->requiresPaymentReview()
+                && in_array($order->status, ['pending', 'expired'], true)) {
+                $wasPending = $order->isPending();
+                $order->update(['status' => 'closed']);
+                app(CardService::class)->releaseCards($order->cards()->where('status', 'locked')->get());
+                if ($wasPending && $order->coupon_id && bccomp((string) $order->discount_amount, '0', 2) > 0) {
+                    \App\Models\Coupon::release($order->coupon_id);
+                }
+            }
             app(NotificationQueue::class)->enqueueRefund($order, $locked);
             return $locked;
         });

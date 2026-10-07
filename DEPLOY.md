@@ -218,6 +218,8 @@ shop exec app php artisan admin:2fa-reset admin
 
 EPUSDT 使用网关默认网络；BEpusdt 支持买家选择 TRC20/BEP20/Polygon，人民币计价固定为 CNY。USDT 创建交易要求 HTTPS，只有回环开发地址允许 HTTP。自动对账默认关闭，启用前须确认网关返回的订单、商户、渠道及金额可以核对；不兼容的网关使用签名回调或人工核对。
 
+EPUSDT 选项指传统 **API Token + MD5** 协议，不兼容改用 `pid` / `secret_key` 和 HMAC-SHA256 的 GMWallet 新接口。请核对服务实际协议；BEpusdt 与传统 EPUSDT 的 JSON 数字签名格式也不同。`main` 的最新签名与退款保护修复见 [复核报告](docs/BUG-AUDIT-2026-10-07.md)，本文固定的 `v1.0.8` 镜像不包含后续未发版修改。
+
 SMTP 使用 `ssl` 或 `tls` 并保留证书验证；未配置后台 SMTP 主机时可使用部署环境的 `MAIL_*`。不要在生产使用日志或数组邮件传输发送卡密。邮件模板支持 `{{site_name}}`、`{{order_no}}`、`{{product_name}}`、`{{quantity}}`、`{{total_amount}}` / `{{amount}}`、`{{cards}}`。
 
 Turnstile 小组件允许的主机名需包含实际商城域名，再将配对密钥填入后台。配置依据 [Turnstile 主机名说明](https://developers.cloudflare.com/turnstile/additional-configuration/hostname-management/)。

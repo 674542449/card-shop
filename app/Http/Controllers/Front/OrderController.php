@@ -67,7 +67,7 @@ class OrderController extends Controller
             }
 
             return response()->json(['status' => $order->status, 'payment_initialization' => $initialization,
-                'payment_review' => !$order->isPaid() && (!empty($order->payment_no) || $initialization === 'uncertain'),
+                'payment_review' => !$order->isPaid() && ($order->requiresPaymentReview() || ($order->isPending() && $initialization === 'uncertain')),
                 'verification_required' => $order->isPaid() && ! $this->isVerified($order),
                 'expires_at' => $order->expires_at->toIso8601String()])
                 ->header('Cache-Control', 'no-store');
@@ -115,7 +115,7 @@ class OrderController extends Controller
         // buyer then got a countdown initialised from a timestamp in the past, which
         // front.js reads as finished and reloads two seconds later, forever.
         if (!$order->isPending() || !empty($order->payment_no)) {
-            $paymentReview = ! empty($order->payment_no);
+            $paymentReview = $order->requiresPaymentReview();
             return theme_view('order.pay', [
                 'order' => $order,
                 'expired' => true,

@@ -95,7 +95,13 @@ class PaymentReconciliationService
                 }
                 $order->update(['reconciled_at' => now(), 'reconciliation_error' => null]);
 
-                return ['message' => $paid ? '网关已付款，系统已核对并更新订单。' : '网关尚未确认付款。', 'paid' => $paid];
+                $fresh = $order->fresh();
+                $delivered = $fresh->isPaid();
+                $attention = $paid && !$delivered && $fresh->requiresPaymentReview();
+                return ['message' => !$paid ? '网关尚未确认付款。'
+                    : ($delivered ? '网关已付款，订单已发货。'
+                        : ($attention ? '网关已收款，但订单未发货，请核对库存、退款和付款回执。' : '该付款已退款或核对处理，订单未发货，不再自动分配卡密。')),
+                    'paid' => $paid, 'delivered' => $delivered, 'needs_operator_attention' => $attention];
             } catch (\Throwable $e) {
                 // Transport exceptions may contain merchant secrets in the URL.
                 $message = $e instanceof \DomainException ? $e->getMessage() : '网关查询失败，请检查接口和配置。';

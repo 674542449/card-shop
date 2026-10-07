@@ -186,6 +186,32 @@ class OrderFulfilmentService
                 }
                 return OrderFulfilmentResult::skipped('订单已发货。');
             }
+
+            // Refund requests and completion take this same order lock. A retry
+            // after restocking must not deliver against refunded or reserved funds.
+            $fundingReceipt = $receipt ?? ($order->payment_no
+                ? $order->paymentReceipts()->where('trade_no', $order->payment_no)->first() : null);
+            $refunds = $order->refunds()->where(fn ($q) => $q->whereNull('payment_receipt_id')
+                ->when($fundingReceipt, fn ($q) => $q->orWhere('payment_receipt_id', $fundingReceipt->id)));
+            $refundReason = null;
+            $fullyRefunded = false;
+            if ((clone $refunds)->whereIn('status', ['requested', 'approved'])->exists()) {
+                $refundReason = '该付款退款正在处理，暂不能分配卡密；请先完成或拒绝退款申请。';
+            } else {
+                $refunded = (string) (clone $refunds)->where('status', 'completed')->sum('amount');
+                if (bccomp($refunded, '0', 2) > 0
+                    && bccomp(bcsub((string) ($fundingReceipt?->amount ?? $order->total_amount), $refunded, 2), $order->total_amount, 2) < 0) {
+                    $refundReason = '该付款已退款，剩余收款不足订单金额，不能再次发货。';
+                    $fullyRefunded = bccomp($refunded, (string) ($fundingReceipt?->amount ?? $order->total_amount), 2) >= 0;
+                }
+            }
+            if ($refundReason !== null) {
+                if ($receipt && $fullyRefunded) return OrderFulfilmentResult::skipped('该笔付款已全部退回，不再分配卡密。');
+                if ($receipt && !$receipt->review_resolved_at) {
+                    $this->recordReview($order, $receipt, PaymentReviewCode::RefundConflict, $refundReason);
+                }
+                return OrderFulfilmentResult::refused($refundReason, $order, $source !== 'manual');
+            }
             // A second verified receipt must remain visible even if the first
             // arrived while stock was unavailable and fulfilment succeeds now.
             if ($receipt) {

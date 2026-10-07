@@ -23,6 +23,8 @@ export default function Products() {
   const canWrite = useWritePermission('catalog');
   const canReadCards = allows(useOutletContext(), 'cards');
   const actionRef = useRef();
+  const editRequest = useRef(null);
+  useEffect(() => () => editRequest.current?.abort(), []);
   const [searchParams] = useSearchParams();
   const requestedActive = searchParams.get('is_active');
   const initialActive = ['0', '1'].includes(requestedActive) ? requestedActive : undefined;
@@ -94,12 +96,17 @@ export default function Products() {
         <Button type="link" htmlType="button" style={{ padding: 0, height: 'auto' }}
           key="edit"
           onClick={async () => {
+            editRequest.current?.abort();
+            const controller = new AbortController();
+            editRequest.current = controller;
             try {
-              const res = await getProduct(record.id);
-              setEditingRecord(res.data);
-              setDrawerVisible(true);
+              const res = await getProduct(record.id, { signal: controller.signal });
+              if (!controller.signal.aborted) {
+                setEditingRecord(res.data);
+                setDrawerVisible(true);
+              }
             } catch (err) {
-              message.error(err.response?.data?.message || '加载商品失败');
+              if (!controller.signal.aborted) message.error(err.response?.data?.message || '加载商品失败');
             }
           }}
         >
@@ -149,6 +156,7 @@ export default function Products() {
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => {
+              editRequest.current?.abort();
               setEditingRecord(null);
               setDrawerVisible(true);
             }}
@@ -162,7 +170,7 @@ export default function Products() {
         key={editingRecord?.id || 'new'}
         title={editingRecord ? '编辑商品' : '新增商品'}
         open={drawerVisible}
-        onOpenChange={setDrawerVisible}
+        onOpenChange={open => { if (!open) editRequest.current?.abort(); setDrawerVisible(open); }}
         initialValues={editingRecord || { sort_order: 0, is_active: true, min_quantity: 1, max_quantity: 10, low_stock_threshold: 5 }}
         drawerProps={{ destroyOnClose: true, width: 720 }}
         onFinish={async (values) => {

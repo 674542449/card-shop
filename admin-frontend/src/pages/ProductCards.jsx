@@ -1,6 +1,6 @@
 import Link from '../components/PermissionLink';
 import useWritePermission from '../hooks/useWritePermission';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ProTable, ModalForm, ProFormTextArea } from '@ant-design/pro-components';
 import { Button, message, Popconfirm, Tag, Space, Upload, Typography } from 'antd';
@@ -8,10 +8,19 @@ import { PlusOutlined, ArrowLeftOutlined, UploadOutlined, DeleteOutlined } from 
 import { getProductCards, importCards, deleteCard, batchDeleteCards, setCardStatus } from '../services/api';
 
 export default function ProductCards() {
-  const canWrite = useWritePermission('cards');
   const { productId } = useParams();
+  return <ProductCardsPage key={productId} productId={productId} />;
+}
+
+function ProductCardsPage({ productId }) {
+  const canWrite = useWritePermission('cards');
   const navigate = useNavigate();
   const actionRef = useRef();
+  const requests = useRef(new Set());
+  useEffect(() => () => {
+    for (const controller of requests.current) controller.abort();
+    requests.current.clear();
+  }, []);
   const [importVisible, setImportVisible] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
   const [uploading, setUploading] = useState(false);
@@ -172,7 +181,18 @@ export default function ProductCards() {
           getCheckboxProps: (record) => ({ disabled: record.status !== 'unsold' }),
         } : false}
         request={async (params) => {
-          const res = await getProductCards(productId, { page: params.current, per_page: params.pageSize, ...params });
+          const controller = new AbortController();
+          requests.current.add(controller);
+          let res;
+          try {
+            res = await getProductCards(productId, { page: params.current, per_page: params.pageSize, ...params }, { signal: controller.signal });
+          } catch (err) {
+            if (!controller.signal.aborted) message.error(err.response?.data?.message || '获取卡密失败，请重试');
+            return { data: [], total: 0, success: false };
+          } finally {
+            requests.current.delete(controller);
+          }
+          if (controller.signal.aborted) return { data: [], total: 0, success: false };
           const body = res.data ?? {};
           const list = Array.isArray(body) ? body : (body.data ?? []);
           setStats(body.stats ?? null);

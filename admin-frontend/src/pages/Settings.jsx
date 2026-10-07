@@ -285,10 +285,10 @@ export default function Settings() {
             name="usdt_gateway" disabled={!canConfigurePrivate}
             label="网关类型"
             options={[
-              { label: 'epusdt（原版）', value: 'epusdt' },
+              { label: 'EPUSDT（传统 MD5 协议）', value: 'epusdt' },
               { label: 'BEpusdt（v03413/BEpusdt）', value: 'bepusdt' },
             ]}
-            extra="两者接口地址和签名算法相同，但只有 BEpusdt 支持指定收款链。选错会导致签名校验失败、所有 USDT 支付无法创建，请按你实际部署的版本选择。"
+            extra="请按实际网关协议选择。EPUSDT 选项兼容传统 API Token + MD5，新版 GMWallet 的 pid / HMAC 接口需要单独适配；BEpusdt 支持指定收款链。选错会导致签名校验失败。"
           />
           <ProFormText name="epusdt_api_url" disabled={!canConfigurePrivate} label="网关地址" placeholder="如 https://pay.example.com" />
           <ProFormText name="epusdt_api_token" disabled={!canConfigurePrivate} label="接口 Token" />
