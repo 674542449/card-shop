@@ -12,11 +12,29 @@
 
 ## 当前正式版验收
 
-本次正式版本为 [v1.0.9](https://github.com/674542449/card-shop/releases/tag/v1.0.9)，核对日期 **2026-10-07**。业务源码提交 `f9035463aea8d86dcd0991f0679c0b32047a1c9b` 的 [原生 AMD64 / ARM64 验证](https://github.com/674542449/card-shop/actions/runs/37581266793)通过，包括两套 Verify、两套 Production image 的测试、构建和九服务首次安装 / 重启验收。该 main 流水线没有发布镜像索引。
+当前正式版本为 [v1.0.9](https://github.com/674542449/card-shop/releases/tag/v1.0.9)，发布提交 `000611e7ddc88e033f93c28b131d0eef1b869aae`，核对日期 **2026-10-07**。本节记录本版发布证据；旧版本计数和摘要保留在下方历史记录中。
 
-版本号与介绍文档同步后，会对发布提交重新执行两种架构的验证。GitHub Release 先保留草稿，正式标签流水线、两个平台镜像及索引摘要核对全部成功后才公开；最终链接与固定摘要在发布完成后补入本节。
+| 验证项目 | AMD64 | ARM64 |
+| --- | --- | --- |
+| 原生执行环境 | `ubuntu-24.04` | `ubuntu-24.04-arm` |
+| PHP（含真实 PostgreSQL 恢复） | 517 个测试 / 5021 项断言 | 517 个测试 / 5021 项断言 |
+| 后台 React / Ant Design DOM 与 Node 回归 | 29 个测试 | 29 个测试 |
+| 支付轮询及镜像索引 Node 回归 | 12 个测试 | 12 个测试 |
+| Shell 回归、构建资源、依赖审计 | 通过 | 通过 |
+| 应用 / Nginx 构建、九服务首次安装和重启验收 | 通过 | 通过 |
 
-本地业务回归为 **517 个 PHP 测试 / 5021 项断言**、**29 个后台 Node 测试**、**12 个其他 Node 测试**，以及 **164 次真实 HTTP 请求 / 79 项业务检查**；与正式平台验收分开记录。真实网关到账、外部邮件 / Telegram、正式域名代理与浏览器目测仍需目标环境验收。
+[发布提交 main 验证](https://github.com/674542449/card-shop/actions/runs/37590519732)与[正式标签流水线](https://github.com/674542449/card-shop/actions/runs/37591336667)均通过。标签流水线的两个 Verify、两个 Production image 和 Publish 共五个任务全部成功。随后独立读取 GHCR，应用和 Nginx 索引均恰好包含 `linux/amd64` 与 `linux/arm64`，平台子镜像摘要与本版完成容器验收后上传的产物一致。
+
+固定部署须成对使用本版应用与 Nginx 多架构索引：
+
+```env
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop@sha256:b78686a8f1fc73b28552203ff25d55add376e40beb564f6b239a0cf3a9907e4d
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx@sha256:5844430e38df5a1025878ea16df92004dbf5af7db1d69b4a17645fb7d3daf780
+```
+
+对应标签为 `ghcr.io/674542449/card-shop:v1.0.9` 与 `ghcr.io/674542449/card-shop-nginx:v1.0.9`。以上为双架构索引摘要，不是单平台子镜像。
+
+本地实际 HTTP 回放为 **164 次请求 / 79 项业务检查**，使用隔离数据与虚构网关；这些结果与原生 CI 分开记录。正式镜像已包含本轮支付、退款、库存和后台修复。发布后的文档提交仅补充证据，不移动版本标签，也不表示重新执行过业务测试。真实网关到账、外部邮件 / Telegram、正式代理和浏览器目测仍需目标环境验收。
 
 ### 复现入口
 

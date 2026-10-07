@@ -8,7 +8,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 **当前正式版本：[v1.0.9](https://github.com/674542449/card-shop/releases/tag/v1.0.9)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试记录](tests/README.md) · [MIT 许可证](LICENSE)
 
-文档核对日期：**2026-10-07**，功能与安装说明以 `v1.0.9` 为准。本版包含前端、后台与支付复核修复；业务源码已通过 [AMD64 / ARM64 原生测试与容器验收](https://github.com/674542449/card-shop/actions/runs/37581266793)。本地完整回归为 517 个 PHP 测试 / 5021 项断言、29 个后台 Node 测试和 12 个其他 Node 测试。正式标签验收和固定镜像摘要见 [当前版本验收记录](tests/README.md#当前正式版验收)。
+文档核对日期：**2026-10-07**，功能与安装说明以 `v1.0.9` 为准。[正式标签流水线](https://github.com/674542449/card-shop/actions/runs/37591336667)已通过 AMD64、ARM64 的原生测试、镜像构建、九服务首次安装 / 重启验收及双架构索引发布。每个平台完成 517 个 PHP 测试 / 5021 项断言、29 个后台 Node 测试和 12 个其他 Node 测试。镜像摘要及验证范围见 [当前版本验收记录](tests/README.md#当前正式版验收)。
 
 ## 功能介绍
 
