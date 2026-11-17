@@ -1,0 +1,278 @@
+/* ==========================================================================
+   CardShop Default Storefront — Luminous Sapphire & Warm Coral-Pearl Palette
+   Airy Studio Canvas · Crystal Sapphire CTA · Warm Vermilion Price · WCAG AA
+   ========================================================================== */
+
+:root {
+    color-scheme: light dark;
+
+    /* System UI Stack */
+    --ws-font: "Segoe UI Historic", "Segoe UI", Helvetica, Arial, -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --ws-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+    /* Airy Pearl-Snow Canvas with Subtle Luminous Top Aura */
+    --fb-brand-ink: #1668eb;
+    --ws-bg: #f6f8fc;
+    --ws-bg-aura:
+        radial-gradient(1100px 420px at 15% -5%, rgba(37, 111, 240, 0.075), transparent 65%),
+        radial-gradient(950px 380px at 86% -4%, rgba(225, 66, 52, 0.06), transparent 62%);
+    --ws-surface: #ffffff;
+    --ws-surface-2: #f0f4fa;
+    --ws-surface-3: #e4ebf5;
+    --ws-hover-tint: #eff4fc;
+    --ws-input-bg: #f3f6fb;
+    --ws-topbar-bg: rgba(255, 255, 255, 0.94);
+    --ws-drawer-backdrop: rgba(15, 23, 42, 0.36);
+    --fb-modal-backdrop: rgba(15, 23, 42, 0.46);
+
+    /* Crisp Clean Borders */
+    --ws-border: #e1e7f0;
+    --ws-border-subtle: #ebeef6;
+    --ws-border-strong: #c8d2e1;
+    --ws-control-border: #ced7e6;
+
+    /* Crisp High-Clarity Typography */
+    --ws-ink: #18202f;
+    --ws-ink-2: #2d3748;
+    --ws-muted: #556074;
+    --ws-faint: #717d91;
+
+    /* Warm Oracle Coral-Vermilion Price Accent (4.96:1 on White) */
+    --ws-price-ink: #d13426;
+
+    /* Luminous Crystal Sapphire Primary Accent (4.98:1 on White) */
+    --ws-accent: #1668eb;
+    --ws-accent-hover: #1258cc;
+    --ws-accent-ink: #1668eb;
+    --ws-accent-grad: linear-gradient(180deg, #2979ff 0%, #1668eb 100%);
+    --ws-accent-grad-hover: linear-gradient(180deg, #1e6ef5 0%, #1258cc 100%);
+    --ws-accent-shadow: 0 2px 8px rgba(22, 104, 235, 0.24);
+    --ws-accent-fg: #ffffff;
+    --ws-accent-soft: #ecf3ff;
+    --ws-accent-badge: rgba(22, 104, 235, 0.12);
+    --ws-accent-border: #bfd6ff;
+    --ws-accent-ring: rgba(22, 104, 235, 0.22);
+    --ws-selection-bg: rgba(22, 104, 235, 0.16);
+
+    /* Warm Amber-Cream & Frosted Media Overlay Badges */
+    --ws-media-dark-bg: rgba(24, 32, 47, 0.72);
+    --ws-media-pill-bg: rgba(255, 247, 237, 0.95);
+    --ws-media-pill-ink: #c2410c;
+    --ws-media-pill-border: rgba(251, 146, 60, 0.42);
+
+    /* Secondary Accent */
+    --ws-pop: #1668eb;
+    --ws-pop-soft: #ecf3ff;
+    --ws-pop-border: #bfd6ff;
+
+    /* Fresh Spring Emerald Status (4.82:1 on Soft Mint) */
+    --ws-live: #0e834f;
+    --ws-live-dot: #10b981;
+    --ws-live-soft: #e8f8f0;
+    --ws-live-border: #b8e8d0;
+
+    /* Warm Sunset Amber Warning */
+    --ws-warn: #b45309;
+    --ws-warn-soft: #fff7ed;
+    --ws-warn-border: #fed7aa;
+
+    /* Crisp Coral-Crimson Error */
+    --ws-danger: #d92d44;
+    --ws-danger-soft: #fff0f2;
+    --ws-danger-border: #fecdd3;
+
+    /* Card Secret Delivery Vault */
+    --ws-vault-bg: #ffffff;
+    --ws-vault-surface: #f6f9fd;
+    --ws-vault-border: #dce4f0;
+    --ws-vault-ink: #18202f;
+    --ws-vault-muted: #556074;
+
+    /* Browser UI Scrollbar & Form Accent Tokens */
+    --ws-scrollbar-track: #edf1f7;
+    --ws-scrollbar-thumb: #7b879c;
+    accent-color: var(--ws-accent);
+    scrollbar-color: var(--ws-scrollbar-thumb) var(--ws-scrollbar-track);
+
+    /* Geometry & Clean Buoyant Elevation */
+    --ws-max-w: 1380px;
+    --ws-order-w: 780px;
+    --ws-r-xs: 6px;
+    --ws-r-sm: 8px;
+    --ws-r-md: 10px;
+    --ws-r-lg: 12px;
+    --ws-r-xl: 14px;
+
+    --ws-shadow-topbar: 0 1px 3px rgba(15, 23, 42, 0.05);
+    --ws-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+    --ws-shadow-sm: 0 2px 6px rgba(15, 23, 42, 0.05), 0 0 0 1px rgba(15, 23, 42, 0.03);
+    --ws-shadow-md: 0 12px 28px rgba(22, 52, 110, 0.10), 0 2px 6px rgba(15, 23, 42, 0.04);
+    --ws-shadow-modal: 0 18px 40px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+
+html[data-ui-theme="light"] {
+    color-scheme: light;
+}
+
+html[data-ui-theme="dark"] {
+    color-scheme: dark;
+
+    /* Luminous Midnight Dark Mode */
+    --fb-brand-ink: #6da4ff;
+    --ws-bg: #111622;
+    --ws-bg-aura:
+        radial-gradient(1000px 400px at 18% -6%, rgba(59, 130, 246, 0.12), transparent 65%),
+        radial-gradient(850px 360px at 84% -4%, rgba(239, 68, 68, 0.08), transparent 60%);
+    --ws-surface: #1a2232;
+    --ws-surface-2: #242f44;
+    --ws-surface-3: #2f3d57;
+    --ws-hover-tint: #212b3e;
+    --ws-input-bg: #141b28;
+    --ws-topbar-bg: rgba(26, 34, 50, 0.94);
+    --ws-drawer-backdrop: rgba(5, 8, 15, 0.68);
+    --fb-modal-backdrop: rgba(5, 8, 15, 0.72);
+
+    --ws-border: #2b374e;
+    --ws-border-subtle: #222c3f;
+    --ws-border-strong: #3d4d6b;
+    --ws-control-border: #4a5a78;
+
+    --ws-ink: #ecf0f8;
+    --ws-ink-2: #d4dceb;
+    --ws-muted: #9ca8bd;
+    --ws-faint: #8492a8;
+
+    --ws-price-ink: #ff7a6b;
+
+    --ws-accent: #2563eb;
+    --ws-accent-hover: #3b82f6;
+    --ws-accent-ink: #74a8ff;
+    --ws-accent-grad: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    --ws-accent-grad-hover: linear-gradient(180deg, #4f8ff7 0%, #2d6df0 100%);
+    --ws-accent-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+    --ws-accent-fg: #ffffff;
+    --ws-accent-soft: rgba(59, 130, 246, 0.18);
+    --ws-accent-badge: rgba(116, 168, 255, 0.18);
+    --ws-accent-border: rgba(116, 168, 255, 0.38);
+    --ws-accent-ring: rgba(59, 130, 246, 0.32);
+    --ws-selection-bg: rgba(59, 130, 246, 0.28);
+
+    --ws-media-dark-bg: rgba(15, 20, 30, 0.76);
+    --ws-media-pill-bg: rgba(45, 28, 18, 0.88);
+    --ws-media-pill-ink: #fdba74;
+    --ws-media-pill-border: rgba(251, 146, 60, 0.42);
+
+    --ws-pop: #74a8ff;
+    --ws-pop-soft: rgba(59, 130, 246, 0.18);
+    --ws-pop-border: rgba(116, 168, 255, 0.38);
+
+    --ws-live: #4ade80;
+    --ws-live-dot: #22c55e;
+    --ws-live-soft: rgba(34, 197, 94, 0.16);
+    --ws-live-border: rgba(74, 222, 128, 0.32);
+
+    --ws-warn: #fbbf24;
+    --ws-warn-soft: rgba(251, 191, 36, 0.16);
+    --ws-warn-border: rgba(251, 191, 36, 0.34);
+
+    --ws-danger: #fb7185;
+    --ws-danger-soft: rgba(251, 113, 133, 0.16);
+    --ws-danger-border: rgba(251, 113, 133, 0.36);
+
+    --ws-vault-bg: #1a2232;
+    --ws-vault-surface: #111622;
+    --ws-vault-border: #2b374e;
+    --ws-vault-ink: #ecf0f8;
+    --ws-vault-muted: #9ca8bd;
+
+    --ws-scrollbar-track: #161d2b;
+    --ws-scrollbar-thumb: #697892;
+
+    --ws-shadow-topbar: 0 1px 3px rgba(0, 0, 0, 0.36);
+    --ws-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.28);
+    --ws-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.36), 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --ws-shadow-md: 0 12px 28px rgba(0, 0, 0, 0.48);
+    --ws-shadow-modal: 0 18px 40px rgba(0, 0, 0, 0.64);
+}
+
+@media (prefers-color-scheme: dark) {
+    html:not([data-ui-theme="light"]) {
+        color-scheme: dark;
+
+        --fb-brand-ink: #6da4ff;
+        --ws-bg: #111622;
+        --ws-bg-aura:
+            radial-gradient(1000px 400px at 18% -6%, rgba(59, 130, 246, 0.12), transparent 65%),
+            radial-gradient(850px 360px at 84% -4%, rgba(239, 68, 68, 0.08), transparent 60%);
+        --ws-surface: #1a2232;
+        --ws-surface-2: #242f44;
+        --ws-surface-3: #2f3d57;
+        --ws-hover-tint: #212b3e;
+        --ws-input-bg: #141b28;
+        --ws-topbar-bg: rgba(26, 34, 50, 0.94);
+        --ws-drawer-backdrop: rgba(5, 8, 15, 0.68);
+        --fb-modal-backdrop: rgba(5, 8, 15, 0.72);
+
+        --ws-border: #2b374e;
+        --ws-border-subtle: #222c3f;
+        --ws-border-strong: #3d4d6b;
+        --ws-control-border: #4a5a78;
+
+        --ws-ink: #ecf0f8;
+        --ws-ink-2: #d4dceb;
+        --ws-muted: #9ca8bd;
+        --ws-faint: #8492a8;
+
+        --ws-price-ink: #ff7a6b;
+
+        --ws-accent: #2563eb;
+        --ws-accent-hover: #3b82f6;
+        --ws-accent-ink: #74a8ff;
+        --ws-accent-grad: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+        --ws-accent-grad-hover: linear-gradient(180deg, #4f8ff7 0%, #2d6df0 100%);
+        --ws-accent-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
+        --ws-accent-fg: #ffffff;
+        --ws-accent-soft: rgba(59, 130, 246, 0.18);
+        --ws-accent-badge: rgba(116, 168, 255, 0.18);
+        --ws-accent-border: rgba(116, 168, 255, 0.38);
+        --ws-accent-ring: rgba(59, 130, 246, 0.32);
+        --ws-selection-bg: rgba(59, 130, 246, 0.28);
+
+        --ws-media-dark-bg: rgba(15, 20, 30, 0.76);
+        --ws-media-pill-bg: rgba(45, 28, 18, 0.88);
+        --ws-media-pill-ink: #fdba74;
+        --ws-media-pill-border: rgba(251, 146, 60, 0.42);
+
+        --ws-pop: #74a8ff;
+        --ws-pop-soft: rgba(59, 130, 246, 0.18);
+        --ws-pop-border: rgba(116, 168, 255, 0.38);
+
+        --ws-live: #4ade80;
+        --ws-live-dot: #22c55e;
+        --ws-live-soft: rgba(34, 197, 94, 0.16);
+        --ws-live-border: rgba(74, 222, 128, 0.32);
+
+        --ws-warn: #fbbf24;
+        --ws-warn-soft: rgba(251, 191, 36, 0.16);
+        --ws-warn-border: rgba(251, 191, 36, 0.34);
+
+        --ws-danger: #fb7185;
+        --ws-danger-soft: rgba(251, 113, 133, 0.16);
+        --ws-danger-border: rgba(251, 113, 133, 0.36);
+
+        --ws-vault-bg: #1a2232;
+        --ws-vault-surface: #111622;
+        --ws-vault-border: #2b374e;
+        --ws-vault-ink: #ecf0f8;
+        --ws-vault-muted: #9ca8bd;
+
+        --ws-scrollbar-track: #161d2b;
+        --ws-scrollbar-thumb: #697892;
+
+        --ws-shadow-topbar: 0 1px 3px rgba(0, 0, 0, 0.36);
+        --ws-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.28);
+        --ws-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.36), 0 0 0 1px rgba(255, 255, 255, 0.04);
+        --ws-shadow-md: 0 12px 28px rgba(0, 0, 0, 0.48);
+        --ws-shadow-modal: 0 18px 40px rgba(0, 0, 0, 0.64);
+    }
+}

@@ -1,0 +1,2 @@
+@php $payMark = ($method ?? '') === 'alipay' ? '支' : (($method ?? '') === 'wechat' ? '微' : (str_starts_with((string) ($method ?? ''), 'usdt_') ? 'T' : '¥')); @endphp
+<span class="n-pay-mark" aria-hidden="true">{{ $payMark }}</span>

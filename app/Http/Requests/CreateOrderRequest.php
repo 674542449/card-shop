@@ -1,0 +1,69 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class CreateOrderRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function validationData(): array
+    {
+        return \App\Support\BuyerCredentialInput::body($this);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function rules(): array
+    {
+        $input = $this->validationData();
+        $key = $input['checkout_key'] ?? null;
+        $bound = is_string($key) && is_numeric($input['product_id'] ?? null)
+            && app(\App\Services\CheckoutIntentService::class)->bound($key, (int) $input['product_id']);
+        $requireKey = setting('checkout_require_key', '0') === '1';
+        return [
+            'product_id' => ['required', 'integer', $bound ? 'min:1' : 'exists:products,id'],
+            'email' => ['required', 'email', 'max:200'],
+            'query_password' => ['bail', 'required', 'string', 'min:6', 'max:50', new \App\Rules\QueryPasswordBytes],
+            'quantity' => ['required', 'integer', 'min:1', 'max:2147483647'],
+            'coupon_code' => ['bail', 'nullable', 'string', 'max:50', new \App\Rules\BuyerText],
+            'payment_method' => ['required', \Illuminate\Validation\Rule::in($bound
+                ? ['alipay', 'wechat', 'usdt_trc20', 'usdt_bep20', 'usdt_polygon'] : \App\Support\PaymentMethods::supported())],
+            'checkout_key' => [$requireKey ? 'required' : 'nullable', 'string', 'max:110'],
+            'cf-turnstile-response' => ['nullable', 'string'],
+            'website' => ['nullable', 'string', 'max:0'],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'product_id.required' => '请选择商品',
+            'product_id.integer' => '商品ID格式错误',
+            'product_id.exists' => '商品不存在',
+            'email.required' => '请填写邮箱地址',
+            'email.email' => '邮箱格式不正确',
+            'email.max' => '邮箱地址不能超过200个字符',
+            'query_password.required' => '请设置查询密码',
+            'query_password.string' => '查询密码格式错误',
+            'query_password.min' => '查询密码至少6个字符',
+            'query_password.max' => '查询密码不能超过50个字符',
+            'quantity.required' => '请输入购买数量',
+            'quantity.integer' => '购买数量必须为整数',
+            'quantity.min' => '购买数量至少为1',
+            'coupon_code.max' => '优惠券代码不能超过50个字符',
+            'payment_method.required' => '请选择支付方式',
+            'payment_method.in' => '不支持的支付方式',
+            'checkout_key.required' => '购买页面凭证缺失或已失效，请刷新页面后重新下单',
+            'website.max' => '请求异常，请刷新页面后重试',
+        ];
+    }
+}

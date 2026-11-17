@@ -1,0 +1,346 @@
+#!/bin/bash
+set -e
+
+cd /var/www/html
+
+echo "==> [1/8] Runtime tuning and writable directories"
+
+# PHP-FPM's packaged pool allows 5 concurrent requests. That is a floor chosen so the
+# image starts anywhere, not a value suited to any particular host — on a machine with
+# real memory it means a handful of slow connections can occupy every worker while the
+# hardware sits idle. install.sh sizes these from the actual CPU and RAM and writes them
+# to .env; compose passes them in. Written here rather than baked into the image so a
+# retune is a restart, not a rebuild.
+FPM_MAX_CHILDREN="${PHP_FPM_MAX_CHILDREN:-5}"
+FPM_START_SERVERS="${PHP_FPM_START_SERVERS:-2}"
+FPM_MIN_SPARE="${PHP_FPM_MIN_SPARE:-1}"
+FPM_MAX_SPARE="${PHP_FPM_MAX_SPARE:-3}"
+
+cat > /usr/local/etc/php-fpm.d/zz-tuning.conf <<FPMCONF
+[www]
+pm = dynamic
+pm.max_children = ${FPM_MAX_CHILDREN}
+pm.start_servers = ${FPM_START_SERVERS}
+pm.min_spare_servers = ${FPM_MIN_SPARE}
+pm.max_spare_servers = ${FPM_MAX_SPARE}
+; Recycle workers periodically so a slow leak in any one request cannot accumulate
+; across the life of the container.
+pm.max_requests = 500
+FPMCONF
+
+echo "    PHP-FPM: max_children=${FPM_MAX_CHILDREN} start=${FPM_START_SERVERS} spare=${FPM_MIN_SPARE}-${FPM_MAX_SPARE}"
+if [ "$FPM_MAX_CHILDREN" = "5" ]; then
+    echo "    (still the packaged default — run ./install.sh to size this for this server)"
+fi
+
+mkdir -p bootstrap/cache \
+    storage/app/public \
+    storage/app/public/uploads \
+    storage/framework/cache/data \
+    storage/framework/cache/purifier \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs
+touch storage/framework/shop-write.lock
+
+# bootstrap/cache and storage live on the host bind mount and survive rebuilds.
+# Stale compiled config/routes/views from an older code version are a common cause
+# of 500 errors after a deploy, so wipe them on every boot.
+rm -f bootstrap/cache/config.php \
+      bootstrap/cache/routes-*.php \
+      bootstrap/cache/events.php \
+      bootstrap/cache/services.php \
+      bootstrap/cache/packages.php
+rm -rf storage/framework/views/*
+
+chown -R www-data:www-data storage bootstrap/cache
+chmod -R 775 storage bootstrap/cache
+
+echo "==> [2/8] Composer dependencies"
+# vendor/ lives on the host bind mount and survives rebuilds — but so does an *outdated*
+# vendor/. Installing only when vendor/autoload.php is absent means a newly required
+# package never arrives on an existing deployment, and the first request to hit the
+# missing class 500s. Track both composer.json and the committed composer.lock so a
+# lock-only security update also reinstalls the exact published dependency versions.
+COMPOSER_STAMP="storage/.composer-installed"
+if [ ! -f composer.lock ]; then
+    echo "    !! composer.lock is missing. Restore the committed lock file before starting."
+    exit 1
+fi
+
+composer_fingerprint() {
+    local sums
+    sums="$(sha256sum composer.json composer.lock)" || return 1
+    printf '%s\n' "$sums" | sha256sum | awk '{ print $1 }'
+}
+COMPOSER_HASH="$(composer_fingerprint)"
+
+if [ ! -f vendor/autoload.php ]; then
+    COMPOSER_REASON="vendor/ is missing"
+elif [ ! -f "$COMPOSER_STAMP" ]; then
+    COMPOSER_REASON="no install stamp — vendor/ predates this check"
+elif [ "$(cat "$COMPOSER_STAMP")" != "$COMPOSER_HASH" ]; then
+    COMPOSER_REASON="composer.json or composer.lock changed since the last install"
+else
+    COMPOSER_REASON=""
+fi
+
+if [ -n "$COMPOSER_REASON" ]; then
+    echo "    Installing: $COMPOSER_REASON."
+
+    # Install the published lock exactly. A failed install must not resolve different
+    # versions or rewrite composer.lock on the host; fix the cause and retry the boot.
+    if composer install --no-dev --optimize-autoloader --no-interaction --no-progress; then
+        echo "    Composer install OK."
+    else
+        echo "    !! Composer install failed. Check the error above and restore matching"
+        echo "    !! composer.json/composer.lock from the release before restarting."
+        exit 1
+    fi
+
+    # Only reached after a successful install, so failed installs cannot mark outdated
+    # vendor/ as current.
+    echo "$COMPOSER_HASH" > "$COMPOSER_STAMP"
+else
+    echo "    vendor/ matches composer.json and composer.lock, skipping."
+fi
+
+echo "==> [3/8] Environment file"
+if [ ! -f .env ]; then
+    echo "    .env missing, creating from .env.example"
+    cp .env.example .env
+fi
+# Match APP_KEY= with nothing (or only whitespace/CR) after it.
+if grep -Eq '^APP_KEY=[[:space:]]*$' .env; then
+    echo "    Generating APP_KEY"
+    php artisan key:generate --force --no-interaction
+else
+    echo "    APP_KEY present."
+fi
+
+# 权限收紧放在**所有会写 .env 的步骤之后**，这不是风格问题。
+# 上面的 key:generate 会改写 .env；install.sh 的 set_env 用 sed -i 改写它；从备份恢复
+# 也会带来新的属主和 mode。这些操作是否保留属组和权限取决于具体实现（sed -i 是先写
+# 临时文件再 rename，非 root 身份下 chown 会静默失败），赌不起。放在最后就没有这个
+# 依赖：无论前面谁动过这个文件，最终态都由这里决定。
+# .env holds the database password, APP_KEY, the payment gateway's merchant secret
+# and the SMTP password. Under the default umask it is created 0644 — readable by
+# every user on the host, since this file is bind-mounted from there. Tightened on
+# every start, not just on creation, because a .env copied in by hand or restored
+# from a backup arrives with whatever mode it had.
+#
+# 600 is the WRONG tightening here, and getting it wrong takes the whole site down
+# without saying so. .env arrives over the bind mount owned by whoever cloned the
+# repo on the host (root, on a typical deploy). PHP-FPM's workers run as www-data —
+# this image sets no user of its own, which is the same assumption behind the
+# storage chown above. Mode 600 on a root-owned file means those workers cannot read
+# it, and nothing reports that: phpdotenv reads with @file_get_contents and Laravel
+# bootstraps with safeLoad(), which swallows the resulting exception. APP_KEY and
+# DB_PASSWORD come back empty and every request 500s — while artisan, which runs as
+# root right here in this script, keeps working and the startup log stays green.
+#
+# So: group-own it by www-data and use 640. The workers can read it, the host user
+# who owns it keeps read/write (docker compose needs that to substitute DB_PASSWORD
+# and friends), and other users on the host still get nothing.
+chgrp www-data .env 2>/dev/null || chgrp 33 .env 2>/dev/null || true
+chmod 640 .env 2>/dev/null || true
+
+# Verify instead of assuming. Some bind-mount backings ignore chown and chmod
+# entirely, and a .env the workers cannot read is indistinguishable, from the logs,
+# from a missing APP_KEY.
+if su -s /bin/sh -c 'test -r /var/www/html/.env' www-data 2>/dev/null; then
+    # Readable is necessary but not sufficient: 644 is readable too. Report the mode
+    # actually on disk rather than the one we asked for, so the line is not a promise
+    # the filesystem never kept.
+    ENV_MODE="$(stat -c '%a' .env 2>/dev/null || echo '?')"
+    if [ "$ENV_MODE" = "640" ]; then
+        echo "    .env restricted to 640, group www-data, readable by the workers."
+    else
+        echo "    .env is mode $ENV_MODE (wanted 640) but the workers can read it."
+        echo "    WARNING: it holds the database password, APP_KEY and payment secrets."
+    fi
+else
+    # Put it back rather than leave the site broken. World-readable is bad; a shop
+    # that returns 500 on every page while claiming a clean boot is worse, and the
+    # operator can fix the permissions once they know.
+    chmod 644 .env 2>/dev/null || true
+    echo "    WARNING: www-data cannot read .env at 640 — restored 644 so the site runs."
+    echo "    WARNING: .env is now readable by every user on the host, and it holds the"
+    echo "    WARNING: database password, APP_KEY and the payment gateway secrets."
+    echo "    WARNING: Fix it on the host with:  sudo chgrp 33 .env && sudo chmod 640 .env"
+fi
+
+# The independent encryption keyring stays outside the source tree and complete backups.
+# This writable bootstrap mount belongs only to the development compose; production
+# uses an explicit initialization job and a read-only mount for every business process.
+KEYRING_FILE="${SHOP_KEYRING_FILE:-/run/secrets/shop-keyring.json}"
+if [ ! -f "$KEYRING_FILE" ]; then
+    php artisan secrets:init --path="$KEYRING_FILE" || exit 1
+fi
+chown www-data:www-data "$KEYRING_FILE"
+chmod 600 "$KEYRING_FILE"
+
+echo "==> [4/8] Public storage symlink"
+# Uploaded images are written to storage/app/public/uploads and served from
+# /storage/uploads/..., which only resolves through the public/storage symlink.
+# public/ is on the host bind mount, so the link persists across restarts — check for
+# it rather than re-running storage:link, which reports the existing link as an error.
+if [ -L public/storage ]; then
+    echo "    Symlink present."
+elif [ -e public/storage ]; then
+    echo "    !! public/storage exists but is not a symlink. Uploaded images will 404."
+elif php artisan storage:link --no-interaction; then
+    echo "    Symlink created."
+else
+    echo "    !! storage:link failed. Uploaded images will 404 until this is fixed."
+fi
+
+echo "==> [5/8] Waiting for PostgreSQL"
+for i in $(seq 1 60); do
+    if php -r '
+        $h = getenv("DB_HOST") ?: "postgres";
+        $p = getenv("DB_PORT") ?: "5432";
+        $c = @fsockopen($h, (int) $p, $e, $s, 2);
+        exit($c ? 0 : 1);
+    '; then
+        echo "    PostgreSQL reachable after ${i}s."
+        break
+    fi
+    if [ "$i" = "60" ]; then
+        echo "    !! PostgreSQL unreachable after 60s. Continuing, but the site will error."
+    fi
+    sleep 1
+done
+
+echo "==> [6/8] Migrations and seed"
+# Deliberately NOT silenced: a failed migration means the settings table is missing,
+# which turns every page into a 500. The operator needs to see it in `docker logs`.
+if php artisan migrate --force --no-interaction; then
+    echo "    Migrations OK."
+    # DatabaseSeeder is idempotent (firstOrCreate), so it is safe on every boot:
+    # it creates the default admin and settings rows only when they are absent and
+    # never overwrites values changed from the admin UI.
+    if php artisan db:seed --force --no-interaction; then
+        echo "    Seed OK."
+    else
+        echo "    !! Seeding failed. The admin account may not exist."
+    fi
+else
+    echo "    !! MIGRATIONS FAILED."
+    MIGRATIONS_FAILED=1
+fi
+
+echo "==> [7/8] Precompiling Blade views"
+# This is not just a warm cache, it closes a race that took the site down.
+#
+# Blade writes each compiled view with file_put_contents() and then immediately
+# includes it. When several PHP-FPM workers get their first request for the same
+# uncompiled view at once, one worker can include the file while another is still
+# writing it. The truncated include is a parse error ("unexpected end of file"),
+# and OPcache then caches that broken compilation. Because the file's mtime never
+# changes afterwards, OPcache never revalidates it, so every later request keeps
+# getting the broken copy — `view:clear` and container rebuilds do not help.
+#
+# Compiling every view here, in one process, before FPM accepts any traffic, means
+# workers only ever include files that are already complete on disk.
+if php artisan view:cache --no-interaction; then
+    echo "    Views precompiled."
+else
+    echo "    !! View precompilation failed — see the error above."
+fi
+
+# Syntax-check the generated PHP. A Blade template can compile "successfully" into
+# PHP that does not parse — a literal "@context" in JSON-LD, for example, is the real
+# @context directive and expands to an unclosed if(). That only shows up as a 500 at
+# request time, so check it here where it is visible in the startup log.
+BROKEN=0
+for VIEW in storage/framework/views/*.php; do
+    [ -e "$VIEW" ] || continue
+    if ! php -l "$VIEW" >/dev/null 2>&1; then
+        BROKEN=$((BROKEN + 1))
+        echo "    !! Compiled view does not parse: $VIEW"
+        php -l "$VIEW" 2>&1 | head -2 | sed 's/^/       /'
+        grep -o 'PATH .* ENDPATH' "$VIEW" | sed 's/^/       source: /'
+    fi
+done
+if [ "$BROKEN" -eq 0 ]; then
+    echo "    All compiled views parse cleanly."
+else
+    echo "    !! $BROKEN compiled view(s) are broken — those pages will return 500."
+fi
+
+echo "==> [8/8] Admin frontend assets"
+# The built SPA is committed to the repository under public/admin-assets/, so a normal
+# deploy needs no Node toolchain at all. We only fall back to building when the assets
+# are genuinely missing, and we never hide a failure behind `|| true`.
+if [ -f public/admin-assets/index.html ]; then
+    echo "    Prebuilt admin assets found."
+
+    # A committed bundle can fall behind the source it was built from, and nothing else
+    # would notice: the backend keeps working, the admin just silently runs old code.
+    # docker/php/spa-stamp.sh hashes the SPA source; the build writes that hash next to
+    # the bundle. Comparing them turns a stale deploy into a visible line here.
+    if [ ! -f public/admin-assets/.build-stamp ]; then
+        # Say so rather than skipping in silence. A missing stamp means the staleness
+        # check below never runs, and the deploy would look exactly like a clean one
+        # while the admin quietly serves whatever bundle happens to be committed.
+        echo "    !! No .build-stamp next to the bundle — cannot tell if it is current."
+        echo "    !! Regenerate it after building: sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp"
+    elif [ -f docker/php/spa-stamp.sh ]; then
+        WANT="$(sh docker/php/spa-stamp.sh 2>/dev/null || echo unknown)"
+        HAVE="$(cat public/admin-assets/.build-stamp)"
+        if [ "$WANT" = "unknown" ]; then
+            echo "    (could not verify the bundle is current)"
+        elif [ "$WANT" = "$HAVE" ]; then
+            echo "    Bundle matches the SPA source."
+        else
+            echo "    !! STALE BUNDLE: public/admin-assets/ was built from different source."
+            echo "    !! The admin will run outdated code. Rebuild and commit it:"
+            echo "    !!   cd admin-frontend && npm install && npm run build"
+            echo "    !!   sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp"
+        fi
+    fi
+elif [ -d admin-frontend ] && command -v npm >/dev/null 2>&1; then
+    echo "    Admin assets missing. Building in the background; watch 'docker logs -f cardshop-app'."
+    (
+        cd admin-frontend
+        if NODE_OPTIONS="--max-old-space-size=1536" npm install --no-audit --no-fund \
+           && NODE_OPTIONS="--max-old-space-size=1536" npm run build; then
+            cd /var/www/html
+            sh docker/php/spa-stamp.sh > public/admin-assets/.build-stamp 2>/dev/null || true
+            echo "==> Admin frontend build SUCCEEDED."
+        else
+            echo "==> !! Admin frontend build FAILED (most likely out of memory)."
+            echo "==> !! Build it on a machine with more RAM and commit public/admin-assets/."
+        fi
+    ) &
+else
+    echo "    !! Admin assets missing and npm unavailable. /admin will show the fallback page."
+fi
+
+# Refuse to start rather than serve a broken database.
+#
+# Starting php-fpm anyway is the worst of both worlds: the healthcheck only probes
+# whether port 9000 accepts a connection, so the container reports healthy, nginx
+# starts behind it, and every single request returns 500 — with a stack that looks
+# entirely green in `docker compose ps`. That is the same shape as the .env
+# permission failure this file already guards against, and it is just as hard to
+# diagnose from the outside.
+#
+# Exiting non-zero puts the container into a visible restart loop instead, with the
+# reason immediately above in the log. `restart: unless-stopped` then retries, which
+# is the right behaviour when the cause is a database that was briefly unreachable.
+if [ "${MIGRATIONS_FAILED:-0}" = "1" ]; then
+    echo ""
+    echo "=================================================================="
+    echo "  REFUSING TO START: database migrations failed."
+    echo "  Serving requests now would return 500 on every page while this"
+    echo "  container reported itself healthy. The error is logged above."
+    echo "  Common causes: wrong DB_PASSWORD in .env, or a database volume"
+    echo "  that was initialised with a different password."
+    echo "=================================================================="
+    exit 1
+fi
+
+echo "==> Starting PHP-FPM"
+exec docker-php-entrypoint "$@"

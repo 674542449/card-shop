@@ -1,0 +1,44 @@
+<?php
+
+// Known backend endpoints and pages; all belong to the single administrator.
+return [
+    'areas' => [
+        'overview' => '概览', 'catalog' => '商品信息', 'cards' => '卡密（敏感内容）',
+        'payments' => '人工收款确认', 'orders' => '订单', 'refunds' => '退款',
+        'content' => '内容与推送', 'coupons' => '优惠券', 'blacklists' => '黑名单',
+        'logs' => '审计日志', 'settings' => '系统设置', 'tokens' => 'API 令牌',
+        'notifications' => '通知', 'maintenance' => '维护',
+    ],
+    'combinations' => [
+        'self' => ['authenticated' => true],
+        'upload' => ['any' => ['catalog:write', 'content:write', 'settings:write']],
+        'orders.mark_paid' => ['all' => ['orders:write', 'payments:write']],
+        'orders.replace_cards' => ['all' => ['orders:write', 'cards:write']],
+        'orders.refund' => ['all' => ['orders:write', 'refunds:write']],
+        'reconciliation.read' => ['all' => ['maintenance:read', 'orders:read']],
+        'reconciliation.retry' => ['all' => ['maintenance:write', 'orders:write']],
+        'settings.test_email' => ['all' => ['settings:write']],
+        'backups.read' => ['all' => ['maintenance:read']],
+        'backups.write' => ['all' => ['maintenance:write']],
+        'health.acknowledge' => ['all' => ['maintenance:write']],
+    ],
+    'pages' => [
+        ['path' => '/', 'capability' => 'overview:read'],
+        ['path' => '/account', 'capability' => 'self'],
+        ['path' => '/products/{id}/cards', 'capability' => 'cards:read'],
+        ['path' => '/categories', 'capability' => 'catalog:read', 'children' => true],
+        ['path' => '/products', 'capability' => 'catalog:read', 'children' => true],
+        ['path' => '/orders', 'capability' => 'orders:read', 'children' => true],
+        ['path' => '/refunds', 'capability' => 'refunds:read'],
+        ['path' => '/articles', 'capability' => 'content:read', 'children' => true],
+        ['path' => '/article-categories', 'capability' => 'content:read'],
+        ['path' => '/coupons', 'capability' => 'coupons:read'],
+        ['path' => '/blacklists', 'capability' => 'blacklists:read'],
+        ['path' => '/logs', 'capability' => 'logs:read'],
+        ['path' => '/settings', 'capability' => 'settings:read'],
+        ['path' => '/api-tokens', 'capability' => 'tokens:read'],
+        ['path' => '/notifications', 'capability' => 'notifications:read'],
+        ['path' => '/tasks', 'any' => ['notifications:read', 'reconciliation.read', 'content:read']],
+        ['path' => '/operations', 'capability' => 'maintenance:read'],
+    ],
+];
