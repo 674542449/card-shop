@@ -2,13 +2,13 @@
 
 CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、下单付款、卡密交付、订单查询、退款审核和售后换卡，也提供库存、单管理员、通知与备份管理。
 
-后端使用 **Laravel 12 + PostgreSQL + Redis**，管理后台使用 **React + Ant Design**。提供三套独立前台模板和 Docker Compose 安装方案，支持易支付支付宝/微信及 EPUSDT / BEpusdt USDT 收款。
+后端使用 **Laravel 13 + PostgreSQL + Redis**，管理后台使用 **React + Ant Design**。提供三套独立前台模板和 Docker Compose 安装方案，支持易支付支付宝/微信及 EPUSDT / BEpusdt USDT 收款。
 
 正式 Docker 镜像支持 **Linux AMD64（Intel / AMD）与 ARM64**，同一版本标签自动选择服务器架构。两种架构分别执行原生测试、镜像构建和生产容器首次安装 / 重启验收；不支持 32 位 ARM。
 
-**当前正式版本：[v1.0.1](https://github.com/674542449/card-shop/releases/tag/v1.0.1)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
+**当前正式版本：[v1.0.2](https://github.com/674542449/card-shop/releases/tag/v1.0.2)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
 
-文档核对日期：**2026-11-18**。正式版本 `v1.0.1` 通过 AMD64 与 ARM64 原生自动化回归（**545 个 PHP 测试 / 5669 项断言、34 个后台 Node 测试、12 个前台与多架构索引测试、7 项启动脚本测试**）、依赖安全审计、多阶段镜像构建及九服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
+文档核对日期：**2026-11-18**。正式版本 `v1.0.2` 通过 AMD64 与 ARM64 原生自动化回归（**545 个 PHP 测试 / 5669 项断言、34 个后台 Node 测试、12 个前台与多架构索引测试、7 项启动脚本测试**）、依赖安全审计、多阶段镜像构建及九服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
 
 ## 功能介绍
 
@@ -179,11 +179,11 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 | 组件 | 锁定版本或配置 |
 | --- | --- |
-| PHP / Laravel | PHP ^8.3；Docker 使用 8.3；Laravel 12.73.0 |
+| PHP / Laravel | PHP ^8.3；Docker 使用 8.3；Laravel 13.43.0 |
 | PostgreSQL / Redis | 17 / 7 |
 | React / Ant Design | 18.3.1 / 5.29.3 |
 | React Router / Vite | 7.18.4 / 7.3.6 |
-| CommonMark / HTMLPurifier | 2.10.7 / 4.19.0 |
+| CommonMark / HTMLPurifier | 2.10.7 / 4.19.1 |
 | DOMPurify / jsdom | 3.4.18 / 30.1.1，后者为开发依赖 |
 | source-map-js | 构建/测试依赖固定 1.2.2，已避开已知拒绝服务公告 |
 | 构建环境 | 推荐 Node.js 24 LTS；允许版本见 `admin-frontend/package.json` |
