@@ -86,19 +86,20 @@ class SettingController extends Controller
             }
         }
         $rules['mail_port'] = ['nullable', 'integer', 'min:1', 'max:65535'];
-        foreach (['site_url', 'epay_api_url', 'epusdt_api_url'] as $key) {
-            $rules[$key] = ['nullable', 'string', 'max:'.($key === 'site_url' ? 255 : 2048), function (string $attribute, mixed $value, \Closure $fail) {
-                if (SafeUrl::http($value) === null) {
-                    $fail('地址必须是有效的 HTTP 或 HTTPS URL，不能包含登录凭据。');
+        $rules['site_url'] = ['nullable', 'string', 'max:255', function (string $attribute, mixed $value, \Closure $fail) {
+            if (SafeUrl::http($value) === null) {
+                $fail('地址必须是有效的 HTTP 或 HTTPS URL，不能包含登录凭据。');
+            }
+        }];
+        foreach (['epay_api_url', 'epusdt_api_url'] as $key) {
+            $rules[$key] = ['nullable', 'string', 'max:2048', function (string $attribute, mixed $value, \Closure $fail) {
+                if (SafeUrl::outboundGateway($value) === null) {
+                    $fail('网关地址必须是有效的公网 HTTP/HTTPS URL，不允许包含凭据或内网/云元数据地址。');
                 }
             }];
         }
         foreach (['site_logo', 'site_favicon', 'contact_qr_image'] as $key) {
-            $rules[$key] = ['nullable', 'string', 'max:2048', function (string $attribute, mixed $value, \Closure $fail) {
-                if (SafeUrl::asset($value) === null) {
-                    $fail('图片地址必须是站内路径或 HTTP/HTTPS URL。');
-                }
-            }];
+            $rules[$key] = ['nullable', 'string', 'max:2048', SafeUrl::assetRule()];
         }
         $rules['contact_url'] = ['nullable', 'string', 'max:2048', function (string $attribute, mixed $value, \Closure $fail) {
             if (SafeUrl::contact($value) === null) {

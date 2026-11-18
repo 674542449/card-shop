@@ -70,16 +70,16 @@ class OrderController extends Controller
         // The table's search form submits column names; accept those as well as the
         // combined `keyword` so the 订单号 and 邮箱 search boxes actually filter.
         if (filled($request->input('order_no'))) {
-            $query->where('order_no', 'ilike', '%' . $request->input('order_no') . '%');
+            $query->where('order_no', 'ilike', \App\Support\SqlLike::contains((string) $request->input('order_no')));
         }
         if (filled($request->input('email'))) {
-            $query->where('email', 'ilike', '%' . $request->input('email') . '%');
+            $query->where('email', 'ilike', \App\Support\SqlLike::contains((string) $request->input('email')));
         }
         if ($request->filled('keyword')) {
-            $kw = $request->keyword;
-            $query->where(function ($q) use ($kw) {
-                $q->where('order_no', 'ilike', "%{$kw}%")
-                  ->orWhere('email', 'ilike', "%{$kw}%");
+            $kwPattern = \App\Support\SqlLike::contains((string) $request->keyword);
+            $query->where(function ($q) use ($kwPattern) {
+                $q->where('order_no', 'ilike', $kwPattern)
+                  ->orWhere('email', 'ilike', $kwPattern);
             });
         }
 

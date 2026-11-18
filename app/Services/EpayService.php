@@ -23,7 +23,7 @@ class EpayService
         if ($apiUrl === '' || $merchantId === '' || $merchantKey === '') {
             throw new \App\Exceptions\CheckoutException('支付宝/微信支付尚未配置');
         }
-        if (SafeUrl::http($apiUrl) === null) {
+        if (SafeUrl::outboundGateway($apiUrl) === null) {
             throw new \App\Exceptions\CheckoutException('支付宝/微信支付网关地址无效');
         }
         if ($order->quantity < 1

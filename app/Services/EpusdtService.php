@@ -77,7 +77,7 @@ class EpusdtService
         $apiToken = (string) setting('epusdt_api_token', '');
         $flavour = (string) setting('usdt_gateway', 'epusdt');
 
-        if (SafeUrl::http($apiUrl) === null) {
+        if (SafeUrl::outboundGateway($apiUrl) === null) {
             throw new CheckoutException('USDT支付网关地址无效');
         }
         // Create responses have no protocol signature. A plaintext intermediary
@@ -115,7 +115,14 @@ class EpusdtService
 
         $params['signature'] = $this->generateSign($params, $apiToken, $flavour);
 
+        try {
+            $httpOptions = SafeUrl::outboundHttpOptions($apiUrl);
+        } catch (\InvalidArgumentException) {
+            throw new CheckoutException('USDT支付网关地址无效');
+        }
+
         $response = Http::timeout(15)->withoutRedirecting()
+            ->withOptions($httpOptions)
             ->post("{$apiUrl}/api/v1/order/create-transaction", $params);
 
         if (!$response->successful()) {

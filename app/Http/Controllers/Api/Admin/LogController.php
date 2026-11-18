@@ -23,14 +23,14 @@ class LogController extends Controller
         $query = OperationLog::with('admin:id,username');
 
         if ($request->filled('action')) {
-            $query->where('action', 'ilike', '%' . $request->action . '%');
+            $query->where('action', 'ilike', \App\Support\SqlLike::contains((string) $request->action));
         }
         if ($request->filled('target_type')) {
             $query->where('target_type', $request->target_type);
         }
         if ($request->filled('admin')) {
-            $adminKeyword = $request->input('admin');
-            $query->whereHas('admin', fn ($q) => $q->where('username', 'ilike', "%{$adminKeyword}%"));
+            $adminPattern = \App\Support\SqlLike::contains((string) $request->input('admin'));
+            $query->whereHas('admin', fn ($q) => $q->where('username', 'ilike', $adminPattern));
         }
 
         // The table submits start_date/end_date from its date-range column.

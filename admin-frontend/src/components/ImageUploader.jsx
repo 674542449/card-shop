@@ -40,6 +40,9 @@ function validateFile(file) {
  */
 export default function ImageUploader({ value, onChange, disabled }) {
   const [uploading, setUploading] = useState(false);
+  const safeSrc = typeof value === 'string' && (/^\/(?!\/)/.test(value) || /^https?:\/\//i.test(value))
+    ? value
+    : '';
 
   const handleUpload = async ({ file, onSuccess, onError }) => {
     setUploading(true);
@@ -73,9 +76,9 @@ export default function ImageUploader({ value, onChange, disabled }) {
       >
         {uploading ? (
           <Spin indicator={<LoadingOutlined spin />} />
-        ) : value ? (
+        ) : safeSrc ? (
           <img
-            src={value}
+            src={safeSrc}
             alt="已上传图片"
             style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 4 }}
           />

@@ -20,7 +20,7 @@ class ApiTokenController extends Controller
         ]);
         $query = ApiToken::query();
         if ($request->filled('name')) {
-            $query->where('name', 'ilike', '%' . $request->input('name') . '%');
+            $query->where('name', 'ilike', \App\Support\SqlLike::contains((string) $request->input('name')));
         }
         if ($request->filled('is_active')) {
             $query->where('is_active', $request->boolean('is_active'));

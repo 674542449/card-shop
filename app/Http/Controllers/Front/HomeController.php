@@ -23,8 +23,11 @@ class HomeController extends Controller
             ->get();
 
         $products = Product::active()
-            ->when($request->filled('q'), fn ($query) => $query->where(fn ($q) => $q->where('name', 'ilike', '%'.$request->q.'%')
-                ->orWhereHas('category', fn ($c) => $c->where('name', 'ilike', '%'.$request->q.'%'))))
+            ->when($request->filled('q'), function ($query) use ($request) {
+                $pattern = \App\Support\SqlLike::contains((string) $request->input('q'));
+                $query->where(fn ($q) => $q->where('name', 'ilike', $pattern)
+                    ->orWhereHas('category', fn ($c) => $c->where('name', 'ilike', $pattern)));
+            })
             ->ordered()
             ->withStock()
             ->with(['category', 'wholesalePrices'])

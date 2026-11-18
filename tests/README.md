@@ -21,6 +21,7 @@
 - **搜索引擎收录与页面体验**（`SearchEngineCrawlTest`、`ThemeViewsTest`）：验证三套模板 TDK、Canonical 规范化分页、Google 图片 Sitemap、Schema.org JSON-LD（`Product` / `AggregateOffer` / `ItemList` / `Article` / `BreadcrumbList`）、FCrDNS 搜索引擎爬虫扫描陷阱豁免、独立 `404` `noindex` 页及敏感页 `X-Robots-Tag`。
 - **支付验签、发货与退款边界**（`CardTheftPaymentSecurityTest`、`CardSecretAccessSecurityTest`）：验证易支付与两种 USDT 网关（传统 EPUSDT MD5、BEpusdt）签名核验、最低实付 `¥0.01`、不足额/错币种拦截、迟到与重复收款对账、退款预占防重发卡、售后换卡退役隔离及 30 分钟查单会话绑定。
 - **外部密钥加密与完整备份恢复**（`RuntimeArchitectureTest`、`AdminSecretBoundarySecurityTest`）：验证 AES-256-GCM 外部 keyring 加解密、HMAC 卡密查重、Redis 敏感配置密文缓存、Phar 完整备份校验，以及 PostgreSQL `pg_dump` / `pg_restore` 排他锁与失败回滚。
+- **纵深安全边界**（`DefenseInDepthSecurityTest`、`SensitiveResponseSecurityTest`）：验证商品/分类/文章图片写入协议白名单、全站 `ILIKE` 通配符字面转义、HTTPS `HSTS` 与 `Permissions-Policy` 响应头，以及出站支付网关防云元数据/内网 SSRF 与 DNS Rebinding 锁定。
 
 ## 本地复现命令
 

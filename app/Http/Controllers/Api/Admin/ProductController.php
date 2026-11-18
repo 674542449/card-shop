@@ -118,7 +118,7 @@ class ProductController extends Controller
         // The table's search form submits the column name (`name`); accept both.
         $keyword = $request->input('keyword', $request->input('name'));
         if (filled($keyword)) {
-            $query->where('name', 'ilike', '%' . $keyword . '%');
+            $query->where('name', 'ilike', \App\Support\SqlLike::contains((string) $keyword));
         }
 
         $products = $query->ordered()->paginate($pageSize);
@@ -143,7 +143,7 @@ class ProductController extends Controller
             'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:products,slug',
             'category_id' => 'required|integer|min:1|exists:categories,id',
             'description' => 'nullable|string|max:1000000',
-            'image' => 'nullable|string|max:500',
+            'image' => ['nullable', 'string', 'max:500', \App\Support\SafeUrl::assetRule()],
             'price' => 'required|numeric|min:0.01|decimal:0,2|max:99999999.99',
             'low_stock_threshold' => 'sometimes|nullable|integer|min:0|max:100000',
             'min_quantity' => 'nullable|integer|min:1|max:2147483647',
@@ -200,7 +200,7 @@ class ProductController extends Controller
             'slug' => 'nullable|string|max:200|regex:/^[\pL\pN_-]+$/u|unique:products,slug,' . $product->id,
             'category_id' => 'required|integer|min:1|exists:categories,id',
             'description' => 'nullable|string|max:1000000',
-            'image' => 'nullable|string|max:500',
+            'image' => ['nullable', 'string', 'max:500', \App\Support\SafeUrl::assetRule()],
             'price' => 'required|numeric|min:0.01|decimal:0,2|max:99999999.99',
             'low_stock_threshold' => 'sometimes|nullable|integer|min:0|max:100000',
             'min_quantity' => 'nullable|integer|min:1|max:2147483647',

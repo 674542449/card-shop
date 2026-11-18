@@ -11,6 +11,9 @@ class ProtectSensitiveResponses
     public function handle(Request $request, Closure $next): Response
     {
         $response = self::protect($next($request));
+        if ($request->isSecure() && !$response->headers->has('Strict-Transport-Security')) {
+            $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+        }
         $robots = NoIndex::directiveFor($request);
         if ($robots !== null && !$response->headers->has('X-Robots-Tag')) {
             $response->headers->set('X-Robots-Tag', $robots);
@@ -31,6 +34,7 @@ class ProtectSensitiveResponses
         $response->headers->set('X-Content-Type-Options', 'nosniff');
         $response->headers->set('X-Frame-Options', 'DENY');
         $response->headers->set('Content-Security-Policy', "frame-ancestors 'none'");
+        $response->headers->set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
 
         return $response;
     }

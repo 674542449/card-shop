@@ -25,7 +25,7 @@ class ArticleCategoryController extends Controller
         // like a successful search that matched everything.
         $keyword = $request->input('keyword', $request->input('name'));
         if (filled($keyword)) {
-            $query->where('name', 'ilike', '%' . $keyword . '%');
+            $query->where('name', 'ilike', \App\Support\SqlLike::contains((string) $keyword));
         }
 
         if (!$request->has('page')) {

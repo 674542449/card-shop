@@ -16,7 +16,7 @@ class ArticleController extends Controller
     {
         $data = $request->validate(['q' => 'nullable|string|max:200']);
         $products = \App\Models\Product::active()->when(filled($data['q'] ?? null),
-            fn ($q) => $q->where('name', 'ilike', '%'.$data['q'].'%'))
+            fn ($q) => $q->where('name', 'ilike', \App\Support\SqlLike::contains((string) $data['q'])))
             ->ordered()->limit(30)->get(['id', 'name']);
         return response()->json(['data' => $products]);
     }
@@ -39,7 +39,7 @@ class ArticleController extends Controller
         // The table's search form submits the column name (`title`); accept both.
         $keyword = $request->input('keyword', $request->input('title'));
         if (filled($keyword)) {
-            $query->where('title', 'ilike', '%' . $keyword . '%');
+            $query->where('title', 'ilike', \App\Support\SqlLike::contains((string) $keyword));
         }
 
         $articles = $query->recent()->paginate($pageSize);
@@ -62,7 +62,7 @@ class ArticleController extends Controller
             'article_category_id' => 'required|integer|min:1|exists:article_categories,id',
             'summary' => 'nullable|string|max:500',
             'content' => 'required|string|max:1000000',
-            'cover_image' => 'nullable|string|max:500',
+            'cover_image' => ['nullable', 'string', 'max:500', \App\Support\SafeUrl::assetRule()],
             'is_published' => 'boolean',
             'seo_title' => 'nullable|string|max:200',
             'seo_description' => 'nullable|string|max:500',
@@ -94,7 +94,7 @@ class ArticleController extends Controller
             'article_category_id' => 'required|integer|min:1|exists:article_categories,id',
             'summary' => 'nullable|string|max:500',
             'content' => 'required|string|max:1000000',
-            'cover_image' => 'nullable|string|max:500',
+            'cover_image' => ['nullable', 'string', 'max:500', \App\Support\SafeUrl::assetRule()],
             'is_published' => 'boolean',
             'seo_title' => 'nullable|string|max:200',
             'seo_description' => 'nullable|string|max:500',

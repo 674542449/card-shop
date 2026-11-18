@@ -20,7 +20,7 @@ class ProductController extends Controller
         $products = Product::active()
             ->ordered()
             ->where('category_id', $category->id)
-            ->when($request->filled('q'), fn ($q) => $q->where('name', 'ilike', '%'.$request->q.'%'))
+            ->when($request->filled('q'), fn ($q) => $q->where('name', 'ilike', \App\Support\SqlLike::contains((string) $request->input('q'))))
             ->withStock()
             ->with(['category', 'wholesalePrices'])
             ->paginate(12)->withQueryString();

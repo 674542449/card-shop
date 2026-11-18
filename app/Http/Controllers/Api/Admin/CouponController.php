@@ -20,7 +20,7 @@ class CouponController extends Controller
         ]);
         $query = Product::query()->select(['id', 'name', 'is_active']);
         if ($request->filled('q')) {
-            $query->where('name', 'ilike', '%'.$request->input('q').'%');
+            $query->where('name', 'ilike', \App\Support\SqlLike::contains((string) $request->input('q')));
         }
         // Search can select live products and keep an existing inactive binding.
         $query->where(fn ($q) => $q->where('is_active', true)
@@ -51,7 +51,7 @@ class CouponController extends Controller
         // The table renders a search form for these two; without the filters it
         // submitted them and got the unfiltered list back.
         if (filled($request->input('code'))) {
-            $query->where('code', 'ilike', '%' . $request->input('code') . '%');
+            $query->where('code', 'ilike', \App\Support\SqlLike::contains((string) $request->input('code')));
         }
         if ($request->filled('type')) {
             $query->where('type', $request->input('type'));

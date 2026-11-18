@@ -28,7 +28,7 @@ class BlacklistController extends Controller
         // The table's search form submits the column name (`value`); accept both.
         $keyword = $request->input('keyword', $request->input('value'));
         if (filled($keyword)) {
-            $query->where('value', 'ilike', '%' . $keyword . '%');
+            $query->where('value', 'ilike', \App\Support\SqlLike::contains((string) $keyword));
         }
 
         if ($request->filled('source')) {

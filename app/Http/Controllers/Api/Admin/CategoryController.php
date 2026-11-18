@@ -30,7 +30,7 @@ class CategoryController extends Controller
         // like a successful search that matched everything.
         $keyword = $request->input('keyword', $request->input('name'));
         if (filled($keyword)) {
-            $query->where('name', 'ilike', '%' . $keyword . '%');
+            $query->where('name', 'ilike', \App\Support\SqlLike::contains((string) $keyword));
         }
 
         // Selectors request the complete category list without `page`. Tables pass
@@ -50,7 +50,7 @@ class CategoryController extends Controller
             'name' => 'required|string|max:100',
             'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:categories,slug',
             'description' => 'nullable|string|max:500',
-            'image' => 'nullable|string|max:500',
+            'image' => ['nullable', 'string', 'max:500', \App\Support\SafeUrl::assetRule()],
             'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
             'is_active' => 'boolean',
         ]);
@@ -70,7 +70,7 @@ class CategoryController extends Controller
             'name' => 'required|string|max:100',
             'slug' => 'nullable|string|max:100|regex:/^[\pL\pN_-]+$/u|unique:categories,slug,' . $category->id,
             'description' => 'nullable|string|max:500',
-            'image' => 'nullable|string|max:500',
+            'image' => ['nullable', 'string', 'max:500', \App\Support\SafeUrl::assetRule()],
             'sort_order' => 'nullable|integer|min:-2147483648|max:2147483647',
             'is_active' => 'boolean',
         ]);

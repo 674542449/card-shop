@@ -21,11 +21,12 @@ class PaymentReconciliationService
                     if (! $pid || ! $secret) {
                         throw new \DomainException('易支付查询凭证未配置。');
                     }
-                    // Compatibility API returns no signature; use only the configured
-                    // HTTPS gateway, and validate merchant/order/amount/type again.
-                    $response = Http::timeout(15)->withoutRedirecting()->get($base.'/api.php', [
-                        'act' => 'order', 'pid' => $pid, 'key' => $secret, 'out_trade_no' => $order->order_no,
-                    ]);
+                     // Compatibility API returns no signature; use only the configured
+                     // HTTPS gateway, and validate merchant/order/amount/type again.
+                     $httpOptions = SafeUrl::outboundHttpOptions($base);
+                     $response = Http::timeout(15)->withoutRedirecting()->withOptions($httpOptions)->get($base.'/api.php', [
+                         'act' => 'order', 'pid' => $pid, 'key' => $secret, 'out_trade_no' => $order->order_no,
+                     ]);
                     $data = $response->json();
                     if (! $response->successful() || ! is_array($data) || !in_array($data['code'] ?? null, [1, '1'], true)) {
                         throw new \DomainException('网关订单查询失败。');
@@ -53,8 +54,9 @@ class PaymentReconciliationService
                         'usdt_polygon' => 'usdt.polygon',
                         default => null,
                     };
+                    $httpOptions = SafeUrl::outboundHttpOptions($base);
                     if (setting('usdt_gateway', 'epusdt') === 'bepusdt') {
-                        $response = Http::timeout(15)->withoutRedirecting()->post($base.'/api/v1/pay/info', ['trade_id' => $trade]);
+                        $response = Http::timeout(15)->withoutRedirecting()->withOptions($httpOptions)->post($base.'/api/v1/pay/info', ['trade_id' => $trade]);
                         $data = $response->json('data');
                         if (! $response->successful() || ! in_array($response->json('status_code'), [200, '200'], true) || ! is_array($data)
                             || ($data['order_id'] ?? '') !== $order->order_no || ($data['trade_id'] ?? '') !== $trade
@@ -65,8 +67,8 @@ class PaymentReconciliationService
                         $paid = in_array($data['status'] ?? null, [2, '2'], true);
                         $amount = $data['money'] ?? null;
                     } else {
-                        $response = Http::timeout(15)->withoutRedirecting()->get($base.'/pay/check-status/'.rawurlencode($trade));
-                        $info = Http::timeout(15)->withoutRedirecting()->get($base.'/pay/checkout-counter-resp/'.rawurlencode($trade));
+                        $response = Http::timeout(15)->withoutRedirecting()->withOptions($httpOptions)->get($base.'/pay/check-status/'.rawurlencode($trade));
+                        $info = Http::timeout(15)->withoutRedirecting()->withOptions($httpOptions)->get($base.'/pay/checkout-counter-resp/'.rawurlencode($trade));
                         $data = $info->json('data');
                         $statusData = $response->json('data');
                         if (! $response->successful() || ! $info->successful() || !in_array($response->json('status_code'), [200, '200'], true)
@@ -129,7 +131,7 @@ class PaymentReconciliationService
     {
         $url = rtrim((string) setting($key, ''), '/');
         $host = strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]'));
-        if (SafeUrl::http($url) === null || !$host
+        if (SafeUrl::outboundGateway($url) === null || !$host
             || (strtolower((string) parse_url($url, PHP_URL_SCHEME)) !== 'https' && ! in_array($host, ['127.0.0.1', 'localhost', '::1'], true))) {
             throw new \DomainException('自动对账须使用 HTTPS 网关，本地开发地址除外。');
         }
