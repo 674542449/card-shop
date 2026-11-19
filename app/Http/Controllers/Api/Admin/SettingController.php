@@ -58,6 +58,10 @@ class SettingController extends Controller
             ],
             'telegram' => [
                 'telegram_bot_token', 'telegram_chat_id', 'telegram_enabled',
+                'telegram_broadcast_bot_token', 'telegram_notify_product_sold', 'telegram_notify_product_listed',
+                'telegram_target_bot_enabled', 'telegram_target_bot_chat_ids',
+                'telegram_target_group_enabled', 'telegram_target_group_ids',
+                'telegram_target_channel_enabled', 'telegram_target_channel_ids',
             ],
             'seo' => [
                 'seo_default_title', 'seo_default_description', 'seo_default_keywords',
@@ -128,8 +132,43 @@ class SettingController extends Controller
         $rules['order_max_locked_percent'] = ['nullable', 'integer', 'min:20', 'max:100'];
         $rules['popup_interval_hours'] = ['nullable', 'integer', 'min:0', 'max:8760'];
         $rules['honeypot_ban_minutes'] = ['nullable', 'integer', 'min:0', 'max:525600'];
-        foreach (['telegram_enabled', 'checkout_require_key', 'honeypot_enabled', 'honeypot_skip_reserved_ips'] as $key) {
+        foreach ([
+            'telegram_enabled',
+            'telegram_notify_product_sold',
+            'telegram_notify_product_listed',
+            'telegram_target_bot_enabled',
+            'telegram_target_group_enabled',
+            'telegram_target_channel_enabled',
+            'checkout_require_key',
+            'honeypot_enabled',
+            'honeypot_skip_reserved_ips',
+        ] as $key) {
             $rules[$key] = ['nullable', 'boolean'];
+        }
+        foreach (['telegram_bot_token', 'telegram_broadcast_bot_token'] as $key) {
+            $rules[$key] = ['nullable', 'string', 'max:200', function (string $attribute, mixed $value, \Closure $fail) {
+                $trimmed = trim((string) $value);
+                if ($trimmed === '' || $trimmed === self::MASK) {
+                    return;
+                }
+                if (!NotificationService::isValidBotToken($trimmed)) {
+                    $fail('Telegram Bot Token 格式不正确，请填写从 @BotFather 获取的有效 Token。');
+                }
+            }];
+        }
+        $rules['telegram_chat_id'] = ['nullable', 'string', 'max:255', function (string $attribute, mixed $value, \Closure $fail) {
+            $invalid = NotificationService::firstInvalidTelegramTarget((string) $value, singleOnly: true);
+            if ($invalid !== null) {
+                $fail('站长接收会话 ID 格式不正确，请填写数字 Chat ID（如 123456789、-1001234567890#话题ID）或 @用户名。');
+            }
+        }];
+        foreach (['telegram_target_bot_chat_ids', 'telegram_target_group_ids', 'telegram_target_channel_ids'] as $key) {
+            $rules[$key] = ['nullable', 'string', 'max:2000', function (string $attribute, mixed $value, \Closure $fail) {
+                $invalid = NotificationService::firstInvalidTelegramTarget((string) $value);
+                if ($invalid !== null) {
+                    $fail("Telegram 目标会话格式不正确（{$invalid}），请填写数字 Chat ID、-100 群组/频道 ID（支持 #话题ID）或 @频道用户名，多个用逗号或换行分隔。");
+                }
+            }];
         }
         $rules['honeypot_whitelist'] = ['nullable', 'string', function (string $attribute, mixed $value, \Closure $fail) {
             if (!is_string($value)) {
@@ -203,6 +242,21 @@ class SettingController extends Controller
         );
 
         $result = $notifications->sendTestEmail($data['email']);
+
+        return response()->json(['message' => $result['message']], $result['ok'] ? 200 : 422);
+    }
+
+    public function testTelegram(Request $request, NotificationService $notifications)
+    {
+        $data = $request->validate([
+            'scope' => ['nullable', 'in:auto,admin,broadcast,bot,group,channel'],
+            'target' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $result = $notifications->sendTestTelegram(
+            scope: (string) ($data['scope'] ?? 'auto'),
+            customTarget: isset($data['target']) ? (string) $data['target'] : null,
+        );
 
         return response()->json(['message' => $result['message']], $result['ok'] ? 200 : 422);
     }

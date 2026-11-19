@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Order;
+use App\Models\Product;
+use App\Support\Seo;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -219,32 +221,216 @@ class NotificationService
     /** Send a Telegram notification message. */
     public function telegramConfigured(): bool
     {
-        return in_array((string) setting('telegram_enabled', '0'), ['1', 'true'], true)
-            && trim((string) setting('telegram_bot_token', '')) !== ''
+        return self::isTruthySetting('telegram_enabled')
+            && self::isValidBotToken(trim((string) setting('telegram_bot_token', '')))
             && trim((string) setting('telegram_chat_id', '')) !== '';
+    }
+
+    public static function isValidBotToken(string $token): bool
+    {
+        return preg_match('/^[A-Za-z0-9:_-]{6,200}$/D', $token) === 1;
+    }
+
+    /**
+     * Parse a single Telegram target destination:
+     * - Private DM / Group / Supergroup / Channel numeric ID: 123456789, -987654321, -1001234567890
+     * - Public Channel / Group username or link: @channel_name, https://t.me/channel_name
+     * - Private t.me/c/ link: https://t.me/c/1234567890 -> -1001234567890
+     * - Optional forum topic thread suffix: -1001234567890#12 or -1001234567890:12
+     *
+     * @return ?array{key: string, chat_id: string, message_thread_id: ?int, display: string}
+     */
+    public static function parseTelegramTargetEntry(string $raw): ?array
+    {
+        $trimmed = trim($raw);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        $base = $trimmed;
+        $threadId = null;
+        if (preg_match('/^(.*[^:#\s])[:#](\d{1,12})$/D', $trimmed, $threadMatch)) {
+            $base = trim($threadMatch[1]);
+            $threadId = (int) $threadMatch[2];
+            if ($threadId < 1) {
+                return null;
+            }
+        }
+
+        $chatId = null;
+        if (preg_match('#^(?:https?://)?t\.me/c/(\d{5,18})/?$#i', $base, $privateLinkMatch)) {
+            $chatId = '-100' . $privateLinkMatch[1];
+        } elseif (preg_match('#^(?:https?://)?t\.me/([A-Za-z][A-Za-z0-9_]{3,63})/?$#i', $base, $publicLinkMatch)) {
+            $chatId = '@' . $publicLinkMatch[1];
+        } elseif (preg_match('/^-?\d{1,20}$/D', $base) && $base !== '0' && $base !== '-0') {
+            $chatId = $base;
+        } elseif (preg_match('/^@[A-Za-z][A-Za-z0-9_]{3,63}$/D', $base)) {
+            $chatId = $base;
+        }
+
+        if ($chatId === null) {
+            return null;
+        }
+
+        $key = $threadId !== null ? "{$chatId}#{$threadId}" : $chatId;
+        $display = $threadId !== null ? "{$chatId}（话题 #{$threadId}）" : $chatId;
+
+        return [
+            'key' => $key,
+            'chat_id' => $chatId,
+            'message_thread_id' => $threadId,
+            'display' => $display,
+        ];
+    }
+
+    /**
+     * Split and deduplicate comma/semicolon/newline-separated Telegram targets.
+     *
+     * @return list<array{key: string, chat_id: string, message_thread_id: ?int, display: string}>
+     */
+    public static function parseTelegramTargets(?string $raw): array
+    {
+        $entries = preg_split('/[\r\n,，;；]+/u', trim((string) $raw), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $parsed = [];
+        foreach ($entries as $entry) {
+            $item = self::parseTelegramTargetEntry($entry);
+            if ($item !== null && !isset($parsed[$item['key']])) {
+                $parsed[$item['key']] = $item;
+            }
+        }
+
+        return array_values($parsed);
+    }
+
+    /**
+     * Returns the first invalid entry in a raw target list, or null when all entries are valid.
+     */
+    public static function firstInvalidTelegramTarget(?string $raw, bool $singleOnly = false): ?string
+    {
+        $entries = preg_split('/[\r\n,，;；]+/u', trim((string) $raw), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($entries === []) {
+            return null;
+        }
+        if ($singleOnly && count($entries) > 1) {
+            return $entries[1];
+        }
+        foreach ($entries as $entry) {
+            if (self::parseTelegramTargetEntry($entry) === null) {
+                return trim($entry);
+            }
+        }
+
+        return null;
+    }
+
+    public function telegramBroadcastBotToken(): string
+    {
+        $dedicated = trim((string) setting('telegram_broadcast_bot_token', ''));
+        if ($dedicated !== '') {
+            return self::isValidBotToken($dedicated) ? $dedicated : '';
+        }
+
+        $primary = trim((string) setting('telegram_bot_token', ''));
+
+        return self::isValidBotToken($primary) ? $primary : '';
+    }
+
+    /**
+     * Resolve configured destinations for a target kind ('bot' | 'group' | 'channel').
+     *
+     * @return list<array{key: string, chat_id: string, message_thread_id: ?int, display: string}>
+     */
+    public function targetsForKind(string $kind): array
+    {
+        return match ($kind) {
+            'bot' => self::isTruthySetting('telegram_target_bot_enabled')
+                ? self::parseTelegramTargets(
+                    trim((string) setting('telegram_target_bot_chat_ids', '')) !== ''
+                        ? (string) setting('telegram_target_bot_chat_ids', '')
+                        : (string) setting('telegram_chat_id', '')
+                )
+                : [],
+            'group' => self::isTruthySetting('telegram_target_group_enabled')
+                ? self::parseTelegramTargets((string) setting('telegram_target_group_ids', ''))
+                : [],
+            'channel' => self::isTruthySetting('telegram_target_channel_enabled')
+                ? self::parseTelegramTargets((string) setting('telegram_target_channel_ids', ''))
+                : [],
+            default => [],
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function enabledBroadcastTargetKinds(): array
+    {
+        if ($this->telegramBroadcastBotToken() === '') {
+            return [];
+        }
+
+        $kinds = [];
+        foreach (['bot', 'group', 'channel'] as $kind) {
+            if ($this->targetsForKind($kind) !== []) {
+                $kinds[] = $kind;
+            }
+        }
+
+        return $kinds;
+    }
+
+    public function productSoldNotificationConfigured(): bool
+    {
+        return self::isTruthySetting('telegram_notify_product_sold')
+            && $this->enabledBroadcastTargetKinds() !== [];
+    }
+
+    public function productListedNotificationConfigured(): bool
+    {
+        return self::isTruthySetting('telegram_notify_product_listed')
+            && $this->enabledBroadcastTargetKinds() !== [];
+    }
+
+    public function isBroadcastKindActive(string $type, string $targetKind): bool
+    {
+        $eventEnabled = match ($type) {
+            'product_sold' => self::isTruthySetting('telegram_notify_product_sold'),
+            'product_listed' => self::isTruthySetting('telegram_notify_product_listed'),
+            default => false,
+        };
+
+        return $eventEnabled
+            && $this->telegramBroadcastBotToken() !== ''
+            && $this->targetsForKind($targetKind) !== [];
     }
 
     public function sendTelegramNotification(string $message): bool
     {
-        $enabled = setting('telegram_enabled', '0');
-        if (!$enabled || $enabled === '0' || $enabled === 'false') {
+        if (!self::isTruthySetting('telegram_enabled')) {
             return false;
         }
 
-        $token = (string) setting('telegram_bot_token', '');
-        $chatId = (string) setting('telegram_chat_id', '');
+        $token = trim((string) setting('telegram_bot_token', ''));
+        $chatId = trim((string) setting('telegram_chat_id', ''));
 
-        if (empty($token) || empty($chatId)) {
+        if ($token === '' || $chatId === '' || !self::isValidBotToken($token)) {
             return false;
+        }
+
+        $parsed = self::parseTelegramTargetEntry($chatId);
+        $body = [
+            'chat_id' => $parsed['chat_id'] ?? $chatId,
+            'text' => $message,
+            'parse_mode' => 'HTML',
+        ];
+        if ($parsed !== null && $parsed['message_thread_id'] !== null) {
+            $body['message_thread_id'] = $parsed['message_thread_id'];
         }
 
         try {
             $response = Http::timeout(10)
-                ->post("https://api.telegram.org/bot{$token}/sendMessage", [
-                    'chat_id' => $chatId,
-                    'text' => $message,
-                    'parse_mode' => 'HTML',
-                ]);
+                ->withoutRedirecting()
+                ->post("https://api.telegram.org/bot{$token}/sendMessage", $body);
 
             if (!$response->successful()) {
                 Log::warning('Telegram notification failed', [
@@ -263,21 +449,190 @@ class NotificationService
     }
 
     /**
+     * Deliver a product_sold or product_listed broadcast notification to all targets in a kind.
+     *
+     * @return array{ok: bool, skipped: bool, sent_targets: list<string>, error: ?string}
+     */
+    public function deliverBroadcastNotification(
+        string $type,
+        string $targetKind,
+        ?Order $order,
+        ?Product $product,
+        array $payload = [],
+    ): array {
+        $alreadySent = array_values(array_filter((array) ($payload['sent_targets'] ?? []), 'is_string'));
+
+        if (!$this->isBroadcastKindActive($type, $targetKind)) {
+            return ['ok' => true, 'skipped' => true, 'sent_targets' => $alreadySent, 'error' => null];
+        }
+
+        $message = match ($type) {
+            'product_sold' => $this->buildProductSoldMessage($order, $product, $targetKind, $payload),
+            'product_listed' => $product ? $this->buildProductListedMessage($product, $payload) : null,
+            default => null,
+        };
+
+        if ($message === null) {
+            return ['ok' => true, 'skipped' => true, 'sent_targets' => $alreadySent, 'error' => null];
+        }
+
+        $token = $this->telegramBroadcastBotToken();
+        $targets = $this->targetsForKind($targetKind);
+        $firstFailureStatus = null;
+        $failed = false;
+
+        foreach ($targets as $target) {
+            if (in_array($target['key'], $alreadySent, true)) {
+                continue;
+            }
+            $result = $this->postTelegramTarget($token, $target, $message);
+            if ($result['ok']) {
+                $alreadySent[] = $target['key'];
+            } else {
+                $failed = true;
+                $firstFailureStatus ??= $result['status'];
+            }
+        }
+
+        $sentTargets = array_values(array_unique($alreadySent));
+
+        if ($failed) {
+            return [
+                'ok' => false,
+                'skipped' => false,
+                'sent_targets' => $sentTargets,
+                'error' => $this->safeTelegramFailure($targetKind, $firstFailureStatus),
+            ];
+        }
+
+        return ['ok' => true, 'skipped' => false, 'sent_targets' => $sentTargets, 'error' => null];
+    }
+
+    /**
+     * Send a live test push from Admin Settings to verify Bot Token & target permissions.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function sendTestTelegram(string $scope = 'auto', ?string $customTarget = null): array
+    {
+        $siteName = (string) setting('site_name', '卡密商城');
+        $sentAt = now()->format('Y-m-d H:i:s');
+        $customTarget = trim((string) $customTarget);
+
+        if ($customTarget !== '') {
+            $parsed = self::parseTelegramTargetEntry($customTarget);
+            if ($parsed === null) {
+                return [
+                    'ok' => false,
+                    'message' => '测试目标格式不正确，请填写数字 Chat ID（如 123456789、-1001234567890#话题ID）或 @频道用户名。',
+                ];
+            }
+            $token = $scope === 'admin'
+                ? (self::isValidBotToken(trim((string) setting('telegram_bot_token', ''))) ? trim((string) setting('telegram_bot_token', '')) : '')
+                : $this->telegramBroadcastBotToken();
+            if ($token === '') {
+                return ['ok' => false, 'message' => '请先填写有效的 Telegram 机器人 Token（Bot Token）。'];
+            }
+
+            $text = "✅ <b>Telegram 连通性测试成功</b>\n\n"
+                . "🏪 站点：<b>" . e($siteName) . "</b>\n"
+                . "🎯 目标：<code>" . e($parsed['display']) . "</code>\n"
+                . "🕒 时间：" . e($sentAt) . "\n\n"
+                . "机器人已可正常向此会话发送商品售出与上架通知。";
+
+            $res = $this->postTelegramTarget($token, $parsed, $text);
+            if ($res['ok']) {
+                return ['ok' => true, 'message' => "测试消息已成功发送至 {$parsed['display']}，请在 Telegram 中查收。"];
+            }
+
+            return ['ok' => false, 'message' => $this->safeTelegramFailure('custom', $res['status'], $parsed['display'])];
+        }
+
+        /** @var list<array{kind: string, label: string, token: string, target: array{key: string, chat_id: string, message_thread_id: ?int, display: string}}> $plan */
+        $plan = [];
+        $seen = [];
+        $pushPlan = function (string $kind, string $label, string $token, array $target) use (&$plan, &$seen): void {
+            $dedupe = $token . '|' . $target['key'];
+            if (isset($seen[$dedupe])) {
+                return;
+            }
+            $seen[$dedupe] = true;
+            $plan[] = ['kind' => $kind, 'label' => $label, 'token' => $token, 'target' => $target];
+        };
+
+        $primaryToken = trim((string) setting('telegram_bot_token', ''));
+        $primaryToken = self::isValidBotToken($primaryToken) ? $primaryToken : '';
+        $broadcastToken = $this->telegramBroadcastBotToken();
+
+        if (in_array($scope, ['auto', 'admin'], true) && self::isTruthySetting('telegram_enabled')) {
+            $adminChat = self::parseTelegramTargetEntry((string) setting('telegram_chat_id', ''));
+            if ($primaryToken !== '' && $adminChat !== null) {
+                $pushPlan('admin', '站长告警会话', $primaryToken, $adminChat);
+            }
+        }
+
+        $kindLabels = [
+            'bot' => '机器人私聊',
+            'group' => 'Telegram 群组',
+            'channel' => 'Telegram 频道',
+        ];
+        foreach ($kindLabels as $kind => $label) {
+            if (!in_array($scope, ['auto', 'broadcast', $kind], true)) {
+                continue;
+            }
+            if ($broadcastToken === '') {
+                continue;
+            }
+            foreach ($this->targetsForKind($kind) as $target) {
+                $pushPlan($kind, $label, $broadcastToken, $target);
+            }
+        }
+
+        if ($plan === []) {
+            if ($primaryToken === '' && $broadcastToken === '') {
+                return ['ok' => false, 'message' => '请先填写有效的 Telegram 机器人 Token（Bot Token）。'];
+            }
+
+            return [
+                'ok' => false,
+                'message' => '当前没有已启用且填写了目标 ID 的推送通道。请先开启需要推送的目标（机器人私聊 / 群组 / 频道）并填写会话 ID，或在测试框中输入临时目标。',
+            ];
+        }
+
+        $succeeded = 0;
+        $errors = [];
+        foreach ($plan as $item) {
+            $text = "✅ <b>Telegram 通知连通性测试成功</b>\n\n"
+                . "🏪 站点：<b>" . e($siteName) . "</b>\n"
+                . "📡 通道：" . e($item['label']) . "（<code>" . e($item['target']['display']) . "</code>）\n"
+                . "🕒 时间：" . e($sentAt) . "\n\n"
+                . "当前机器人配置正常，商品售出与上架通知将自动推送至此会话。";
+
+            $res = $this->postTelegramTarget($item['token'], $item['target'], $text);
+            if ($res['ok']) {
+                $succeeded++;
+            } else {
+                $errors[] = $this->safeTelegramFailure($item['kind'], $res['status'], "{$item['label']} {$item['target']['display']}");
+            }
+        }
+
+        if ($errors !== []) {
+            $prefix = $succeeded > 0 ? "部分目标发送成功（成功 {$succeeded} 个，失败 " . count($errors) . " 个）：" : '';
+
+            return ['ok' => false, 'message' => $prefix . implode('；', $errors)];
+        }
+
+        return ['ok' => true, 'message' => "测试通知已全部发送成功（共 {$succeeded} 个目标会话），请在 Telegram 中查收。"];
+    }
+
+    /**
      * Send Telegram notification for a new paid order.
      */
     public function notifyNewOrder(Order $order): bool
     {
         $order->loadMissing('product');
 
-        $paymentLabels = [
-            'alipay' => '支付宝',
-            'wechat' => '微信支付',
-            'usdt_trc20' => 'USDT (TRC20)',
-            'usdt_bep20' => 'USDT (BEP20)',
-            'usdt_polygon' => 'USDT (Polygon)',
-        ];
-
-        $method = $paymentLabels[$order->payment_method] ?? $order->payment_method;
+        $method = $this->paymentMethodLabel((string) $order->payment_method);
 
         // Escaped because sendTelegramNotification() posts with parse_mode=HTML.
         // A product named "<VIP>" or an email containing < made Telegram reject the
@@ -295,6 +650,200 @@ class NotificationService
             . "邮箱: {$email}";
 
         return $this->sendTelegramNotification($message);
+    }
+
+    public function buildProductSoldMessage(?Order $order, ?Product $product, string $targetKind, array $payload = []): ?string
+    {
+        if ($order) {
+            $order->loadMissing(['product.category']);
+            $product ??= $order->product;
+        } elseif ($product) {
+            $product->loadMissing('category');
+        }
+
+        $productName = $order ? $order->displayName() : (string) ($product?->name ?? ($payload['product_name'] ?? ''));
+        if (trim($productName) === '') {
+            return null;
+        }
+
+        $categoryName = (string) ($product?->category?->name ?? ($payload['category_name'] ?? ''));
+        $quantity = $order ? (int) $order->quantity : max(1, (int) ($payload['quantity'] ?? 1));
+        $amount = $order
+            ? bcadd((string) $order->total_amount, '0', 2)
+            : bcadd((string) ($payload['amount'] ?? $product?->price ?? '0'), '0', 2);
+
+        $lines = [
+            "🎉 <b>商品售出通知</b>",
+            '',
+            '📦 商品：<b>' . e($productName) . '</b>',
+        ];
+
+        if ($categoryName !== '') {
+            $lines[] = '🏷 分类：' . e($categoryName);
+        }
+
+        $lines[] = "🔢 售出数量：{$quantity} 件";
+        $lines[] = '💰 成交金额：¥' . e($amount);
+
+        // Only private bot DMs see internal order number / payment channel;
+        // public groups and channels NEVER receive buyer email or order identifiers.
+        if ($targetKind === 'bot') {
+            if ($order) {
+                $lines[] = '🧾 订单号：<code>' . e($order->order_no) . '</code>';
+                $lines[] = '💳 支付方式：' . e($this->paymentMethodLabel((string) $order->payment_method));
+            } elseif (($payload['source'] ?? '') === 'offline_card') {
+                $lines[] = '💳 销售方式：后台线下登记售出';
+            }
+        }
+
+        if ($product) {
+            $remaining = $product->cards()->where('status', 'unsold')->count();
+            $isListed = $product->is_active && (!$product->category || $product->category->is_active);
+            $lines[] = $remaining > 0
+                ? "📊 剩余库存：{$remaining} 件"
+                : '📊 剩余库存：已售罄';
+
+            if ($isListed && $product->slug) {
+                $url = e(Seo::url('/product/' . $product->slug));
+                $lines[] = $remaining > 0
+                    ? "🛒 立即购买：<a href=\"{$url}\">点击前往选购</a>"
+                    : "🔗 商品页面：<a href=\"{$url}\">点击查看详情</a>";
+            }
+        }
+
+        return implode("\n", $lines);
+    }
+
+    public function buildProductListedMessage(Product $product, array $payload = []): string
+    {
+        $product->loadMissing(['category', 'wholesalePrices']);
+
+        $event = (string) ($payload['event'] ?? 'listed');
+        $addedCount = max(0, (int) ($payload['added_count'] ?? 0));
+        $stock = $product->cards()->where('status', 'unsold')->count();
+
+        $headline = match ($event) {
+            'created' => '🚀 <b>新商品上架通知</b>',
+            'restocked' => '📦 <b>商品补货上架通知</b>',
+            default => '🔔 <b>商品上架通知</b>',
+        };
+
+        $lines = [
+            $headline,
+            '',
+            '📦 商品：<b>' . e($product->name) . '</b>',
+        ];
+
+        if ($product->category) {
+            $lines[] = '🏷 分类：' . e($product->category->name);
+        }
+
+        $price = bcadd((string) $product->price, '0', 2);
+        $lines[] = '💰 商品售价：¥' . e($price);
+
+        if ($product->wholesalePrices->isNotEmpty()) {
+            $tiers = $product->wholesalePrices
+                ->sortBy('min_quantity')
+                ->map(fn ($tier) => (int) $tier->min_quantity . '件起 ¥' . e(bcadd((string) $tier->price, '0', 2)))
+                ->implode(' / ');
+            $lines[] = '💎 批发优惠：' . $tiers;
+        }
+
+        if ($event === 'restocked' && $addedCount > 0) {
+            $lines[] = "📊 库存动态：本次补货 +{$addedCount} 件（当前可售 {$stock} 件）";
+        } else {
+            $lines[] = $stock > 0
+                ? "📊 可售库存：{$stock} 件"
+                : '📊 可售库存：0 件（即将补货开售）';
+        }
+
+        $excerpt = Seo::excerpt($product->description, 80);
+        if ($excerpt !== '') {
+            $lines[] = '📝 商品简介：' . e($excerpt);
+        }
+
+        if ($product->slug) {
+            $url = e(Seo::url('/product/' . $product->slug));
+            $lines[] = "🛒 立即购买：<a href=\"{$url}\">点击前往选购</a>";
+        }
+
+        return implode("\n", $lines);
+    }
+
+    private static function isTruthySetting(string $key): bool
+    {
+        return in_array((string) setting($key, '0'), ['1', 'true'], true);
+    }
+
+    private function paymentMethodLabel(string $method): string
+    {
+        return [
+            'alipay' => '支付宝',
+            'wechat' => '微信支付',
+            'usdt_trc20' => 'USDT (TRC20)',
+            'usdt_bep20' => 'USDT (BEP20)',
+            'usdt_polygon' => 'USDT (Polygon)',
+            'manual' => '人工确认',
+        ][$method] ?? $method;
+    }
+
+    /**
+     * @param array{key: string, chat_id: string, message_thread_id: ?int, display: string} $target
+     * @return array{ok: bool, status: ?int}
+     */
+    private function postTelegramTarget(string $token, array $target, string $message): array
+    {
+        $body = [
+            'chat_id' => $target['chat_id'],
+            'text' => $message,
+            'parse_mode' => 'HTML',
+        ];
+        if ($target['message_thread_id'] !== null) {
+            $body['message_thread_id'] = $target['message_thread_id'];
+        }
+
+        try {
+            $response = Http::timeout(10)
+                ->withoutRedirecting()
+                ->post("https://api.telegram.org/bot{$token}/sendMessage", $body);
+
+            $ok = $response->successful() && $response->json('ok') === true;
+            if (!$ok) {
+                Log::warning('Telegram target delivery failed', [
+                    'status' => $response->status(),
+                    'has_thread' => $target['message_thread_id'] !== null,
+                ]);
+            }
+
+            return ['ok' => $ok, 'status' => $response->status()];
+        } catch (\Throwable $e) {
+            Log::error('Telegram target delivery exception', [
+                'error_type' => get_class($e),
+            ]);
+
+            return ['ok' => false, 'status' => null];
+        }
+    }
+
+    private function safeTelegramFailure(string $kind, ?int $status, ?string $targetLabel = null): string
+    {
+        $prefix = $targetLabel !== null
+            ? "Telegram 发送失败（{$targetLabel}）："
+            : match ($kind) {
+                'bot' => 'Telegram 机器人私聊通知发送失败：',
+                'group' => 'Telegram 群组通知发送失败：',
+                'channel' => 'Telegram 频道通知发送失败：',
+                default => 'Telegram 通知发送失败：',
+            };
+
+        return $prefix . match ($status) {
+            401 => 'Bot Token 无效或已被吊销，请核对 @BotFather 提供的 Token。',
+            403 => '机器人无发言权限，请确认接收人已向机器人发送 /start，或已将机器人设为群组/频道管理员并授予发布消息权限。',
+            400, 404 => '目标会话 ID、话题 ID 或 @用户名无效，或机器人尚未加入目标群组/频道。',
+            429 => '触发 Telegram 接口速率限制，请稍后重试。',
+            null => '无法连接 api.telegram.org，请检查服务器国际网络连通性。',
+            default => "上游接口返回异常（HTTP {$status}），请检查机器人配置与会话权限。",
+        };
     }
 
 

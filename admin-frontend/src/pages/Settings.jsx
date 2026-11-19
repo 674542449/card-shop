@@ -8,14 +8,14 @@ import {
   ProFormSelect,
   ProFormSwitch,
 } from '@ant-design/pro-components';
-import { Card, Tabs, Spin, message, Alert, Button, Input, Space, Typography, Result } from 'antd';
+import { Card, Tabs, Spin, message, Alert, Button, Input, Select, Space, Typography, Result } from 'antd';
 import {
   SendOutlined,
   CheckCircleFilled,
   LoadingOutlined,
   ExclamationCircleFilled,
 } from '@ant-design/icons';
-import { getSettings, updateSettings, sendTestEmail } from '../services/api';
+import { getSettings, updateSettings, sendTestEmail, sendTestTelegram } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
 import { createSerialSaveQueue } from '../utils/serialSaveQueue';
@@ -48,6 +48,15 @@ const OWNER_SETTINGS = new Set([
   'telegram_bot_token',
   'telegram_chat_id',
   'telegram_enabled',
+  'telegram_broadcast_bot_token',
+  'telegram_notify_product_sold',
+  'telegram_notify_product_listed',
+  'telegram_target_bot_enabled',
+  'telegram_target_bot_chat_ids',
+  'telegram_target_group_enabled',
+  'telegram_target_group_ids',
+  'telegram_target_channel_enabled',
+  'telegram_target_channel_ids',
   'turnstile_site_key',
   'turnstile_secret_key',
   'order_expire_minutes',
@@ -144,6 +153,9 @@ export default function Settings() {
   const [initialValues, setInitialValues] = useState({});
   const [testTo, setTestTo] = useState('');
   const [testing, setTesting] = useState(false);
+  const [testTelegramScope, setTestTelegramScope] = useState('auto');
+  const [testTelegramTarget, setTestTelegramTarget] = useState('');
+  const [testingTelegram, setTestingTelegram] = useState(false);
   const [themes, setThemes] = useState(['default']);
   const [autoSave, setAutoSave] = useState({ status: 'idle', error: '' });
 
@@ -171,6 +183,11 @@ export default function Settings() {
         const normalised = { ...data, ...retained };
         for (const [key, defaultValue] of Object.entries({
           telegram_enabled: false,
+          telegram_notify_product_sold: false,
+          telegram_notify_product_listed: false,
+          telegram_target_bot_enabled: false,
+          telegram_target_group_enabled: false,
+          telegram_target_channel_enabled: false,
           checkout_require_key: false,
           honeypot_enabled: true,
           honeypot_skip_reserved_ips: true,
@@ -243,6 +260,24 @@ export default function Settings() {
       message.error(err.response?.data?.message || '测试邮件发送失败', 8);
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    if (!canConfigurePrivate || loading || loadError) return;
+    setTestingTelegram(true);
+    try {
+      await settingsSaver.flush();
+      const payload = { scope: testTelegramScope };
+      if (testTelegramTarget.trim()) {
+        payload.target = testTelegramTarget.trim();
+      }
+      const res = await sendTestTelegram(payload);
+      message.success(res.data?.message || 'Telegram 测试通知已发送');
+    } catch (err) {
+      message.error(err.response?.data?.message || 'Telegram 测试通知发送失败', 8);
+    } finally {
+      setTestingTelegram(false);
     }
   };
 
@@ -503,19 +538,157 @@ export default function Settings() {
             type="info"
             showIcon
             style={{ marginBottom: 16 }}
-            message="Telegram 实时运营通知"
-            description="启用后，系统将通过 Telegram 机器人实时推送新支付订单、异常收款待核对及商品低库存预警。可通过 @BotFather 获取 Bot Token，并通过 @userinfobot 查询接收端 Chat ID。"
+            message="Telegram 机器人实时通知与多端播报"
+            description="支持向站长私聊推送内部订单与库存预警，并支持在商品售出或商品上架/补货时自动向指定的 Telegram 机器人私聊、群组（含超级群话题）及频道推送动态播报。可通过 @BotFather 创建机器人获取 Bot Token，通过 @userinfobot 获取个人/群组 Chat ID。"
           />
-          <ProFormSwitch name="telegram_enabled" disabled={!canConfigurePrivate} label="启用 Telegram 消息推送" />
+
+          <div className="admin-form-section-title">基础机器人与站长运营告警</div>
+          <ProFormSwitch
+            name="telegram_enabled"
+            disabled={!canConfigurePrivate}
+            label="启用站长内部运营告警（新订单详情 / 付款待核对 / 低库存预警）"
+            extra="包含订单号与买家联系邮箱等敏感交易信息，建议仅推送至站长个人私聊或内部管理群。"
+          />
           <div className="admin-form-grid-2">
             <ProFormText.Password
               name="telegram_bot_token"
               disabled={!canConfigurePrivate}
-              label="机器人 Token（Bot Token）"
-              extra="已保存的 Token 以掩码显示，未变更请保持原样。"
+              label="默认机器人 Token（Bot Token）"
+              fieldProps={{ autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              extra="从 @BotFather 获取的完整 Token；已保存的 Token 以掩码显示，未变更请保持原样。"
             />
-            <ProFormText name="telegram_chat_id" disabled={!canConfigurePrivate} label="接收端会话 ID（Chat ID）" />
+            <ProFormText
+              name="telegram_chat_id"
+              disabled={!canConfigurePrivate}
+              label="站长默认接收会话 ID（Chat ID）"
+              placeholder="如 123456789 或 -1001234567890#话题ID"
+              fieldProps={{ autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              extra="填写站长个人 Chat ID 或内部管理群 ID（支持超级群 #话题ID）。"
+            />
           </div>
+
+          <div className="admin-form-section-title">商品售出与上架播报机器人</div>
+          <div className="admin-form-grid-2">
+            <ProFormSwitch
+              name="telegram_notify_product_sold"
+              disabled={!canConfigurePrivate}
+              label="开启商品售出通知"
+              extra="当订单支付发货或后台登记售出时自动推送；发往群组与频道的播报会自动隐去买家邮箱与订单号。"
+            />
+            <ProFormSwitch
+              name="telegram_notify_product_listed"
+              disabled={!canConfigurePrivate}
+              label="开启商品上架 / 补货通知"
+              extra="当新建上架商品、下架商品重新上架，或为已上架商品导入新卡密补货时，自动推送价格、库存与直达购买链接。"
+            />
+          </div>
+          <ProFormText.Password
+            name="telegram_broadcast_bot_token"
+            disabled={!canConfigurePrivate}
+            label="指定播报机器人 Token（可选）"
+            placeholder="留空则默认共用上方「默认机器人 Token」"
+            fieldProps={{ autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+            extra="如需使用独立的公开播报机器人向客户群组或频道发送售出/上架通知，可单独填写其 Bot Token；留空则共用默认机器人。"
+          />
+
+          <div className="admin-form-section-title">可选发送目标（可同时开启任意一项或多项）</div>
+          <Card size="small" style={{ marginBottom: 12 }} title="1. 发送给指定 Telegram 机器人（私聊会话）">
+            <ProFormSwitch
+              name="telegram_target_bot_enabled"
+              disabled={!canConfigurePrivate}
+              label="启用推送至机器人私聊"
+            />
+            <ProFormTextArea
+              name="telegram_target_bot_chat_ids"
+              disabled={!canConfigurePrivate}
+              label="私聊接收人 Chat ID"
+              placeholder="如 123456789, 987654321（留空默认回退使用站长接收会话 ID）"
+              fieldProps={{ rows: 2, autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              extra="接收人需先打开对应机器人点击 Start（发送 /start）激活对话；支持填写多个个人数字 Chat ID，用英文逗号或换行分隔。"
+            />
+          </Card>
+
+          <Card size="small" style={{ marginBottom: 12 }} title="2. 发送给指定 Telegram 群组">
+            <ProFormSwitch
+              name="telegram_target_group_enabled"
+              disabled={!canConfigurePrivate}
+              label="启用推送至 Telegram 群组"
+            />
+            <ProFormTextArea
+              name="telegram_target_group_ids"
+              disabled={!canConfigurePrivate}
+              label="目标群组 Chat ID / @公开群用户名"
+              placeholder="如 -1001234567890 或 -1001234567890#12 或 @my_shop_group"
+              fieldProps={{ rows: 2, autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              extra="请先将机器人拉入目标群组并确保允许发言。支持普通群（-987654321）、超级群（-1001234567890）、超级群指定话题（-1001234567890#话题ID）及公开群（@group_name），多个群组用逗号或换行分隔。"
+            />
+          </Card>
+
+          <Card size="small" style={{ marginBottom: 16 }} title="3. 发送给指定 Telegram 频道">
+            <ProFormSwitch
+              name="telegram_target_channel_enabled"
+              disabled={!canConfigurePrivate}
+              label="启用推送至 Telegram 频道"
+            />
+            <ProFormTextArea
+              name="telegram_target_channel_ids"
+              disabled={!canConfigurePrivate}
+              label="目标频道 @用户名 / 频道 ID"
+              placeholder="如 @my_shop_channel 或 https://t.me/my_shop_channel 或 -1001234567890"
+              fieldProps={{ rows: 2, autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              extra="必须先将机器人添加为目标频道的管理员，并开启「发布消息（Post Messages）」权限。支持公开频道 @用户名、t.me 链接或私有频道 -100 开头的数字 ID，多个频道用逗号或换行分隔。"
+            />
+          </Card>
+
+          <Card size="small" title="Telegram 推送连通性测试" style={{ marginTop: 8, marginBottom: 8 }}>
+            <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
+              点击发送后将自动保存当前编辑的 Telegram 配置并立即推送测试消息。留空右侧临时目标时，将按所选范围测试当前已开启的接收端；正式业务通知若遇到网络波动将自动转入任务中心重试队列。
+            </Typography.Paragraph>
+            <Space wrap style={{ width: '100%' }}>
+              <Select
+                disabled={!canConfigurePrivate}
+                value={testTelegramScope}
+                onChange={setTestTelegramScope}
+                style={{ width: 200 }}
+                options={[
+                  { label: '全部已启用目标', value: 'auto' },
+                  { label: '仅播报目标（私聊/群/频道）', value: 'broadcast' },
+                  { label: '仅机器人私聊目标', value: 'bot' },
+                  { label: '仅 Telegram 群组', value: 'group' },
+                  { label: '仅 Telegram 频道', value: 'channel' },
+                  { label: '仅站长告警会话', value: 'admin' },
+                ]}
+              />
+              <Space.Compact style={{ width: 380, maxWidth: '100%' }}>
+                <Input
+                  type="text"
+                  disabled={!canConfigurePrivate}
+                  value={testTelegramTarget}
+                  onChange={(e) => setTestTelegramTarget(e.target.value)}
+                  onPressEnter={(e) => {
+                    if (e.nativeEvent?.isComposing) return;
+                    e.preventDefault();
+                    handleTestTelegram();
+                  }}
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="可选：临时指定测试 Chat ID 或 @频道"
+                  allowClear
+                />
+                <Button
+                  type="primary"
+                  htmlType="button"
+                  icon={<SendOutlined />}
+                  loading={testingTelegram}
+                  disabled={!canConfigurePrivate}
+                  onClick={handleTestTelegram}
+                >
+                  发送测试通知
+                </Button>
+              </Space.Compact>
+            </Space>
+          </Card>
         </>
       ),
     },

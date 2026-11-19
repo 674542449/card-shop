@@ -2,7 +2,7 @@
 
 从一台空的 Linux 服务器和一个正式域名开始，完成 HTTPS、商城初始化、后台配置和首次下单验收。功能介绍见 [README](README.md)，对接接口见 [API 文档](docs/API.md)。
 
-适用正式版本：**v1.0.2**，核对日期：2026-11-18。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
+适用正式版本：**v1.0.3**，核对日期：2026-11-20。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
 
 本文使用 **Docker Compose + Cloudflare 橙云代理**，示例域名为 **`shop.example.com`**。所有域名、服务器 IP 和账号都应替换成自己的值。服务器命令在受控的 root 管理终端执行：SSH 登录后先运行 `sudo -i`；标注「外部电脑」的验证在你自己的电脑执行。这样 Compose 能读取仅 root 与容器组可读的外部环境文件，商城不提供员工账户。
 
@@ -48,7 +48,7 @@ docker compose version
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-git checkout v1.0.2
+git checkout v1.0.3
 sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
 sudo cp .env.example /etc/cardshop/runtime.env
 sudo chown root:33 /etc/cardshop/runtime.env
@@ -68,7 +68,7 @@ APP_KEY=base64:你生成的32字节随机密钥
 DB_DATABASE=cardshop
 DB_USERNAME=cardshop
 DB_PASSWORD=你的随机强密码
-ADMIN_PATH=admin
+ADMIN_PATH=
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=至少12字符的随机强密码
 TRUSTED_PROXIES=
@@ -76,8 +76,8 @@ TLS_CERT_DIR=/opt/cf
 SHOP_ENV_FILE=/etc/cardshop/runtime.env
 SHOP_SECRETS_DIR=/etc/cardshop/secrets
 SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
-SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.2
-SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.2
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.3
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.3
 ```
 
 发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
@@ -94,7 +94,7 @@ shop pull app nginx
 
 本方案使用独立生产 Compose；`install.sh` 和默认 `docker-compose.yml` 保留给源码开发部署。首次正式安装不需要在服务器编译 React、运行 Composer 或导入演示数据。
 
-`APP_URL` 必须对应实际 HTTPS 域名，影响 Cookie、邮件与支付回调。Cloudflare/Nginx 方案保持 `TRUSTED_PROXIES` 为空。后台路径可修改为最长32位字母、数字、`-`、`_`，不能代替强密码或服务端权限。
+`APP_URL` 必须对应实际 HTTPS 域名，影响 Cookie、邮件与支付回调。Cloudflare/Nginx 方案保持 `TRUSTED_PROXIES` 为空。`ADMIN_PATH` 留空时将在首次初始化自动生成并持久化 24 位随机高强度后台路径（此时访问 `/admin` 直接返回 404）；也可自行指定最长 32 位字母、数字、`-`、`_`，但不能代替强密码或服务端权限。
 
 ## 第 3 步：启动前配置 HTTPS
 
@@ -175,9 +175,15 @@ shop exec app curl -m 10 -fsS -o /dev/null -w '%{http_code}\n' https://api.githu
 
 ## 首次登录
 
-打开 **`https://shop.example.com/admin`**，若设置了 `ADMIN_PATH`，使用对应路径。默认用户名为 `admin`，或使用首次启动前设置的 `ADMIN_USERNAME`。
+首次安装会自动生成 24 位随机高强度后台路径（除非提前显式配置了 `ADMIN_PATH`），访问 `/admin` 会直接返回 `404`。可通过有权限的服务器终端查询后台登录地址：
 
-没有预设有效密码时，通过有权限的服务器终端读取：
+```bash
+shop exec app php artisan admin:path
+```
+
+默认用户名为 `admin`，或使用首次启动前设置的 `ADMIN_USERNAME`。
+
+没有预设有效密码时，初始密码与随机后台路径一并保存在受限文件中：
 
 ```bash
 shop exec app cat storage/app/initial-admin-password.txt

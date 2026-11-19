@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\{NotificationDelivery, Order};
+use App\Models\{Card, NotificationDelivery, Order, Product};
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -25,6 +25,70 @@ class NotificationQueue
         $this->enqueue('order-email:'.$order->id, 'order_email', $order);
         if ($this->sender->telegramConfigured()) {
             $this->enqueue('new-order:'.$order->id, 'new_order', $order);
+        }
+        if ($this->sender->productSoldNotificationConfigured()) {
+            foreach ($this->sender->enabledBroadcastTargetKinds() as $kind) {
+                $this->enqueue(
+                    "product-sold:order:{$order->id}:{$kind}",
+                    'product_sold',
+                    $order,
+                    ['target_kind' => $kind, 'source' => 'order'],
+                    $order->product_id
+                );
+            }
+        }
+    }
+
+    public function enqueueOfflineCardSold(Card $card): void
+    {
+        if (!$this->sender->productSoldNotificationConfigured()) {
+            return;
+        }
+        $product = $card->product()->with('category')->first();
+        if (!$product) {
+            return;
+        }
+        $stamp = (string) Str::uuid();
+        foreach ($this->sender->enabledBroadcastTargetKinds() as $kind) {
+            $this->enqueue(
+                "product-sold:card:{$card->id}:{$stamp}:{$kind}",
+                'product_sold',
+                null,
+                [
+                    'target_kind' => $kind,
+                    'source' => 'offline_card',
+                    'product_name' => $product->name,
+                    'category_name' => $product->category?->name,
+                    'quantity' => 1,
+                    'amount' => bcadd((string) $product->price, '0', 2),
+                ],
+                $product->id
+            );
+        }
+    }
+
+    public function enqueueProductListed(Product $product, string $event = 'listed', int $addedCount = 0): void
+    {
+        if (!$this->sender->productListedNotificationConfigured()) {
+            return;
+        }
+        $product->loadMissing('category');
+        if (!$product->is_active || ($product->category && !$product->category->is_active)) {
+            return;
+        }
+        $stamp = (string) Str::uuid();
+        foreach ($this->sender->enabledBroadcastTargetKinds() as $kind) {
+            $this->enqueue(
+                "product-listed:{$product->id}:{$event}:{$stamp}:{$kind}",
+                'product_listed',
+                null,
+                [
+                    'target_kind' => $kind,
+                    'event' => $event,
+                    'added_count' => $addedCount,
+                ],
+                $product->id
+            );
         }
     }
 
@@ -86,6 +150,8 @@ class NotificationQueue
     {
         $status = 'sent';
         $error = null;
+        $payload = is_array($delivery->payload) ? $delivery->payload : [];
+        $updatedPayload = null;
         try {
             $order = $delivery->order_id ? Order::find($delivery->order_id) : null;
             if ($delivery->type === 'order_email') {
@@ -99,8 +165,26 @@ class NotificationQueue
                     throw new RuntimeException('邮件发送失败，请检查 SMTP 配置及服务器日志。');
                 }
             } elseif ($delivery->type === 'refund_email') {
-                if (!$order || !$this->sender->sendRefundEmail($order, $delivery->payload)) {
+                if (!$order || !$this->sender->sendRefundEmail($order, $payload)) {
                     throw new RuntimeException('邮件发送失败，请检查 SMTP 配置及服务器日志。');
+                }
+            } elseif (in_array($delivery->type, ['product_sold', 'product_listed'], true)) {
+                $product = $delivery->product_id
+                    ? Product::with(['category', 'wholesalePrices'])->find($delivery->product_id)
+                    : $order?->product;
+                if ($delivery->type === 'product_listed' && (!$product || !$product->is_active || ($product->category && !$product->category->is_active))) {
+                    $status = 'skipped';
+                } else {
+                    $targetKind = (string) ($payload['target_kind'] ?? '');
+                    $res = $this->sender->deliverBroadcastNotification($delivery->type, $targetKind, $order, $product, $payload);
+                    if ($res['sent_targets'] !== ($payload['sent_targets'] ?? [])) {
+                        $updatedPayload = array_merge($payload, ['sent_targets' => $res['sent_targets']]);
+                    }
+                    if ($res['skipped']) {
+                        $status = 'skipped';
+                    } elseif (!$res['ok']) {
+                        throw new RuntimeException($res['error'] ?? 'Telegram 通知发送失败，请检查机器人配置与目标会话权限。');
+                    }
                 }
             } elseif (!$this->sender->telegramConfigured()) {
                 $status = 'skipped';
@@ -109,7 +193,7 @@ class NotificationQueue
                     throw new RuntimeException('Telegram 订单通知发送失败，请检查通知配置。');
                 }
             } elseif (in_array($delivery->type, ['payment_review', 'low_stock'], true)) {
-                if (!$this->sender->sendTelegramNotification($delivery->payload['message'])) {
+                if (!$this->sender->sendTelegramNotification($payload['message'] ?? '')) {
                     throw new RuntimeException('Telegram 通知发送失败，请检查通知配置。');
                 }
             } else {
@@ -118,14 +202,20 @@ class NotificationQueue
         } catch (\Throwable $exception) {
             $status = $delivery->attempts >= 5 ? 'failed' : 'pending';
             // Do not persist transport exception text, which may contain credentials.
-            $error = $exception instanceof RuntimeException && str_starts_with($exception->getMessage(), '邮件发送失败')
-                ? $exception->getMessage() : '通知发送失败，请检查配置及服务器日志。';
+            $error = $exception instanceof RuntimeException && (
+                str_starts_with($exception->getMessage(), '邮件发送失败')
+                || str_starts_with($exception->getMessage(), 'Telegram ')
+            ) ? $exception->getMessage() : '通知发送失败，请检查配置及服务器日志。';
         }
-        NotificationDelivery::whereKey($delivery->id)->where('lease_token', $delivery->lease_token)->update([
+        $updates = [
             'status' => $status, 'last_error' => $error, 'lease_token' => null, 'reserved_at' => null,
             'health_acknowledged_at' => null,
             'sent_at' => $status === 'sent' ? now() : null,
             'available_at' => $error ? now()->addSeconds([60, 300, 900, 3600, 3600][$delivery->attempts - 1]) : now(),
-        ]);
+        ];
+        if ($updatedPayload !== null) {
+            $updates['payload'] = $updatedPayload;
+        }
+        NotificationDelivery::whereKey($delivery->id)->where('lease_token', $delivery->lease_token)->update($updates);
     }
 }

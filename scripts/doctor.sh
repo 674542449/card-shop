@@ -106,10 +106,13 @@ getenv() {
 }
 
 APP_URL="$(getenv APP_URL)"
-# 后台可能被 ADMIN_PATH 搬走了。写死探 /admin 的话，搬过之后这一项必然报失败——
-# 而那是配置生效的正常结果，不是故障。
-ADMIN_SEG="$(getenv ADMIN_PATH)"; ADMIN_SEG="${ADMIN_SEG:-admin}"
-case "$ADMIN_SEG" in *[!A-Za-z0-9_-]*|'') ADMIN_SEG="admin" ;; esac
+# 后台路径默认在安装时自动生成随机高强度段（写入 .env 的 ADMIN_PATH 或容器内 storage/app/private/admin-path）。
+ADMIN_SEG="$(getenv ADMIN_PATH)"
+case "$ADMIN_SEG" in *[!A-Za-z0-9_-]*|'')
+    ADMIN_SEG="$(docker compose exec -T app php artisan admin:path --raw 2>/dev/null | tr -d '\r\n' || true)"
+    ;;
+esac
+case "$ADMIN_SEG" in *[!A-Za-z0-9_-]*|'') ADMIN_SEG="" ;; esac
 DOMAIN="${APP_URL#http://}"; DOMAIN="${DOMAIN#https://}"; DOMAIN="${DOMAIN%/}"
 
 case "$APP_URL" in
@@ -135,6 +138,12 @@ if [ -z "$DBPW" ] || [ "$DBPW" = "secret" ]; then
     fail "DB_PASSWORD 还是默认值" "数据库卷已初始化的话不能直接改 .env，见 DEPLOY.md 排查章节"
 else
     pass "DB_PASSWORD 已改（非默认值）"
+fi
+
+if [ "$ADMIN_SEG" = "admin" ]; then
+    warn "后台路径仍是弱路径 /admin" "建议清空 ADMIN_PATH 后重跑 ./install.sh 或设置随机高强度路径"
+elif [ -n "$ADMIN_SEG" ]; then
+    pass "后台路径已启用非默认路径"
 fi
 
 # TRUSTED_PROXIES 是全文唯一一项「检查对象」和「生效对象」不是同一个东西的配置。
@@ -309,7 +318,11 @@ probe "http://127.0.0.1/" "源站本地 HTTP 能渲染页面"
 if [ -n "$DOMAIN" ]; then
     probe "https://$DOMAIN/"             "经 Cloudflare 访问首页"
     probe "https://$DOMAIN/order/query"  "经 Cloudflare 访问订单查询"
-    probe "https://$DOMAIN/$ADMIN_SEG"   "经 Cloudflare 访问后台（/$ADMIN_SEG）"
+    if [ -n "$ADMIN_SEG" ]; then
+        probe "https://$DOMAIN/$ADMIN_SEG" "经 Cloudflare 访问后台"
+    else
+        skip "经 Cloudflare 访问后台" "未能读取当前生效的随机后台路径"
+    fi
 else
     skip "经 Cloudflare 的页面检查" "APP_URL 里没有可用的域名"
 fi

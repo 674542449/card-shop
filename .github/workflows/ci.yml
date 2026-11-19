@@ -45,6 +45,7 @@ jobs:
     env:
       APP_ENV: testing
       APP_KEY: base64:QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=
+      ADMIN_PATH: admin
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
       DB_DATABASE: cardshop_testing

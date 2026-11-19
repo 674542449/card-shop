@@ -18,6 +18,7 @@ return [
         'reconciliation.read' => ['all' => ['maintenance:read', 'orders:read']],
         'reconciliation.retry' => ['all' => ['maintenance:write', 'orders:write']],
         'settings.test_email' => ['all' => ['settings:write']],
+        'settings.test_telegram' => ['all' => ['settings:write']],
         'backups.read' => ['all' => ['maintenance:read']],
         'backups.write' => ['all' => ['maintenance:write']],
         'health.acknowledge' => ['all' => ['maintenance:write']],

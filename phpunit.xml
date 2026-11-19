@@ -4,6 +4,7 @@
     <php>
         <env name="APP_ENV" value="testing" force="true"/>
         <env name="APP_KEY" value="base64:QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=" force="true"/>
+        <env name="ADMIN_PATH" value="admin" force="true"/>
         <env name="DB_HOST" value="127.0.0.1"/>
         <env name="DB_PORT" value="15432"/>
         <env name="DB_DATABASE" value="cardshop_testing" force="true"/>

@@ -186,6 +186,11 @@ readiness_check() {
 
     [ "$(get_env DB_PASSWORD)" != "secret" ] || note "DB_PASSWORD 还是默认的 secret，见上面的说明。"
 
+    case "$(get_env ADMIN_PATH)" in
+        admin) note "ADMIN_PATH 仍是弱路径 admin，容易被自动化扫描器持续探测；建议清空后重跑 ./install.sh 自动生成随机高强度路径。" ;;
+        '') note "ADMIN_PATH 尚未写入配置文件；重跑 ./install.sh（不带 --show）将自动生成 24 位随机高强度后台路径。" ;;
+    esac
+
     # TLS：证书和 ssl.conf 缺一个，nginx 就不会监听 443。
     TLS_DIR="$(get_env TLS_CERT_DIR)"; TLS_DIR="${TLS_DIR:-/opt/cf}"
     if [ ! -f "docker/nginx/tls/ssl.conf" ]; then
@@ -425,6 +430,36 @@ if [ -z "$CURRENT_DB_PW" ] || [ "$CURRENT_DB_PW" = "secret" ]; then
     fi
 fi
 
+# ---------------------------------------------------------------- 随机高强度后台路径
+# 安装时若未显式设置 ADMIN_PATH，自动生成 24 位密码学随机高强度路径（大小写字母 + 数字，
+# 约 142 bit 熵），使默认的 /admin 直接返回 404；若用户已配置过路径，重跑调优时绝不覆盖。
+generate_admin_path() {
+    local first body candidate
+    while :; do
+        if command -v openssl >/dev/null 2>&1; then
+            first="$(openssl rand -base64 32 2>/dev/null | tr -dc 'a-zA-Z' | cut -c1 || true)"
+            body="$(openssl rand -base64 64 2>/dev/null | tr -dc 'a-zA-Z0-9' | cut -c1-23 || true)"
+        else
+            first="$(LC_ALL=C head -c 64 /dev/urandom 2>/dev/null | LC_ALL=C tr -dc 'a-zA-Z' | cut -c1 || true)"
+            body="$(LC_ALL=C head -c 128 /dev/urandom 2>/dev/null | LC_ALL=C tr -dc 'a-zA-Z0-9' | cut -c1-23 || true)"
+        fi
+        candidate="${first}${body}"
+        if [ "${#candidate}" -eq 24 ] && [ "$candidate" != "admin" ]; then
+            echo "$candidate"
+            return 0
+        fi
+    done
+}
+
+CURRENT_ADMIN_PATH=$(grep '^ADMIN_PATH=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]/' || true)
+if [ -z "$CURRENT_ADMIN_PATH" ]; then
+    NEW_ADMIN_PATH="$(generate_admin_path)"
+    set_env ADMIN_PATH "$NEW_ADMIN_PATH"
+    ADMIN_PATH_NOTE="/$NEW_ADMIN_PATH（首次安装自动生成 24 位随机高强度路径，请妥善保存）"
+else
+    ADMIN_PATH_NOTE="/$CURRENT_ADMIN_PATH（已设置，未改动）"
+fi
+
 set_env PHP_FPM_MAX_CHILDREN   "$CHOICE"
 set_env PHP_FPM_START_SERVERS  "$START_SERVERS"
 set_env PHP_FPM_MIN_SPARE      "$MIN_SPARE"
@@ -503,6 +538,8 @@ printf "  信任的代理        : %s
 " "$TP_NOTE"
 printf "  数据库密码        : %s
 " "$DB_PW_NOTE"
+printf "  后台管理入口      : %s
+" "$ADMIN_PATH_NOTE"
 echo
 echo "  生效："
 echo "    docker compose up -d"

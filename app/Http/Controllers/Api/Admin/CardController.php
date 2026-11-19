@@ -74,6 +74,10 @@ class CardController extends Controller
         if ($result['total'] === 0) {
             return response()->json(['message' => '没有可导入的卡密。'], 422);
         }
+        if ($result['count'] > 0) {
+            $product->loadMissing(['category', 'wholesalePrices']);
+            app(\App\Services\NotificationQueue::class)->enqueueProductListed($product, 'restocked', (int) $result['count']);
+        }
         $message = "成功导入 {$result['count']} 张卡密，跳过 {$result['skipped']} 条重复卡密。";
         OperationLog::log('导入卡密', 'product', $product->id, "{$message} 商品：{$product->name}");
 
@@ -154,6 +158,9 @@ class CardController extends Controller
         $label = ['sold' => '线下已售', 'unsold' => '可售', 'disabled' => '停用'][$target];
 
         if ($outcome['changed']) {
+            if ($target === 'sold') {
+                app(\App\Services\NotificationQueue::class)->enqueueOfflineCardSold($outcome['card']);
+            }
             OperationLog::log('修改卡密状态', 'card', $outcome['card']->id, "卡密 #{$outcome['card']->id} 状态改为{$label}");
         }
 

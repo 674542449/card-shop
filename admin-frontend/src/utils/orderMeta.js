@@ -45,6 +45,8 @@ export const NOTIFICATION_TYPES = {
   new_order: '新订单通知',
   payment_review: '付款待核对通知',
   low_stock: '低库存预警',
+  product_sold: '商品售出通知',
+  product_listed: '商品上架通知',
 };
 
 export const formatDateTime = (value) => (value ? dayjs(value).format('YYYY-MM-DD HH:mm:ss') : '-');

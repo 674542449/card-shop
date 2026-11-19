@@ -211,6 +211,8 @@ Route::prefix('api/' . admin_path())->group(function () {
         // admin action that can be turned into an outbound flood.
         Route::post('/settings/test-email', [ApiAdmin\SettingController::class, 'testEmail'])
             ->middleware('throttle:10,1,admin-test-email')->defaults('_admin_capability', 'settings.test_email');
+        Route::post('/settings/test-telegram', [ApiAdmin\SettingController::class, 'testTelegram'])
+            ->middleware('throttle:10,1,admin-test-telegram')->defaults('_admin_capability', 'settings.test_telegram');
     });
 });
 

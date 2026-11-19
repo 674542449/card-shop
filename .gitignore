@@ -16,6 +16,8 @@
 /storage/app/private/shop-backups/
 /storage/app/private/asset-quarantine/
 /storage/app/private/record-archives/
+/storage/app/private/admin-path
+/storage/app/private/admin-path.*
 /storage/app/public/uploads/
 /storage/framework/cache/data/*
 /storage/framework/cache/purifier/*

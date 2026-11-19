@@ -118,6 +118,19 @@ else
     echo "    APP_KEY present."
 fi
 
+if grep -Eq '^ADMIN_PATH=[[:space:]]*$' .env || ! grep -Eq '^ADMIN_PATH=' .env; then
+    echo "    Generating random high-strength ADMIN_PATH"
+    NEW_ADMIN_PATH="$(php -r 'require "vendor/autoload.php"; echo App\Support\AdminPath::generate();')"
+    if grep -q '^ADMIN_PATH=' .env; then
+        sed -i "s|^ADMIN_PATH=.*|ADMIN_PATH=${NEW_ADMIN_PATH}|" .env
+    else
+        printf 'ADMIN_PATH=%s\n' "$NEW_ADMIN_PATH" >> .env
+    fi
+    echo "    ADMIN_PATH generated (query via: docker compose exec app php artisan admin:path)."
+else
+    echo "    ADMIN_PATH present."
+fi
+
 # 权限收紧放在**所有会写 .env 的步骤之后**，这不是风格问题。
 # 上面的 key:generate 会改写 .env；install.sh 的 set_env 用 sed -i 改写它；从备份恢复
 # 也会带来新的属主和 mode。这些操作是否保留属组和权限取决于具体实现（sed -i 是先写
@@ -139,7 +152,7 @@ fi
 # DB_PASSWORD come back empty and every request 500s — while artisan, which runs as
 # root right here in this script, keeps working and the startup log stays green.
 #
-# So: group-own it by www-data and use 640. The workers can read it, the host user
+# So: group-own it by www-data and use 640. The workers can read it, the host use
 # who owns it keeps read/write (docker compose needs that to substitute DB_PASSWORD
 # and friends), and other users on the host still get nothing.
 chgrp www-data .env 2>/dev/null || chgrp 33 .env 2>/dev/null || true
@@ -183,7 +196,7 @@ chmod 600 "$KEYRING_FILE"
 echo "==> [4/8] Public storage symlink"
 # Uploaded images are written to storage/app/public/uploads and served from
 # /storage/uploads/..., which only resolves through the public/storage symlink.
-# public/ is on the host bind mount, so the link persists across restarts — check for
+# public/ is on the host bind mount, so the link persists across restarts — check fo
 # it rather than re-running storage:link, which reports the existing link as an error.
 if [ -L public/storage ]; then
     echo "    Symlink present."
@@ -221,6 +234,7 @@ if php artisan migrate --force --no-interaction; then
     # it creates the default admin and settings rows only when they are absent and
     # never overwrites values changed from the admin UI.
     if php artisan db:seed --force --no-interaction; then
+        chown -R www-data:www-data storage/app/private 2>/dev/null || true
         echo "    Seed OK."
     else
         echo "    !! Seeding failed. The admin account may not exist."
@@ -237,7 +251,7 @@ echo "==> [7/8] Precompiling Blade views"
 # includes it. When several PHP-FPM workers get their first request for the same
 # uncompiled view at once, one worker can include the file while another is still
 # writing it. The truncated include is a parse error ("unexpected end of file"),
-# and OPcache then caches that broken compilation. Because the file's mtime never
+# and OPcache then caches that broken compilation. Because the file's mtime neve
 # changes afterwards, OPcache never revalidates it, so every later request keeps
 # getting the broken copy — `view:clear` and container rebuilds do not help.
 #

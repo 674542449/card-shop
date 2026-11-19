@@ -136,6 +136,10 @@ class ShopBackupService
                 }
             }
         }
+        $adminPathFile = Storage::disk('local')->path('admin-path');
+        if (is_file($adminPathFile) && ! is_link($adminPathFile)) {
+            $inputs['private/admin-path'] = $adminPathFile;
+        }
         return $inputs;
     }
 

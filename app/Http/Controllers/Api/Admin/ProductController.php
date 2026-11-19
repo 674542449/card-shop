@@ -176,9 +176,12 @@ class ProductController extends Controller
             return $product;
         });
 
+        $product->load(['category', 'wholesalePrices']);
+        app(\App\Services\NotificationQueue::class)->enqueueProductListed($product, 'created');
+
         OperationLog::log('创建商品', 'product', $product->id, $product->name);
 
-        return response()->json($product->load('wholesalePrices'), 201);
+        return response()->json($product, 201);
     }
 
     public function show(Product $product)
@@ -223,6 +226,9 @@ class ProductController extends Controller
         $wholesalePrices = $data['wholesale_prices'] ?? [];
         unset($data['wholesale_prices']);
 
+        $product->loadMissing('category');
+        $wasListed = $product->is_active && (!$product->category || $product->category->is_active);
+
         SlugGenerator::persist('products', $data, $data['name'], function ($values) use ($product, $replaceTiers, $wholesalePrices) {
             if (! Category::whereKey($values['category_id'])->sharedLock()->first(['id'])) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['category_id' => '商品分类已删除，请重新选择。']);
@@ -249,9 +255,15 @@ class ProductController extends Controller
             }
         }, $product->id);
 
+        $product->unsetRelation('category')->load(['category', 'wholesalePrices']);
+        $isNowListed = $product->is_active && (!$product->category || $product->category->is_active);
+        if (!$wasListed && $isNowListed) {
+            app(\App\Services\NotificationQueue::class)->enqueueProductListed($product, 'activated');
+        }
+
         OperationLog::log('更新商品', 'product', $product->id, $product->name);
 
-        return response()->json($product->load('wholesalePrices'));
+        return response()->json($product);
     }
 
     public function batchUpdateDescription(Request $request)

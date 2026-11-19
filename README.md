@@ -6,9 +6,9 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 正式 Docker 镜像支持 **Linux AMD64（Intel / AMD）与 ARM64**，同一版本标签自动选择服务器架构。两种架构分别执行原生测试、镜像构建和生产容器首次安装 / 重启验收；不支持 32 位 ARM。
 
-**当前正式版本：[v1.0.2](https://github.com/674542449/card-shop/releases/tag/v1.0.2)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
+**当前正式版本：[v1.0.3](https://github.com/674542449/card-shop/releases/tag/v1.0.3)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
 
-文档核对日期：**2026-11-18**。正式版本 `v1.0.2` 通过 AMD64 与 ARM64 原生自动化回归（**545 个 PHP 测试 / 5669 项断言、34 个后台 Node 测试、12 个前台与多架构索引测试、7 项启动脚本测试**）、依赖安全审计、多阶段镜像构建及九服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
+文档核对日期：**2026-11-20**。正式版本 `v1.0.3` 通过 AMD64 与 ARM64 原生自动化回归（**553 个 PHP 测试、35 个后台 Node 测试、12 个前台与多架构索引测试、7 项启动脚本测试**）、依赖安全审计、多阶段镜像构建及九服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
 
 ## 功能介绍
 
@@ -22,9 +22,9 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 | 支付核对 | 超时释放库存，处理迟到及重复付款、异常回执、手动或定时对账；异常收款提示买家避免重复支付 |
 | 退款与售后 | 管理员控制退款开关，申请与审核、剩余退款余额、公开处理说明、完成凭证；售后换卡及替换历史 |
 | 店铺管理 | 销售额、退款额、净销售额与趋势，订单筛选和 CSV 导出，优惠码、黑名单、操作日志、素材管理 |
-| 管理员安全 | 一个启用的管理员、密码修改、可选验证器双重验证、一次性恢复码；服务端逐接口验证 |
+| 管理员安全 | 安装自动生成 24 位随机高强度后台路径（`/admin` 返回 404）、一个启用的管理员、密码修改、可选验证器双重验证、一次性恢复码；服务端逐接口验证 |
 | 内容与外观 | 三套模板、深色模式、非遮挡内联公告栏、联系方式、文章与内嵌商品卡片、富文本和 Markdown |
-| 通知与 SEO | 邮件及 Telegram 持久队列、失败重试；页面 TDK、规范化 Canonical 分页、Google 图片 Sitemap、Schema.org JSON-LD（`Product` / `AggregateOffer` / `ItemList` / `Article` / `BreadcrumbList`）、搜索引擎爬虫反向 DNS 校验豁免、独立 `404` 防软收录页、百度推送、Bing IndexNow |
+| 通知与 SEO | 邮件及 Telegram 持久队列（含站长告警及商品售出 / 上架补货推送至机器人私聊、群组话题与频道）、失败重试；页面 TDK、规范化 Canonical 分页、Google 图片 Sitemap、Schema.org JSON-LD（`Product` / `AggregateOffer` / `ItemList` / `Article` / `BreadcrumbList`）、搜索引擎爬虫反向 DNS 校验豁免、独立 `404` 防软收录页、百度推送、Bing IndexNow |
 | 备份与维护 | 异步完整备份、任务进度与重试、每日定时、保留策略、已挂载异机目录复制、恢复校验、运行健康告警 |
 | API 对接 | Bearer Token、接口范围、有效期、IP/CIDR 白名单、请求与库存占用额度、下单幂等键 |
 
@@ -129,7 +129,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 后台构建产物随正式版提交，生产多阶段镜像预装锁定依赖并构建静态资源，宿主机无需安装 PHP、Composer 或 Node.js。正式运行使用 `docker-compose.production.yml`；密钥与数据库初始化是单独执行的一次性步骤，运行容器重启时不下载依赖或执行迁移。开发环境使用 `docker-compose.yml`。
 
-默认用户名为 **`admin`**，可在首次启动前设置 `ADMIN_USERNAME`。**没有固定默认密码**：可预设至少 12 字符的 `ADMIN_PASSWORD`，否则生成随机密码，正常情况下保存于容器内受限文件；读取与重置方式见 [首次登录](DEPLOY.md#首次登录)。
+默认用户名为 **`admin`**，可在首次启动前设置 `ADMIN_USERNAME`。**安装时自动生成 24 位随机高强度后台路径且没有固定默认密码**：留空 `ADMIN_PATH` 会自动生成并持久化高强度随机后台入口（`/admin` 直接返回 404，可用 `php artisan admin:path` 查询）；可预设至少 12 字符的 `ADMIN_PASSWORD`，否则生成随机密码并连同后台路径保存于容器内受限文件；读取与重置方式见 [首次登录](DEPLOY.md#首次登录)。
 
 ### 环境要求
 

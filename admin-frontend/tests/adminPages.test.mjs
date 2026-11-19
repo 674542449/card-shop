@@ -35,7 +35,7 @@ await build({ stdin: { contents: "export {default as OrderDetail} from './src/pa
       ? `import React from 'react'; export default function Editor({ value = '', onChange, id, placeholder }) { return React.createElement('textarea', { id, placeholder, 'data-testid': 'rich-editor', value: value ?? '', onChange: e => onChange?.(e.target.value) }); }`
       :
       `const call = name => (...args) => globalThis.reviewApi[name](...args);
-       export const getOrder=call('getOrder'), closeOrder=call('closeOrder'), markPaid=call('markPaid'), resendOrder=call('resendOrder'), getSettings=call('getSettings'), updateSettings=call('updateSettings'), sendTestEmail=call('sendTestEmail');
+       export const getOrder=call('getOrder'), closeOrder=call('closeOrder'), markPaid=call('markPaid'), resendOrder=call('resendOrder'), getSettings=call('getSettings'), updateSettings=call('updateSettings'), sendTestEmail=call('sendTestEmail'), sendTestTelegram=call('sendTestTelegram');
        export const getNotifications=call('getNotifications'), retryNotification=call('retryNotification'), getDashboard=call('getDashboard'), getProductCards=call('getProductCards'), importCards=call('importCards'), deleteCard=call('deleteCard'), batchDeleteCards=call('batchDeleteCards'), setCardStatus=call('setCardStatus');
        export const getProducts=call('getProducts'), getProduct=call('getProduct'), createProduct=call('createProduct'), updateProduct=call('updateProduct'), batchUpdateProductDescription=call('batchUpdateProductDescription'), deleteProduct=call('deleteProduct');
        export const getCategories=call('getCategories'), createCategory=call('createCategory'), updateCategory=call('updateCategory'), deleteCategory=call('deleteCategory');
@@ -53,7 +53,7 @@ const click = async label => {
   assert.ok(button, `Missing button: ${label}`);
   await act(async () => { button.click(); });
 };
-const owner = { id: 1, is_active: true, permission_definition: { capabilities: [...['overview','catalog','cards','payments','orders','refunds','content','coupons','blacklists','logs','settings','tokens','notifications','maintenance'].flatMap(area=>[`${area}:read`,`${area}:write`]), 'self','settings.test_email','backups.read','backups.write','health.acknowledge', 'orders.replace_cards', 'orders.refund', 'reconciliation.read', 'reconciliation.retry', 'orders:read', 'refunds:read', 'notifications:read', 'catalog:read'], pages: [
+const owner = { id: 1, is_active: true, permission_definition: { capabilities: [...['overview','catalog','cards','payments','orders','refunds','content','coupons','blacklists','logs','settings','tokens','notifications','maintenance'].flatMap(area=>[`${area}:read`,`${area}:write`]), 'self','settings.test_email','settings.test_telegram','backups.read','backups.write','health.acknowledge', 'orders.replace_cards', 'orders.refund', 'reconciliation.read', 'reconciliation.retry', 'orders:read', 'refunds:read', 'notifications:read', 'catalog:read'], pages: [
   {path:'/orders',capability:'orders:read',children:true}, {path:'/refunds',capability:'refunds:read'}, {path:'/tasks',any:['notifications:read','content:read','reconciliation.read']}, {path:'/products',capability:'catalog:read',children:true},
 ] } };
 async function mount(path, admin = owner) {
@@ -410,6 +410,64 @@ test('multi-selecting products applies a unified description in one batch reques
     assert.deepEqual(batchWrites, [[[11, 12], '<p>统一更新后的甲骨文账号交付与质保说明</p>']]);
     assert.ok(!text().includes('批量修改介绍（2）'));
     assert.ok(listCalls >= 2);
+  } finally {
+    await view.close();
+  }
+});
+
+test('telegram notification tab exposes bot/group/channel broadcast controls and flushes unsaved edits before test push', async () => {
+  const sequence = [];
+  globalThis.reviewApi = {
+    getSettings: async () => ({
+      data: {
+        telegram_enabled: '0',
+        telegram_bot_token: '********',
+        telegram_chat_id: '123456789',
+        telegram_notify_product_sold: '1',
+        telegram_notify_product_listed: '1',
+        telegram_target_bot_enabled: '1',
+        telegram_target_group_enabled: '1',
+        telegram_target_group_ids: '-1001234567890#12',
+        telegram_target_channel_enabled: '1',
+        telegram_target_channel_ids: '@oracle_shop_channel',
+        _available_themes: ['default'],
+      },
+    }),
+    updateSettings: async (data) => {
+      sequence.push(['save', data]);
+      return { data: { message: '设置已保存。' } };
+    },
+    sendTestTelegram: async (payload) => {
+      sequence.push(['test', payload]);
+      return { data: { message: '测试通知已全部发送成功' } };
+    },
+  };
+  const view = await mount('/settings');
+  try {
+    await selectTab('Telegram 通知');
+    const panel = activePanel();
+    for (const suffix of [
+      '_telegram_bot_token',
+      '_telegram_chat_id',
+      '_telegram_broadcast_bot_token',
+      '_telegram_target_bot_chat_ids',
+      '_telegram_target_group_ids',
+      '_telegram_target_channel_ids',
+    ]) {
+      assert.ok(panel.querySelector(`[id$="${suffix}"]`), `Missing control ${suffix}`);
+    }
+    const channelTextarea = panel.querySelector('[id$="_telegram_target_channel_ids"]');
+    assert.equal(channelTextarea.value, '@oracle_shop_channel');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(channelTextarea, '@oracle_shop_channel, -1009988776655');
+      channelTextarea.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await click('发送测试通知');
+    await settleTables();
+    assert.deepEqual(sequence, [
+      ['save', { telegram_target_channel_ids: '@oracle_shop_channel, -1009988776655' }],
+      ['test', { scope: 'auto' }],
+    ]);
   } finally {
     await view.close();
   }

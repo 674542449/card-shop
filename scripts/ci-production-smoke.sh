@@ -56,7 +56,7 @@ SESSION_DRIVER=redis
 SESSION_SECURE_COOKIE=false
 MAIL_MAILER=array
 MAIL_HOST=
-ADMIN_USERNAME=ci_fixture_owner
+ADMIN_USERNAME=ci_fixture_owne
 ADMIN_PASSWORD=$SMOKE_ADMIN_PASSWORD
 SHOP_PROBE_TOKEN=$SMOKE_PROBE_TOKEN
 SHOP_APP_IMAGE=$SHOP_APP_IMAGE
@@ -126,7 +126,11 @@ http_acceptance() {
     curl --fail --silent --show-error --max-time 20 --header "X-Shop-Probe-Token: $SMOKE_PROBE_TOKEN" \
         --output "$SMOKE_DIRECTORY/probe.json" http://127.0.0.1/health/ready
     grep -Eq '"ready"[[:space:]]*:[[:space:]]*true' "$SMOKE_DIRECTORY/probe.json"
-    curl --fail --silent --show-error --max-time 20 --output "$SMOKE_DIRECTORY/admin.html" http://127.0.0.1/admin/login
+    [ "$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 http://127.0.0.1/admin/login)" = 404 ]
+    SMOKE_ADMIN_PATH="$("${DC[@]}" exec -T app php artisan admin:path --raw | tr -d '\r\n')"
+    [[ "$SMOKE_ADMIN_PATH" =~ ^[A-Za-z][A-Za-z0-9]{23}$ ]]
+    [ "$SMOKE_ADMIN_PATH" != admin ]
+    curl --fail --silent --show-error --max-time 20 --output "$SMOKE_DIRECTORY/admin.html" "http://127.0.0.1/$SMOKE_ADMIN_PATH/login"
     SMOKE_ADMIN_ASSET="$(grep -oE '/admin-assets/assets/[^"[:space:]<>]+\.js' "$SMOKE_DIRECTORY/admin.html" | sed -n '1p')"
     [ -n "$SMOKE_ADMIN_ASSET" ]
     curl --fail --silent --show-error --max-time 20 --output "$SMOKE_DIRECTORY/admin.js" "http://127.0.0.1$SMOKE_ADMIN_ASSET"
@@ -147,6 +151,7 @@ await_readiness
 SMOKE_HEARTBEAT_SINCE="$(application_clock)"
 await_heartbeats
 http_acceptance
+SMOKE_INITIAL_ADMIN_PATH="$SMOKE_ADMIN_PATH"
 for SMOKE_SERVICE in app nginx postgres redis scheduler notifications backups seo reconciliation; do
     SMOKE_CID="$("${DC[@]}" ps -q "$SMOKE_SERVICE")"
     [ -n "$SMOKE_CID" ] && [ "$(docker inspect -f '{{.State.Running}}' "$SMOKE_CID")" = true ]
@@ -174,6 +179,7 @@ echo "Restarting all nine fixture services without initialization or migrations.
 await_readiness
 await_heartbeats
 http_acceptance
+[ "$SMOKE_INITIAL_ADMIN_PATH" = "$SMOKE_ADMIN_PATH" ]
 [ "$SMOKE_MIGRATIONS_BEFORE" = "$(sql "SELECT count(*)::text || ':' || md5(string_agg(migration || ':' || batch::text, ',' ORDER BY migration)) FROM migrations")" ]
 [ "$SMOKE_DEPENDENCIES_BEFORE" = "$(dependency_snapshot)" ]
 [ "$(sql 'SELECT count(*) FROM admins')" = 1 ]

@@ -57,6 +57,9 @@ class DatabaseSeeder extends Seeder
             'password' => Hash::make($password),
         ]);
 
+        $adminSegment = admin_path();
+        $envPathConfigured = \App\Support\AdminPath::normalize((string) env('ADMIN_PATH', '')) !== null;
+
         if ($generated) {
             // 密码写进受限文件，不写进 stdout。
             //
@@ -76,8 +79,8 @@ class DatabaseSeeder extends Seeder
                 @mkdir(dirname($path), 0775, true);
                 $written = file_put_contents(
                     $path,
-                    "username: {$username}\npassword: {$password}\n"
-                    . "读取后请立即登录修改密码，并删除本文件。\n"
+                    "username: {$username}\npassword: {$password}\nadmin_path: /{$adminSegment}\n"
+                    . "读取后请妥善记录后台路径并立即登录修改密码，随后删除本文件。\n"
                 ) !== false;
 
                 if ($written) {
@@ -97,15 +100,17 @@ class DatabaseSeeder extends Seeder
             ];
 
             if ($written) {
-                $lines[] = '  密码已写入容器内文件（不打印到日志）：';
+                $lines[] = '  初始密码与随机高强度后台路径已写入容器内文件（不打印到日志）：';
                 $lines[] = '    storage/app/initial-admin-password.txt';
                 $lines[] = '  读取：docker compose exec app cat storage/app/initial-admin-password.txt';
-                $lines[] = '  登录后请立即修改密码，并删除该文件。';
+                $lines[] = '  也可随时查询后台入口：docker compose exec app php artisan admin:path';
+                $lines[] = '  登录后请立即修改密码，并删除初始密码文件。';
             } else {
                 // 写不进去就只能打印，否则运维拿不到密码、站点等于锁死。
                 // 这种情况下明确告诉运维这条记录留在日志里了，需要自己清理。
                 $lines[] = "  密码 password: {$password}";
-                $lines[] = '  警告：密码文件写入失败，密码已打印到容器日志。';
+                $lines[] = "  后台路径 admin_path: /{$adminSegment}";
+                $lines[] = '  警告：密码文件写入失败，凭据已打印到容器日志。';
                 $lines[] = '  请登录修改密码后清理日志（docker compose logs 仍可读到它）。';
             }
 
@@ -113,6 +118,16 @@ class DatabaseSeeder extends Seeder
             $lines[] = '';
 
             $this->command?->getOutput()->writeln($lines);
+        } elseif (!$envPathConfigured) {
+            $banner = str_repeat('=', 64);
+            $this->command?->getOutput()->writeln([
+                '',
+                $banner,
+                '  管理员账号已创建，随机高强度后台路径已生成并持久化。',
+                '  查询后台登录地址：php artisan admin:path',
+                $banner,
+                '',
+            ]);
         }
     }
 
@@ -183,6 +198,15 @@ TEMPLATE,
                 'telegram_bot_token' => '',
                 'telegram_chat_id' => '',
                 'telegram_enabled' => '0',
+                'telegram_broadcast_bot_token' => '',
+                'telegram_notify_product_sold' => '0',
+                'telegram_notify_product_listed' => '0',
+                'telegram_target_bot_enabled' => '0',
+                'telegram_target_bot_chat_ids' => '',
+                'telegram_target_group_enabled' => '0',
+                'telegram_target_group_ids' => '',
+                'telegram_target_channel_enabled' => '0',
+                'telegram_target_channel_ids' => '',
             ],
 
             // SEO settings

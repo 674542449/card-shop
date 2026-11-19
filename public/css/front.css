@@ -1218,31 +1218,73 @@ html[data-ui-theme="dark"] .ws-icon-sun { display: block; }
     grid-column: 1 / -1;
 }
 
-/* List View Morphing (Desktop Horizontal Marketplace Row) */
+/* List View Morphing (Desktop & Container-Aware Compact Horizontal Row) */
+.ws-catalog-stage[data-view-mode="list"] {
+    gap: 9px;
+}
 .ws-catalog-stage[data-view-mode="list"] .fb-listing-card {
     flex-direction: row;
     align-items: center;
-    padding: 12px 16px;
+    padding: 9px 16px;
     gap: 16px;
 }
 .ws-catalog-stage[data-view-mode="list"] .fb-listing-media {
-    width: 104px;
-    height: 72px;
-    aspect-ratio: auto;
+    width: clamp(124px, 13.6cqi, 136px);
+    height: auto;
+    aspect-ratio: 16 / 10;
     border-radius: 8px;
     border: 1px solid var(--ws-border-subtle);
     flex-shrink: 0;
 }
-.ws-catalog-stage[data-view-mode="list"] .fb-stock-badge,
+.ws-catalog-stage[data-view-mode="list"] .fb-stock-badge {
+    left: 6px;
+    top: 6px;
+    padding: 1.5px 6px;
+    font-size: 10.5px;
+}
 .ws-catalog-stage[data-view-mode="list"] .fb-tier-badge {
     display: none;
 }
 .ws-catalog-stage[data-view-mode="list"] .fb-listing-body {
     padding: 0;
     min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, max-content) minmax(0, 1fr);
+    align-items: center;
+    gap: 3px 8px;
 }
-.ws-catalog-stage[data-view-mode="list"] .ws-item-title,
+.ws-catalog-stage[data-view-mode="list"] .fb-listing-price-row {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+    gap: 8px;
+}
+.ws-catalog-stage[data-view-mode="list"] .ws-price-val {
+    font-size: 18px;
+    line-height: 1.15;
+}
+.ws-catalog-stage[data-view-mode="list"] .ws-item-heading {
+    min-width: 0;
+}
+.ws-catalog-stage[data-view-mode="list"] .ws-item-title {
+    font-size: 15px;
+    line-height: 1.3;
+    -webkit-line-clamp: 1;
+}
+.ws-catalog-stage[data-view-mode="list"] .fb-listing-meta {
+    justify-self: start;
+    width: fit-content;
+    font-size: 11.5px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: var(--ws-surface-2);
+    color: var(--ws-muted);
+    white-space: nowrap;
+}
 .ws-catalog-stage[data-view-mode="list"] .ws-item-desc {
+    grid-column: 1 / -1;
+    margin: 0;
+    max-width: 68ch;
+    line-height: 1.35;
     -webkit-line-clamp: 1;
 }
 .ws-catalog-stage[data-view-mode="list"] .fb-listing-foot {
@@ -1257,7 +1299,35 @@ html[data-ui-theme="dark"] .ws-icon-sun { display: block; }
 }
 .ws-catalog-stage[data-view-mode="list"] .fb-card-btn {
     width: auto;
-    min-width: 92px;
+    min-width: 94px;
+    height: 36px;
+    padding: 0 12px;
+}
+
+@container catalog (max-width: 720px) {
+    .ws-catalog-stage[data-view-mode="list"] .fb-listing-card {
+        display: grid;
+        grid-template-columns: 128px minmax(0, 1fr);
+        padding: 10px 12px;
+        gap: 10px 12px;
+    }
+    .ws-catalog-stage[data-view-mode="list"] .fb-listing-media {
+        width: 128px;
+        aspect-ratio: 16 / 10;
+    }
+    .ws-catalog-stage[data-view-mode="list"] .fb-listing-foot {
+        grid-column: 1 / -1;
+        width: 100%;
+    }
+    .ws-catalog-stage[data-view-mode="list"] .fb-listing-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+    }
+    .ws-catalog-stage[data-view-mode="list"] .fb-card-btn {
+        width: 100%;
+        min-width: 0;
+    }
 }
 
 /* Empty State */
@@ -3450,23 +3520,40 @@ body.ws-drawer-lock .ws-mobile-buybar {
         border-radius: 8px;
     }
 
-    /* Mobile List Mode — Compact Thumbnail + Title + Full-Width 44px Action Buttons */
+    /* Mobile List Mode — Compact 16:10 Thumbnail + 3-Line Body + Full-Width 44px Buttons */
     .ws-catalog-stage[data-view-mode="list"] .fb-listing-card {
         display: grid;
-        grid-template-columns: 88px minmax(0, 1fr);
+        grid-template-columns: 112px minmax(0, 1fr);
         align-items: center;
         padding: 10px 12px;
-        gap: 10px;
+        gap: 8px 12px;
     }
     .ws-catalog-stage[data-view-mode="list"] .fb-listing-media {
         display: block;
-        width: 88px;
-        height: 55px;
+        width: 112px;
+        height: auto;
         aspect-ratio: 16 / 10;
+        border-radius: 8px;
+    }
+    .ws-catalog-stage[data-view-mode="list"] .fb-stock-badge {
+        left: 5px;
+        top: 5px;
+        padding: 1.5px 6px;
+        font-size: 10.5px;
     }
     .ws-catalog-stage[data-view-mode="list"] .fb-listing-body {
         padding: 0;
         min-width: 0;
+        gap: 3px;
+    }
+    .ws-catalog-stage[data-view-mode="list"] .ws-price-val {
+        font-size: 18px;
+    }
+    .ws-catalog-stage[data-view-mode="list"] .ws-item-title {
+        font-size: 14.5px;
+    }
+    .ws-catalog-stage[data-view-mode="list"] .ws-item-desc {
+        -webkit-line-clamp: 1;
     }
     .ws-catalog-stage[data-view-mode="list"] .fb-listing-foot {
         grid-column: 1 / -1;
@@ -3483,6 +3570,7 @@ body.ws-drawer-lock .ws-mobile-buybar {
         width: 100%;
         min-width: 0;
         min-height: 44px;
+        height: auto;
     }
 
     /* Facebook Mobile Native Bottom Sheet for Quick-Buy Modal */
