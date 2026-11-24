@@ -356,6 +356,9 @@ export const sendTestEmail = (email) =>
 export const sendTestTelegram = (data = {}) =>
   api.post('/settings/test-telegram', data);
 
+export const testBackupStorage = (data) =>
+  api.post('/settings/test-backup-storage', data);
+
 // API access tokens. Only createApiToken returns a one-time plaintext secret.
 export const getApiTokens = (params) => api.get('/api-tokens', { params });
 export const createApiToken = (data) => api.post('/api-tokens', data);

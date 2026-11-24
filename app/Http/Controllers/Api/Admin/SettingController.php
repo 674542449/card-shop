@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Setting;
 use App\Models\OperationLog;
+use App\Services\CloudBackupStorageService;
 use App\Services\NotificationService;
 use App\Support\SafeUrl;
 use Illuminate\Http\Request;
@@ -77,7 +78,11 @@ class SettingController extends Controller
             ],
             'after_sales' => ['refund_enabled'],
             'backup' => ['backup_auto_enabled', 'backup_schedule_time', 'backup_retention_count', 'backup_retention_days',
-                'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb'],
+                'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb',
+                'backup_s3_enabled', 'backup_s3_endpoint', 'backup_s3_region', 'backup_s3_bucket', 'backup_s3_prefix', 'backup_s3_access_key', 'backup_s3_secret_key', 'backup_s3_path_style',
+                'backup_r2_enabled', 'backup_r2_endpoint', 'backup_r2_region', 'backup_r2_bucket', 'backup_r2_prefix', 'backup_r2_access_key', 'backup_r2_secret_key',
+                'backup_oss_enabled', 'backup_oss_endpoint', 'backup_oss_region', 'backup_oss_bucket', 'backup_oss_prefix', 'backup_oss_access_key', 'backup_oss_secret_key',
+                'backup_cos_enabled', 'backup_cos_endpoint', 'backup_cos_region', 'backup_cos_bucket', 'backup_cos_prefix', 'backup_cos_access_key', 'backup_cos_secret_key'],
         ];
 
         $rules = [];
@@ -124,6 +129,46 @@ class SettingController extends Controller
         $rules['backup_sync_directory'] = ['nullable', 'string', 'max:500'];
         $rules['backup_stale_hours'] = ['nullable', 'integer', 'min:1', 'max:8760'];
         $rules['backup_min_free_mb'] = ['nullable', 'integer', 'min:0', 'max:1048576'];
+        $rules['backup_s3_path_style'] = ['nullable', 'boolean'];
+        foreach (CloudBackupStorageService::providerKeys() as $provider) {
+            $label = CloudBackupStorageService::label($provider);
+            $rules["backup_{$provider}_enabled"] = ['nullable', 'boolean'];
+            $rules["backup_{$provider}_endpoint"] = ['nullable', 'string', 'max:2048', function (string $attribute, mixed $value, \Closure $fail) use ($label) {
+                $trimmed = trim((string) $value);
+                if ($trimmed === '') {
+                    return;
+                }
+                if (SafeUrl::outboundGateway($trimmed) === null) {
+                    $fail("{$label} Endpoint 必须是有效的公网 HTTPS/HTTP 地址，不允许包含凭据或内网/云元数据地址。");
+                    return;
+                }
+                $scheme = strtolower((string) parse_url($trimmed, PHP_URL_SCHEME));
+                $host = strtolower(trim((string) parse_url($trimmed, PHP_URL_HOST), '[]'));
+                $isLoopback = in_array($host, ['127.0.0.1', 'localhost', '::1'], true);
+                if ($scheme !== 'https' && ! (app()->environment(['local', 'testing']) && $isLoopback)) {
+                    $fail("{$label} Endpoint 必须使用 HTTPS 协议。");
+                }
+            }];
+            $rules["backup_{$provider}_region"] = ['nullable', 'string', 'max:64', 'regex:/^[A-Za-z0-9._-]{1,64}$/D'];
+            $rules["backup_{$provider}_bucket"] = ['nullable', 'string', 'max:128', function (string $attribute, mixed $value, \Closure $fail) use ($label) {
+                $trimmed = trim((string) $value);
+                if ($trimmed === '') {
+                    return;
+                }
+                if (! preg_match('/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/D', $trimmed) || str_contains($trimmed, '..')) {
+                    $fail("{$label} 存储桶名称无效，仅允许小写字母、数字、连字符和点号（3–63 位）。");
+                }
+            }];
+            $rules["backup_{$provider}_prefix"] = ['nullable', 'string', 'max:200', function (string $attribute, mixed $value, \Closure $fail) use ($label) {
+                try {
+                    CloudBackupStorageService::normalizePrefix((string) $value);
+                } catch (\RuntimeException) {
+                    $fail("{$label} 目录前缀包含不允许的字符或相对路径。");
+                }
+            }];
+            $rules["backup_{$provider}_access_key"] = ['nullable', 'string', 'max:256'];
+            $rules["backup_{$provider}_secret_key"] = ['nullable', 'string', 'max:512'];
+        }
         $rules['mail_encryption'] = ['nullable', 'in:ssl,tls,none'];
         $rules['usdt_gateway'] = ['nullable', 'in:epusdt,bepusdt'];
         $rules['site_theme'] = ['nullable', \Illuminate\Validation\Rule::in(themes_available())];
@@ -188,6 +233,44 @@ class SettingController extends Controller
             }
         }];
         $request->validate($rules);
+
+        // When any cloud backup provider is enabled, verify its merged configuration
+        // is complete and safe before persisting.
+        $cloudStorage = app(CloudBackupStorageService::class);
+        foreach (CloudBackupStorageService::providerKeys() as $provider) {
+            $incomingEnabled = $request->has("backup_{$provider}_enabled")
+                ? filter_var($request->input("backup_{$provider}_enabled"), FILTER_VALIDATE_BOOLEAN)
+                : in_array((string) setting("backup_{$provider}_enabled", '0'), ['1', 'true'], true);
+            if (! $incomingEnabled) {
+                continue;
+            }
+            $touchesProvider = $request->has("backup_{$provider}_enabled")
+                || $request->has("backup_{$provider}_endpoint")
+                || $request->has("backup_{$provider}_region")
+                || $request->has("backup_{$provider}_bucket")
+                || $request->has("backup_{$provider}_prefix")
+                || $request->has("backup_{$provider}_access_key")
+                || $request->has("backup_{$provider}_secret_key")
+                || ($provider === 's3' && $request->has('backup_s3_path_style'));
+            if (! $touchesProvider) {
+                continue;
+            }
+            $override = [];
+            foreach (['endpoint', 'region', 'bucket', 'prefix', 'access_key', 'secret_key', 'path_style'] as $field) {
+                $param = "backup_{$provider}_{$field}";
+                if ($request->has($param)) {
+                    $override[$field] = $request->input($param);
+                }
+            }
+            try {
+                $cfg = $cloudStorage->config($provider, $override);
+                $cloudStorage->resolveTarget($provider, $cfg);
+            } catch (\RuntimeException $e) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    "backup_{$provider}_enabled" => [$e->getMessage()],
+                ]);
+            }
+        }
 
         DB::transaction(function () use ($settingGroups, $request) {
             foreach ($settingGroups as $group => $keys) {
@@ -279,6 +362,33 @@ class SettingController extends Controller
             scope: (string) ($data['scope'] ?? 'auto'),
             customTarget: isset($data['target']) ? (string) $data['target'] : null,
         );
+
+        return response()->json(['message' => $result['message']], $result['ok'] ? 200 : 422);
+    }
+
+    public function testBackupStorage(Request $request, CloudBackupStorageService $storage)
+    {
+        $data = $request->validate([
+            'provider' => ['required', 'in:s3,r2,oss,cos'],
+            'endpoint' => ['nullable', 'string', 'max:2048'],
+            'region' => ['nullable', 'string', 'max:64'],
+            'bucket' => ['nullable', 'string', 'max:128'],
+            'prefix' => ['nullable', 'string', 'max:200'],
+            'access_key' => ['nullable', 'string', 'max:256'],
+            'secret_key' => ['nullable', 'string', 'max:512'],
+            'path_style' => ['nullable', 'boolean'],
+        ]);
+
+        $provider = (string) $data['provider'];
+        $override = [];
+        foreach (['endpoint', 'region', 'bucket', 'prefix', 'access_key', 'secret_key', 'path_style'] as $field) {
+            if ($request->has($field)) {
+                $override[$field] = $data[$field] ?? null;
+            }
+        }
+
+        $result = $storage->testConnection($provider, $override === [] ? null : $override);
+        OperationLog::log('测试云端备份连接', 'setting', null, CloudBackupStorageService::label($provider).'：'.($result['ok'] ? '成功' : '失败'));
 
         return response()->json(['message' => $result['message']], $result['ok'] ? 200 : 422);
     }

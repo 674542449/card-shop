@@ -361,7 +361,7 @@ export default function Operations() {
               message={[
                 backupHealth.stale_warning && '全量备份已超过告警时限',
                 backupHealth.space_warning && '备份目录剩余磁盘空间不足或不可读',
-                backupHealth.failed > 0 && '存在未确认的备份或异机同步失败记录',
+                backupHealth.failed > 0 && '存在未确认的备份或远端同步失败记录',
                 !backupHealth.worker_healthy && '备份进程未上报近期心跳',
                 backupHealth.backlog_warning && '备份任务排队等待超过 15 分钟',
               ]
@@ -433,7 +433,7 @@ export default function Operations() {
                 ),
               },
               {
-                title: '异机目录同步',
+                title: '远端备份同步',
                 dataIndex: 'sync_status',
                 search: false,
                 width: 120,

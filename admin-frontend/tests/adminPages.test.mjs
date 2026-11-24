@@ -35,7 +35,7 @@ await build({ stdin: { contents: "export {default as OrderDetail} from './src/pa
       ? `import React from 'react'; export default function Editor({ value = '', onChange, id, placeholder }) { return React.createElement('textarea', { id, placeholder, 'data-testid': 'rich-editor', value: value ?? '', onChange: e => onChange?.(e.target.value) }); }`
       :
       `const call = name => (...args) => globalThis.reviewApi[name](...args);
-       export const getOrder=call('getOrder'), closeOrder=call('closeOrder'), markPaid=call('markPaid'), resendOrder=call('resendOrder'), getSettings=call('getSettings'), updateSettings=call('updateSettings'), sendTestEmail=call('sendTestEmail'), sendTestTelegram=call('sendTestTelegram');
+       export const getOrder=call('getOrder'), closeOrder=call('closeOrder'), markPaid=call('markPaid'), resendOrder=call('resendOrder'), getSettings=call('getSettings'), updateSettings=call('updateSettings'), sendTestEmail=call('sendTestEmail'), sendTestTelegram=call('sendTestTelegram'), testBackupStorage=call('testBackupStorage');
        export const getNotifications=call('getNotifications'), retryNotification=call('retryNotification'), getDashboard=call('getDashboard'), getProductCards=call('getProductCards'), importCards=call('importCards'), deleteCard=call('deleteCard'), batchDeleteCards=call('batchDeleteCards'), setCardStatus=call('setCardStatus');
        export const getProducts=call('getProducts'), getProduct=call('getProduct'), createProduct=call('createProduct'), updateProduct=call('updateProduct'), batchUpdateProductDescription=call('batchUpdateProductDescription'), deleteProduct=call('deleteProduct');
        export const getCategories=call('getCategories'), createCategory=call('createCategory'), updateCategory=call('updateCategory'), deleteCategory=call('deleteCategory');
@@ -53,7 +53,7 @@ const click = async label => {
   assert.ok(button, `Missing button: ${label}`);
   await act(async () => { button.click(); });
 };
-const owner = { id: 1, is_active: true, permission_definition: { capabilities: [...['overview','catalog','cards','payments','orders','refunds','content','coupons','blacklists','logs','settings','tokens','notifications','maintenance'].flatMap(area=>[`${area}:read`,`${area}:write`]), 'self','settings.test_email','settings.test_telegram','backups.read','backups.write','health.acknowledge', 'orders.replace_cards', 'orders.refund', 'reconciliation.read', 'reconciliation.retry', 'orders:read', 'refunds:read', 'notifications:read', 'catalog:read'], pages: [
+const owner = { id: 1, is_active: true, permission_definition: { capabilities: [...['overview','catalog','cards','payments','orders','refunds','content','coupons','blacklists','logs','settings','tokens','notifications','maintenance'].flatMap(area=>[`${area}:read`,`${area}:write`]), 'self','settings.test_email','settings.test_telegram','settings.test_backup_storage','backups.read','backups.write','health.acknowledge', 'orders.replace_cards', 'orders.refund', 'reconciliation.read', 'reconciliation.retry', 'orders:read', 'refunds:read', 'notifications:read', 'catalog:read'], pages: [
   {path:'/orders',capability:'orders:read',children:true}, {path:'/refunds',capability:'refunds:read'}, {path:'/tasks',any:['notifications:read','content:read','reconciliation.read']}, {path:'/products',capability:'catalog:read',children:true},
 ] } };
 async function mount(path, admin = owner) {
@@ -615,6 +615,95 @@ test('security tab deep link and one-click honeypot IP/CIDR whitelist buttons re
     await click('保存设置');
     await settleTables();
     assert.deepEqual(writes, [{ honeypot_whitelist: '198.51.100.10\n2001:db8:abcd::55\n2001:db8:abcd::/64' }]);
+  } finally {
+    await view.close();
+  }
+});
+
+test('backup tab supports single and simultaneous multi-provider cloud storage selection, live connection tests, and explicit save', async () => {
+  const typeInto = async (input, value) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, value);
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+  };
+  const writes = [];
+  const tested = [];
+  globalThis.reviewApi = {
+    getSettings: async () => ({
+      data: {
+        backup_auto_enabled: '1',
+        backup_r2_enabled: '0',
+        backup_s3_enabled: '0',
+        backup_oss_enabled: '0',
+        backup_cos_enabled: '0',
+        _available_themes: ['default'],
+      },
+    }),
+    updateSettings: async (data) => {
+      writes.push(data);
+      return { data: { message: '设置已保存。' } };
+    },
+    testBackupStorage: async (data) => {
+      tested.push(data);
+      return { data: { message: `${data.provider} 连接测试通过` } };
+    },
+  };
+  const view = await mount('/settings?tab=backup');
+  try {
+    const panel = activePanel();
+    const checkboxFor = (val) => panel.querySelector(`input[type="checkbox"][value="${val}"]`);
+    for (const key of ['r2', 's3', 'oss', 'cos']) {
+      assert.ok(checkboxFor(key), `Missing cloud backup checkbox ${key}`);
+    }
+
+    // Select Cloudflare R2 and Aliyun OSS simultaneously.
+    await act(async () => { checkboxFor('r2').click(); });
+    await act(async () => { checkboxFor('oss').click(); });
+    assert.ok(panel.textContent.includes('已选 2 个目标'));
+    assert.equal(panel.querySelectorAll('input[type="password"]').length, 0, 'Cloud backup secrets must not render native password inputs');
+
+    const r2Bucket = panel.querySelector('[id$="_backup_r2_bucket"]');
+    const r2Endpoint = panel.querySelector('[id$="_backup_r2_endpoint"]');
+    const r2Ak = panel.querySelector('[id$="_backup_r2_access_key"]');
+    const r2Sk = panel.querySelector('[id$="_backup_r2_secret_key"]');
+    assert.ok(r2Bucket && r2Endpoint && r2Ak && r2Sk);
+    assert.equal(r2Sk.getAttribute('autocomplete'), 'off');
+    assert.ok(r2Sk.closest('.ant-input-affix-wrapper')?.classList.contains('admin-secret-masked'));
+
+    const ossBucket = panel.querySelector('[id$="_backup_oss_bucket"]');
+    const ossRegion = panel.querySelector('[id$="_backup_oss_region"]');
+    assert.ok(ossBucket && ossRegion);
+
+    // Fill R2 values and click its test button BEFORE saving (zero auto-save!).
+    await typeInto(r2Bucket, 'shop-r2');
+    await typeInto(r2Endpoint, 'https://acct.r2.cloudflarestorage.com');
+    await typeInto(r2Ak, 'r2-ak');
+    await typeInto(r2Sk, 'r2-sk');
+    assert.deepEqual(writes, []);
+
+    const testButtons = [...panel.querySelectorAll('button')].filter((b) => b.textContent.replace(/\s+/g, '') === '测试连接');
+    assert.equal(testButtons.length, 2);
+    await act(async () => { testButtons[0].click(); });
+    await settleTables();
+    assert.equal(tested.length, 1);
+    assert.equal(tested[0].provider, 'r2');
+    assert.equal(tested[0].bucket, 'shop-r2');
+    assert.equal(tested[0].endpoint, 'https://acct.r2.cloudflarestorage.com');
+    assert.equal(tested[0].secret_key, 'r2-sk');
+    assert.deepEqual(writes, []);
+
+    // Explicit save sends both selected cloud providers and their fields.
+    await typeInto(ossBucket, 'shop-oss');
+    await typeInto(ossRegion, 'cn-hangzhou');
+    await click('保存设置');
+    await settleTables();
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].backup_r2_enabled, true);
+    assert.equal(writes[0].backup_oss_enabled, true);
+    assert.equal(writes[0].backup_r2_bucket, 'shop-r2');
+    assert.equal(writes[0].backup_oss_bucket, 'shop-oss');
+    assert.equal(writes[0].backup_oss_region, 'cn-hangzhou');
   } finally {
     await view.close();
   }

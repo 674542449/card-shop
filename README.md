@@ -6,9 +6,9 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 正式 Docker 镜像支持 **Linux AMD64（Intel / AMD）与 ARM64**，同一版本标签自动选择服务器架构。两种架构分别执行原生测试、镜像构建和生产容器首次安装 / 重启验收；不支持 32 位 ARM。
 
-**当前正式版本：[v1.0.7](https://github.com/674542449/card-shop/releases/tag/v1.0.7)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
+**当前正式版本：[v1.0.8](https://github.com/674542449/card-shop/releases/tag/v1.0.8)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
 
-文档核对日期：**2026-11-24**。正式版本 `v1.0.7` 通过 AMD64 与 ARM64 原生自动化回归（**565 个 PHP 测试、38 个后台 Node 测试、14 个前台与多架构索引测试、10 项启动与进程守护脚本测试**）、依赖安全审计、多阶段镜像构建及五服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
+文档核对日期：**2026-11-25**。正式版本 `v1.0.8` 通过 AMD64 与 ARM64 原生自动化回归（**569 个 PHP 测试、39 个后台 Node 测试、14 个前台与多架构索引测试、10 项启动与进程守护脚本测试**）、依赖安全审计、多阶段镜像构建及五服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
 
 ## 功能介绍
 
@@ -25,7 +25,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 | 管理员安全 | 安装自动生成 24 位随机高强度后台路径（`/admin` 返回 404）、一个启用的管理员、密码修改、可选验证器双重验证、一次性恢复码；服务端逐接口验证 |
 | 内容与外观 | 三套模板、深色模式、非遮挡内联公告栏、联系方式、文章与内嵌商品卡片、富文本和 Markdown |
 | 通知与 SEO | 邮件及 Telegram 持久队列（含站长告警及商品售出 / 上架补货推送至机器人私聊、群组话题与频道）、失败重试；页面 TDK、规范化 Canonical 分页、Google 图片 Sitemap、Schema.org JSON-LD（`Product` / `AggregateOffer` / `ItemList` / `Article` / `BreadcrumbList`）、搜索引擎爬虫反向 DNS 校验豁免、独立 `404` 防软收录页、百度推送、Bing IndexNow |
-| 备份与维护 | 异步完整备份、任务进度与重试、每日定时、保留策略、已挂载异机目录复制、恢复校验、运行健康告警 |
+| 备份与维护 | 异步完整备份、任务进度与重试、每日定时、保留策略、多目标云端对象存储直传（AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS，支持单选或多选同时备份）、已挂载异机目录复制、恢复校验、运行健康告警 |
 | API 对接 | Bearer Token、接口范围、有效期、IP/CIDR 白名单、请求与库存占用额度、下单幂等键 |
 
 ### 下单与交付

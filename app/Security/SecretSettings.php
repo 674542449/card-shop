@@ -5,7 +5,8 @@ namespace App\Security;
 final class SecretSettings
 {
     public const KEYS = ['epay_merchant_key', 'epusdt_api_token', 'turnstile_secret_key',
-        'telegram_bot_token', 'telegram_broadcast_bot_token', 'mail_password', 'baidu_push_token'];
+        'telegram_bot_token', 'telegram_broadcast_bot_token', 'mail_password', 'baidu_push_token',
+        'backup_s3_secret_key', 'backup_r2_secret_key', 'backup_oss_secret_key', 'backup_cos_secret_key'];
 
     public static function contains(string $key): bool
     {

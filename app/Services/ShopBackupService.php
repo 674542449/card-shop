@@ -265,7 +265,7 @@ class ShopBackupService
             if ($relative === 'manifest.json') {
                 continue;
             }
-            if (! isset($manifest['files'][$relative]) || ! in_array($relative, ['database.dump', 'config.env'], true) && ! str_starts_with($relative, 'uploads/') && ! str_starts_with($relative, 'private/asset-quarantine/') && ! str_starts_with($relative, 'private/record-archives/')) {
+            if (! isset($manifest['files'][$relative]) || ! in_array($relative, ['database.dump', 'config.env', 'private/admin-path'], true) && ! str_starts_with($relative, 'uploads/') && ! str_starts_with($relative, 'private/asset-quarantine/') && ! str_starts_with($relative, 'private/record-archives/')) {
                 throw new RuntimeException('备份含有未登记的文件。');
             }
             $meta = $manifest['files'][$relative];

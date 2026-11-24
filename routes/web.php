@@ -214,6 +214,8 @@ Route::prefix('api/' . admin_path())->group(function () {
             ->middleware('throttle:10,1,admin-test-email')->defaults('_admin_capability', 'settings.test_email');
         Route::post('/settings/test-telegram', [ApiAdmin\SettingController::class, 'testTelegram'])
             ->middleware('throttle:10,1,admin-test-telegram')->defaults('_admin_capability', 'settings.test_telegram');
+        Route::post('/settings/test-backup-storage', [ApiAdmin\SettingController::class, 'testBackupStorage'])
+            ->middleware('throttle:15,1,admin-test-backup-storage')->defaults('_admin_capability', 'settings.test_backup_storage');
     });
 });
 

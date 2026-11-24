@@ -23,7 +23,11 @@ class SettingsResource extends JsonResource
         'blacklist_enabled', 'cross_site_guard_enabled', 'form_honeypot_enabled',
         'checkout_require_key', 'order_limit_enabled', 'order_max_pending_per_ip', 'order_max_pending_per_email', 'order_max_locked_percent',
         'honeypot_enabled', 'honeypot_ban_minutes', 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
-        'refund_enabled', 'backup_auto_enabled', 'backup_schedule_time', 'backup_retention_count', 'backup_retention_days', 'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb'];
+        'refund_enabled', 'backup_auto_enabled', 'backup_schedule_time', 'backup_retention_count', 'backup_retention_days', 'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb',
+        'backup_s3_enabled', 'backup_s3_endpoint', 'backup_s3_region', 'backup_s3_bucket', 'backup_s3_prefix', 'backup_s3_access_key', 'backup_s3_secret_key', 'backup_s3_path_style',
+        'backup_r2_enabled', 'backup_r2_endpoint', 'backup_r2_region', 'backup_r2_bucket', 'backup_r2_prefix', 'backup_r2_access_key', 'backup_r2_secret_key',
+        'backup_oss_enabled', 'backup_oss_endpoint', 'backup_oss_region', 'backup_oss_bucket', 'backup_oss_prefix', 'backup_oss_access_key', 'backup_oss_secret_key',
+        'backup_cos_enabled', 'backup_cos_endpoint', 'backup_cos_region', 'backup_cos_bucket', 'backup_cos_prefix', 'backup_cos_access_key', 'backup_cos_secret_key'];
 
     public function toArray(Request $request): array
     {

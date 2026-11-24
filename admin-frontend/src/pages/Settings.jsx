@@ -9,7 +9,7 @@ import {
   ProFormSelect,
   ProFormSwitch,
 } from '@ant-design/pro-components';
-import { Card, Tabs, Spin, message, Alert, Button, Input, Select, Space, Tag, Typography, Result } from 'antd';
+import { Card, Tabs, Spin, message, Alert, Button, Checkbox, Input, Select, Space, Tag, Typography, Result } from 'antd';
 import {
   SaveOutlined,
   SendOutlined,
@@ -18,8 +18,9 @@ import {
   ExclamationCircleFilled,
   EyeOutlined,
   EyeInvisibleOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons';
-import { getSettings, updateSettings, sendTestEmail, sendTestTelegram } from '../services/api';
+import { getSettings, updateSettings, sendTestEmail, sendTestTelegram, testBackupStorage } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
 import { onAdminSessionChange } from '../services/sessionLifecycle';
@@ -85,6 +86,70 @@ function SecretField({ name, label, extra, disabled, placeholder }) {
   );
 }
 
+const CLOUD_BACKUP_PROVIDERS = [
+  {
+    key: 'r2',
+    label: 'Cloudflare R2',
+    badge: '推荐 · 免费 10 GB / 零出口费',
+    endpointRequired: true,
+    endpointPlaceholder: 'https://<AccountID>.r2.cloudflarestorage.com',
+    endpointExtra: '在 Cloudflare R2 概览页复制 S3 API Endpoint（支持全球与 EU 管辖区）。',
+    regionPlaceholder: 'auto',
+    regionExtra: '默认填写 auto 即可。',
+    bucketPlaceholder: 'cardshop-backups',
+    bucketExtra: '仅允许小写字母、数字、连字符和点号（3–63 位）。',
+    accessKeyLabel: 'Access Key ID',
+    secretKeyLabel: 'Secret Access Key',
+    prefixPlaceholder: 'cardshop/backups',
+  },
+  {
+    key: 's3',
+    label: 'AWS S3',
+    badge: '兼容标准 S3 / B2 / MinIO',
+    endpointRequired: false,
+    endpointPlaceholder: '留空默认 https://s3.<region>.amazonaws.com（可填自定义 S3 Endpoint）',
+    endpointExtra: '使用 AWS 官方 S3 时可留空；连接 Backblaze B2、MinIO 等兼容服务时填写自定义 HTTPS Endpoint。',
+    regionPlaceholder: 'us-east-1',
+    regionExtra: '必填，例如 us-east-1、ap-southeast-1、ap-northeast-1。',
+    bucketPlaceholder: 'my-cardshop-backups',
+    bucketExtra: '仅允许小写字母、数字、连字符和点号（3–63 位）。',
+    accessKeyLabel: 'Access Key ID',
+    secretKeyLabel: 'Secret Access Key',
+    prefixPlaceholder: 'cardshop/backups',
+    supportsPathStyle: true,
+  },
+  {
+    key: 'oss',
+    label: '阿里云 OSS',
+    badge: '原生 OSS4-HMAC-SHA256',
+    endpointRequired: false,
+    endpointPlaceholder: '留空默认 https://oss-<region>.aliyuncs.com',
+    endpointExtra: '默认按区域自动拼接公网 HTTPS Endpoint，也可按需填写阿里云内网/加速 Endpoint。',
+    regionPlaceholder: 'cn-hangzhou',
+    regionExtra: '填写地域 ID（如 cn-hangzhou、cn-hongkong，带 oss- 前缀也会自动规范化）。',
+    bucketPlaceholder: 'my-cardshop-oss',
+    bucketExtra: 'OSS 强制使用虚拟主机样式访问，存储桶名称不含大写或下划线。',
+    accessKeyLabel: 'AccessKey ID',
+    secretKeyLabel: 'AccessKey Secret',
+    prefixPlaceholder: 'cardshop/backups',
+  },
+  {
+    key: 'cos',
+    label: '腾讯云 COS',
+    badge: 'S3 兼容虚拟主机',
+    endpointRequired: false,
+    endpointPlaceholder: '留空默认 https://cos.<region>.myqcloud.com',
+    endpointExtra: '默认按区域自动拼接虚拟主机地址 <Bucket>.cos.<region>.myqcloud.com。',
+    regionPlaceholder: 'ap-guangzhou',
+    regionExtra: '填写地域标识（如 ap-guangzhou、ap-shanghai、ap-hongkong）。',
+    bucketPlaceholder: 'mybucket-1250000000',
+    bucketExtra: '腾讯云 COS 存储桶名称必须包含 -AppID 后缀（例如 cardshop-1250000000）。',
+    accessKeyLabel: 'SecretId',
+    secretKeyLabel: 'SecretKey',
+    prefixPlaceholder: 'cardshop/backups',
+  },
+];
+
 const OWNER_SETTINGS = new Set([
   'epay_api_url',
   'epay_merchant_id',
@@ -138,6 +203,35 @@ const OWNER_SETTINGS = new Set([
   'backup_sync_directory',
   'backup_stale_hours',
   'backup_min_free_mb',
+  'backup_s3_enabled',
+  'backup_s3_endpoint',
+  'backup_s3_region',
+  'backup_s3_bucket',
+  'backup_s3_prefix',
+  'backup_s3_access_key',
+  'backup_s3_secret_key',
+  'backup_s3_path_style',
+  'backup_r2_enabled',
+  'backup_r2_endpoint',
+  'backup_r2_region',
+  'backup_r2_bucket',
+  'backup_r2_prefix',
+  'backup_r2_access_key',
+  'backup_r2_secret_key',
+  'backup_oss_enabled',
+  'backup_oss_endpoint',
+  'backup_oss_region',
+  'backup_oss_bucket',
+  'backup_oss_prefix',
+  'backup_oss_access_key',
+  'backup_oss_secret_key',
+  'backup_cos_enabled',
+  'backup_cos_endpoint',
+  'backup_cos_region',
+  'backup_cos_bucket',
+  'backup_cos_prefix',
+  'backup_cos_access_key',
+  'backup_cos_secret_key',
 ]);
 
 function valuesEqual(nextValue, savedValue) {
@@ -246,6 +340,7 @@ export default function Settings() {
   const [testTelegramScope, setTestTelegramScope] = useState('auto');
   const [testTelegramTarget, setTestTelegramTarget] = useState('');
   const [testingTelegram, setTestingTelegram] = useState(false);
+  const [testingBackupProvider, setTestingBackupProvider] = useState('');
   const [themes, setThemes] = useState(['default']);
   const [clientIp, setClientIp] = useState('');
   const [clientSubnet64, setClientSubnet64] = useState('');
@@ -326,6 +421,11 @@ export default function Settings() {
           payment_reconciliation_enabled: false,
           refund_enabled: false,
           backup_auto_enabled: false,
+          backup_s3_enabled: false,
+          backup_s3_path_style: false,
+          backup_r2_enabled: false,
+          backup_oss_enabled: false,
+          backup_cos_enabled: false,
         })) {
           normalised[key] =
             normalised[key] == null ? defaultValue : normalised[key] === '1' || normalised[key] === true;
@@ -339,6 +439,7 @@ export default function Settings() {
         normalised.backup_retention_days ||= 30;
         normalised.backup_stale_hours ||= 30;
         normalised.backup_min_free_mb ??= 1024;
+        normalised.backup_r2_region ||= 'auto';
         delete normalised._available_themes;
         delete normalised._client_ip;
         delete normalised._client_subnet64;
@@ -491,6 +592,72 @@ export default function Settings() {
       message.error(err.response?.data?.message || 'Telegram 测试通知发送失败', 8);
     } finally {
       setTestingTelegram(false);
+    }
+  };
+
+  const selectedCloudBackupProviders = CLOUD_BACKUP_PROVIDERS.filter((item) => {
+    const key = `backup_${item.key}_enabled`;
+    const active = Object.prototype.hasOwnProperty.call(dirtyValues, key)
+      ? dirtyValues[key]
+      : initialValues[key];
+    return Boolean(active);
+  }).map((item) => item.key);
+
+  const handleCloudBackupSelectionChange = useCallback(
+    (nextSelected) => {
+      if (!canConfigurePrivate || loading || loadError) return;
+      const selectedSet = new Set(nextSelected);
+      const changed = {};
+      for (const item of CLOUD_BACKUP_PROVIDERS) {
+        const key = `backup_${item.key}_enabled`;
+        const nextVal = selectedSet.has(item.key);
+        const curVal = Boolean(
+          Object.prototype.hasOwnProperty.call(dirtyValuesRef.current, key)
+            ? dirtyValuesRef.current[key]
+            : savedValuesRef.current[key]
+        );
+        if (nextVal !== curVal) {
+          form.setFieldValue(key, nextVal);
+          changed[key] = nextVal;
+        }
+      }
+      if (Object.keys(changed).length > 0) {
+        handleValuesChange(changed);
+      }
+    },
+    [canConfigurePrivate, loading, loadError, form, handleValuesChange]
+  );
+
+  const handleTestCloudBackup = async (providerKey) => {
+    if (!canConfigurePrivate || loading || loadError || testingBackupProvider) return;
+    setTestingBackupProvider(providerKey);
+    try {
+      const readField = (field) => {
+        const key = `backup_${providerKey}_${field}`;
+        const live = form.getFieldValue(key);
+        if (live !== undefined) return live;
+        return Object.prototype.hasOwnProperty.call(dirtyValuesRef.current, key)
+          ? dirtyValuesRef.current[key]
+          : savedValuesRef.current[key];
+      };
+      const payload = {
+        provider: providerKey,
+        endpoint: readField('endpoint') || '',
+        region: readField('region') || '',
+        bucket: readField('bucket') || '',
+        prefix: readField('prefix') || '',
+        access_key: readField('access_key') || '',
+        secret_key: readField('secret_key') || '',
+      };
+      if (providerKey === 's3') {
+        payload.path_style = Boolean(readField('path_style'));
+      }
+      const res = await testBackupStorage(payload);
+      message.success(res.data?.message || '云端存储连接测试通过');
+    } catch (err) {
+      message.error(err.response?.data?.message || '云端存储连接测试失败', 8);
+    } finally {
+      setTestingBackupProvider('');
     }
   };
 
@@ -1116,8 +1283,146 @@ export default function Settings() {
             disabled={!canConfigurePrivate}
             label="异机挂载同步目录（可选）"
             fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
-            extra="请填写宿主机或容器内已挂载且具备写权限的绝对目录路径（不可填写 URL 或应用根目录）；留空则仅保留本地备份。"
+            extra="请填写宿主机或容器内已挂载且具备写权限的绝对目录路径（不可填写 URL 或应用根目录）；可与下方云端对象存储同时启用。"
           />
+
+          <Card
+            size="small"
+            style={{ marginTop: 16 }}
+            title={
+              <Space size={8} wrap>
+                <CloudUploadOutlined />
+                <span>云端对象存储异地备份</span>
+                <Tag color={selectedCloudBackupProviders.length > 0 ? 'green' : 'default'}>
+                  已选 {selectedCloudBackupProviders.length} 个目标
+                </Tag>
+              </Space>
+            }
+          >
+            <Alert
+              type="info"
+              showIcon
+              message="支持单选或多选同时备份，各云端目标相互独立容错"
+              description="勾选一个或多个对象存储后，每次自动/手动备份校验通过将依次流式上传至全部已勾选的云端（单文件上限 5 GB，上传校验 Content-MD5）。独立密钥文件 shop-keyring.json 不会随备份上传，请务必单独离线妥善保存。"
+              style={{ marginBottom: 16 }}
+            />
+            <div style={{ marginBottom: 16 }}>
+              <Typography.Text strong style={{ display: 'block', marginBottom: 8 }}>
+                选择云端备份目标（可单选、多选或全选）：
+              </Typography.Text>
+              <Checkbox.Group
+                disabled={!canConfigurePrivate}
+                value={selectedCloudBackupProviders}
+                onChange={handleCloudBackupSelectionChange}
+              >
+                <Space wrap size={[16, 8]}>
+                  {CLOUD_BACKUP_PROVIDERS.map((provider) => (
+                    <Checkbox key={provider.key} value={provider.key}>
+                      <span>{provider.label}</span>
+                      <Typography.Text type="secondary" style={{ marginLeft: 6, fontSize: 12 }}>
+                        （{provider.badge}）
+                      </Typography.Text>
+                    </Checkbox>
+                  ))}
+                </Space>
+              </Checkbox.Group>
+            </div>
+
+            {selectedCloudBackupProviders.length === 0 ? (
+              <Typography.Text type="secondary">
+                未勾选云端目标；勾选上方任意一个或多个对象存储即可展开对应配置项。修改后请点击「保存设置」生效。
+              </Typography.Text>
+            ) : (
+              <Space direction="vertical" size={14} style={{ width: '100%' }}>
+                {CLOUD_BACKUP_PROVIDERS.filter((provider) =>
+                  selectedCloudBackupProviders.includes(provider.key)
+                ).map((provider) => (
+                  <Card
+                    key={provider.key}
+                    size="small"
+                    type="inner"
+                    title={
+                      <Space size={8} wrap>
+                        <strong>{provider.label}</strong>
+                        <Tag color="blue">{provider.badge}</Tag>
+                      </Space>
+                    }
+                    extra={
+                      <Button
+                        size="small"
+                        htmlType="button"
+                        disabled={!canConfigurePrivate || Boolean(testingBackupProvider)}
+                        loading={testingBackupProvider === provider.key}
+                        onClick={() => handleTestCloudBackup(provider.key)}
+                      >
+                        测试连接
+                      </Button>
+                    }
+                  >
+                    <div className="admin-form-grid-2">
+                      <ProFormText
+                        name={`backup_${provider.key}_bucket`}
+                        disabled={!canConfigurePrivate}
+                        label="存储桶名称（Bucket）"
+                        placeholder={provider.bucketPlaceholder}
+                        fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
+                        extra={provider.bucketExtra}
+                      />
+                      <ProFormText
+                        name={`backup_${provider.key}_region`}
+                        disabled={!canConfigurePrivate}
+                        label="区域（Region）"
+                        placeholder={provider.regionPlaceholder}
+                        fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
+                        extra={provider.regionExtra}
+                      />
+                    </div>
+                    <div className="admin-form-grid-2">
+                      <ProFormText
+                        name={`backup_${provider.key}_endpoint`}
+                        disabled={!canConfigurePrivate}
+                        label={provider.endpointRequired ? 'Endpoint 地址（必填）' : 'Endpoint 地址（可选）'}
+                        placeholder={provider.endpointPlaceholder}
+                        fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
+                        extra={provider.endpointExtra}
+                      />
+                      <ProFormText
+                        name={`backup_${provider.key}_prefix`}
+                        disabled={!canConfigurePrivate}
+                        label="远端目录前缀（可选）"
+                        placeholder={provider.prefixPlaceholder}
+                        fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
+                        extra="留空则直接上传至存储桶根目录；例如填写 cardshop/backups。"
+                      />
+                    </div>
+                    <div className="admin-form-grid-2">
+                      <ProFormText
+                        name={`backup_${provider.key}_access_key`}
+                        disabled={!canConfigurePrivate}
+                        label={provider.accessKeyLabel}
+                        placeholder={`请输入 ${provider.accessKeyLabel}`}
+                        fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
+                      />
+                      <SecretField
+                        name={`backup_${provider.key}_secret_key`}
+                        disabled={!canConfigurePrivate}
+                        label={provider.secretKeyLabel}
+                        placeholder={`请输入 ${provider.secretKeyLabel}，留空或保持 ******** 不变`}
+                        extra="服务端使用独立密钥加密保存；测试连接时将优先使用当前表单中填写的值。"
+                      />
+                    </div>
+                    {provider.supportsPathStyle && (
+                      <ProFormSwitch
+                        name="backup_s3_path_style"
+                        disabled={!canConfigurePrivate}
+                        label="使用 Path-Style 路径寻址（仅 MinIO 等自建兼容 S3 需要，AWS 官方 S3 保持关闭）"
+                      />
+                    )}
+                  </Card>
+                ))}
+              </Space>
+            )}
+          </Card>
         </>
       ),
     },

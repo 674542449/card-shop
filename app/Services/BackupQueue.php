@@ -13,7 +13,21 @@ class BackupQueue
 {
     public const LEASE_SECONDS = 7200;
 
-    public function __construct(private readonly ShopBackupService $backups) {}
+    public function __construct(
+        private readonly ShopBackupService $backups,
+        private readonly ?CloudBackupStorageService $cloud = null,
+    ) {}
+
+    private function cloudStorage(): CloudBackupStorageService
+    {
+        return $this->cloud ?? app(CloudBackupStorageService::class);
+    }
+
+    private function hasAnySyncTarget(): bool
+    {
+        return trim((string) setting('backup_sync_directory', '')) !== ''
+            || $this->cloudStorage()->hasEnabledProvider();
+    }
 
     public function enqueue(string $source = 'manual', ?int $adminId = null, ?string $scheduleKey = null): BackupRun
     {
@@ -29,7 +43,7 @@ class BackupQueue
                     return $existing;
                 }
                 return BackupRun::create(['source' => $source, 'requested_by' => $adminId,
-                    'schedule_key' => $scheduleKey, 'sync_status' => setting('backup_sync_directory', '') ? 'pending' : 'disabled']);
+                    'schedule_key' => $scheduleKey, 'sync_status' => $this->hasAnySyncTarget() ? 'pending' : 'disabled']);
             });
         });
     }
@@ -62,7 +76,7 @@ class BackupQueue
                 if ($locked->status === 'completed') {
                     $locked->update(['health_acknowledged_at' => now()]);
                     return BackupRun::create(['source' => 'retry', 'requested_by' => $locked->requested_by,
-                        'sync_status' => setting('backup_sync_directory', '') ? 'pending' : 'disabled']);
+                        'sync_status' => $this->hasAnySyncTarget() ? 'pending' : 'disabled']);
                 }
                 $locked->update(['status' => 'pending', 'progress' => 0, 'phase' => '等待备份进程',
                     'last_error' => null, 'lease_token' => null, 'lease_expires_at' => null,
@@ -118,14 +132,43 @@ class BackupQueue
                 $this->backups->validate($file);
                 $syncStatus = 'disabled';
                 $syncError = null;
-                if (setting('backup_sync_directory', '')) {
-                    $progress(95, '复制到指定挂载目录');
-                    try {
-                        $this->backups->sync($file);
+                $hasLocalSync = trim((string) setting('backup_sync_directory', '')) !== '';
+                $cloudProviders = $this->cloudStorage()->enabledProviders();
+                if ($hasLocalSync || $cloudProviders !== []) {
+                    $succeededTargets = [];
+                    $failedTargets = [];
+
+                    if ($hasLocalSync) {
+                        $progress(93, '复制到指定挂载目录');
+                        try {
+                            $this->backups->sync($file);
+                            $succeededTargets[] = '挂载目录';
+                        } catch (\Throwable) {
+                            $failedTargets[] = '挂载目录（请检查目录、权限和空间）';
+                        }
+                    }
+
+                    if ($cloudProviders !== []) {
+                        $cloudResult = $this->cloudStorage()->syncAll($file, function (string $provider, string $label) use ($progress): void {
+                            $progress(96, '上传至 ' . $label);
+                        });
+                        foreach ($cloudResult['succeeded'] as $label) {
+                            $succeededTargets[] = $label;
+                        }
+                        foreach ($cloudResult['failed'] as $item) {
+                            $failedTargets[] = $item['error'];
+                        }
+                    }
+
+                    if ($failedTargets === []) {
                         $syncStatus = 'synced';
-                    } catch (\Throwable) {
+                    } else {
                         $syncStatus = 'failed';
-                        $syncError = '本地备份已完成，挂载目录同步失败，请检查指定目录、权限和空间。';
+                        $parts = ['本地备份已完成，远端同步失败：' . implode('；', $failedTargets)];
+                        if ($succeededTargets !== []) {
+                            $parts[] = '已成功同步至：' . implode('、', $succeededTargets);
+                        }
+                        $syncError = mb_substr(implode('。', $parts), 0, 500);
                     }
                 }
                 $progress(99, '完成备份');
