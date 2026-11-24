@@ -1,10 +1,10 @@
 # 自动化测试与回归验收
 
-适用正式版本：**v1.0.7**，核对日期：**2026-11-24**。
+适用正式版本：**v1.0.8**，核对日期：**2026-11-25**。
 
-最新双架构验收流水线：[Validate and build release #45414595764](https://github.com/674542449/card-shop/actions/runs/45414595764)（`linux/amd64` + `linux/arm64` 全部通过）：
-- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.7`（`sha256:ea308c2ea62797033f12fe3108be9d6d19f694cdd5892fecc16176a06b3103d2`）
-- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.7`（`sha256:a136aaea4c23f75ee5854a3f8a5fb3f5451b7b61d91952e2a6c9c50c28e0e3ac`）
+最新双架构验收流水线：[Validate and build release #45470984644](https://github.com/674542449/card-shop/actions/runs/45470984644)（`linux/amd64` + `linux/arm64` 全部通过）：
+- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.8`（`sha256:8dd6f18c9295af2e81ddd0b2ffa73f87661dbb749ed6524baba68571ae0c5b9d`）
+- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.8`（`sha256:e08ed7b2f905113686855c84815a3674ccfdd30f3f8a887ca37731ce6764de9d`）
 
 ## 验证覆盖范围
 
@@ -12,8 +12,8 @@
 
 | 验证维度 | 覆盖规模与内容 |
 | --- | --- |
-| PHP 特性与安全回归（PHPUnit） | **565 个测试 / 6,548 项断言**（含真实 PostgreSQL 备份与单事务恢复集成测试、Telegram 多目标播报、随机高强度后台路径、蜜罐 IP/CIDR 白名单与安全防护开关、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归测试） |
-| 管理后台前端回归（Node + JSDOM） | **38 个测试**（覆盖单管理员导航、商品批量改介绍、异步防串单、系统设置显式手动保存与禁自动填充、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
+| PHP 特性与安全回归（PHPUnit） | **569 个测试 / 6,618 项断言**（含真实 PostgreSQL 备份与单事务恢复集成测试、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS 签名与故障隔离、`private/admin-path` 归档校验、Telegram 多目标播报、随机高强度后台路径、蜜罐 IP/CIDR 白名单与安全防护开关、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归测试） |
+| 管理后台前端回归（Node + JSDOM） | **39 个测试**（覆盖单管理员导航、商品批量改介绍、异步防串单、系统设置显式手动保存与禁自动填充、多目标云端备份勾选与实时连接测试、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
 | 商城前台与多架构索引脚本（Node） | **14 个测试**（覆盖支付状态签名轮询 `data-poll-url`、`403` 停止轮询恢复、双架构镜像索引摘要与平台校验） |
 | 容器启动与守护脚本（Bash） | **7 类 Composer 启动指纹场景** + **3 项统一 `worker` 多子进程守护/故障自愈/优雅停机验证** + 全部 Shell 脚本语法检查 + 静态资源构建标记一致性校验 |
 | 依赖安全审计 | `composer audit --locked` 零漏洞；`npm audit` 生产依赖零高危/严重漏洞、全量依赖零严重漏洞 |
