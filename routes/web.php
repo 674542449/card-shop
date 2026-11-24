@@ -166,12 +166,17 @@ Route::prefix('api/' . admin_path())->group(function () {
         Route::post('/maintenance/assets', [ApiAdmin\MaintenanceController::class, 'assetAction'])->defaults('_admin_capability', 'maintenance:write');
         Route::get('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backups'])->defaults('_admin_capability', 'backups.read');
         Route::post('/maintenance/backups', [ApiAdmin\MaintenanceController::class, 'backup'])->middleware('throttle:2,10,admin-shop-backup')->defaults('_admin_capability', 'backups.write');
+        Route::post('/maintenance/backups/upload', [ApiAdmin\MaintenanceController::class, 'uploadBackup'])->middleware('throttle:5,10,admin-shop-backup-upload')->defaults('_admin_capability', 'backups.write');
+        Route::get('/maintenance/restore-status', [ApiAdmin\MaintenanceController::class, 'restoreStatus'])->defaults('_admin_capability', 'backups.read');
+        Route::get('/maintenance/cloud-backups', [ApiAdmin\MaintenanceController::class, 'cloudBackups'])->defaults('_admin_capability', 'backups.read');
+        Route::post('/maintenance/cloud-backups/pull', [ApiAdmin\MaintenanceController::class, 'pullCloudBackup'])->middleware('throttle:5,10,admin-shop-backup-pull')->defaults('_admin_capability', 'backups.write');
         Route::get('/maintenance/backup-runs', [ApiAdmin\MaintenanceController::class, 'backupRuns'])->defaults('_admin_capability', 'backups.read');
         Route::get('/maintenance/backup-runs/{run}', [ApiAdmin\MaintenanceController::class, 'backupRun'])->defaults('_admin_capability', 'backups.read');
         Route::post('/maintenance/backup-runs/{run}/retry', [ApiAdmin\MaintenanceController::class, 'retryBackup'])->defaults('_admin_capability', 'backups.write');
         Route::post('/maintenance/backup-runs/{run}/acknowledge', [ApiAdmin\MaintenanceController::class, 'acknowledgeBackup'])->defaults('_admin_capability', 'backups.write');
         Route::get('/maintenance/backups/{name}/download', [ApiAdmin\MaintenanceController::class, 'download'])->defaults('_admin_capability', 'backups.read');
         Route::post('/maintenance/backups/{name}/validate', [ApiAdmin\MaintenanceController::class, 'validateBackup'])->defaults('_admin_capability', 'backups.write');
+        Route::post('/maintenance/backups/{name}/restore', [ApiAdmin\MaintenanceController::class, 'restoreBackup'])->middleware('throttle:3,10,admin-shop-restore')->defaults('_admin_capability', 'backups.write');
         Route::get('/seo-deliveries', [ApiAdmin\OperationsController::class, 'seo'])->defaults('_admin_capability', 'content:read');
         Route::post('/seo-deliveries/{delivery}/retry', [ApiAdmin\OperationsController::class, 'retrySeo'])->defaults('_admin_capability', 'content:write');
 

@@ -2,7 +2,7 @@
 
 从一台空的 Linux 服务器和一个正式域名开始，完成 HTTPS、商城初始化、后台配置和首次下单验收。功能介绍见 [README](README.md)，对接接口见 [API 文档](docs/API.md)。
 
-适用正式版本：**v1.0.8**，核对日期：2026-11-25。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
+适用正式版本：**v1.0.9**，核对日期：2026-11-25。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
 
 本文使用 **Docker Compose + Cloudflare 橙云代理**，示例域名为 **`shop.example.com`**。所有域名、服务器 IP 和账号都应替换成自己的值。服务器命令在受控的 root 管理终端执行：SSH 登录后先运行 `sudo -i`；标注「外部电脑」的验证在你自己的电脑执行。这样 Compose 能读取仅 root 与容器组可读的外部环境文件，商城不提供员工账户。
 
@@ -48,7 +48,7 @@ docker compose version
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-git checkout v1.0.8
+git checkout v1.0.9
 sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
 sudo cp .env.example /etc/cardshop/runtime.env
 sudo chown root:33 /etc/cardshop/runtime.env
@@ -76,8 +76,8 @@ TLS_CERT_DIR=/opt/cf
 SHOP_ENV_FILE=/etc/cardshop/runtime.env
 SHOP_SECRETS_DIR=/etc/cardshop/secrets
 SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
-SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.8
-SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.8
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.9
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.9
 ```
 
 发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
@@ -299,50 +299,48 @@ CLI 不带 `--wait` 时只入队，带 `--wait` 可执行并等待任务，放�
 - **云端对象存储直传（推荐）**：在后台 **系统设置 → 自动备份** 勾选一个或多个云存储目标——支持 **Cloudflare R2**、**AWS S3**（含兼容 S3 协议的 B2/MinIO）、**阿里云 OSS**（原生 `OSS4-HMAC-SHA256`）和 **腾讯云 COS**（`Bucket-AppID` 虚拟主机）——支持单选、多选或全部同时上传，各目标独立容错并校验 `Content-MD5`，提供「测试连接」按钮与密文存储。
 - **异机挂载目录复制**：在外部环境文件设置 `BACKUP_SYNC_MOUNT=/你的受控挂载目录`，应用 Compose 配置后，在后台填 `/mnt/shop-backup-sync`。确保容器 UID/GID 33 可写，并自行设置远端保留策略。后台留空且未勾选云端目标时仅保留本地备份。
 
-### 恢复演练与换服务器迁移恢复
+### 一键恢复与换服务器迁移恢复
 
-#### 1. 恢复演练（不覆盖正式库）
+#### 1. 换新服务器一行命令自动恢复（推荐）
 
-以下按默认数据库账号举例，先创建独立空库；恢复覆盖明确指定的目标库，不应拿正式库做演练：
+换新服务器只需要准备两份文件：**① 最新备份包 `shop-YYYYMMDD-HHMMSS-xxx.tar.gz`**（从 R2/S3/OSS/COS 或旧机下载）和 **② 独立离线保存的密钥文件 `shop-keyring.json`**（旧机 `/etc/cardshop/secrets/shop-keyring.json`）。
+
+在新服务器安装 Docker 并拉取对应正式版仓库后，只需执行 **1 行命令**：
+
+```bash
+sudo ./scripts/restore.sh /root/shop-你的备份文件.tar.gz --keyring /root/shop-keyring.json
+```
+
+脚本会自动串联完成全部 6 个步骤（无需手工敲 `docker cp` / `chown` / `artisan down` / `optimize:clear` / `artisan up`）：
+1. 安装 `shop-keyring.json` 到 `/etc/cardshop/secrets/shop-keyring.json`（权限 `640`，属主 `root:33`）；若新机尚无 `/etc/cardshop/runtime.env`，自动从备份包提取 `config.env` 写入（权限 `640`），已存在时默认保留新机环境文件（加 `--overwrite-env` 可显式覆盖）。**切勿在新机重新执行 `secrets:init`**。
+2. 启动 `postgres`、`redis`、`app` 并自动切换至维护模式（停用写入进程）。
+3. 拷贝备份包至容器受限目录、修正权限并先执行 `--verify-only` 校验清单、SHA-256 与密钥环匹配性。
+4. 在单事务中恢复 PostgreSQL 正式库、商品上传素材 `uploads/`、私有归档与随机后台路径 `admin-path`（失败自动回滚）。
+5. 清理应用缓存、拉起全部服务（含 `worker` 与 `nginx`）并退出维护模式。
+6. 打印恢复后的后台登录路径。支持加 `--dry-run` 先预演将执行的操作，或加 `--yes` 跳过交互确认。
+
+最后在 Cloudflare DNS 将域名 A/AAAA 记录指向新服务器 IP 并核验后台登录、商品图片与查单功能即可。
+
+#### 2. 管理后台 Web 一键还原（同机回滚 / 上传包 / 云端拉取）
+
+在相同密钥环下（日常回滚、误删商品恢复，或已在后台配置好云端存储的新机），直接在后台 **运维 → 备份与恢复** 即可全程点选完成，无需登录服务器 SSH：
+
+- **本地备份一键还原**：在「完整备份文件」列表中点击目标归档右侧的 **一键还原**。
+- **上传本地备份包还原**：点击 **上传备份包** 直接上传 `.tar.gz` 归档（浏览器单次上限 `100 MB`；更大的包请优先走云端对象存储或 `scripts/restore.sh`），上传后立即校验完整性和密钥匹配性，可勾选「上传并校验通过后立即执行全量还原」。
+- **云端对象存储拉取与一键还原**：在「云端对象存储备份」卡片选择已启用的 **Cloudflare R2 / AWS S3 / 阿里云 OSS / 腾讯云 COS**，点击 **拉取到本地** 或 **一键拉取并还原**。
+
+所有 Web 还原均要求重新验证当前管理员登录密码；后台会先校验归档与密钥环（不匹配直接拦截、不中断现网），通过后由独立 `worker` 进程（`shop:backup-work`）自动进入维护模式、创建恢复前安全快照、执行单事务全量恢复并自动恢复上线（通常耗时 10–30 秒，页面自动轮询进度）。
+
+#### 3. 恢复演练（独立空库，不覆盖正式库）
+
+如需在不影响线上业务的情况下单独验证归档可恢复性，可创建独立空库进行演练：
 
 ```bash
 shop exec -T postgres createdb -U cardshop cardshop_restore_check
 shop exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --database=cardshop_restore_check --confirm=restore:cardshop_restore_check
 ```
 
-独立库演练不修改正在使用的文件和配置。备份校验检查清单、路径、SHA-256、大小及外部 keyring 标识。
-
-#### 2. 换服务器迁移恢复完整步骤
-
-换新服务器只需要两份文件：**① 最新备份包 `shop-YYYYMMDD-HHMMSS-xxx.tar.gz`**（从 R2/S3/OSS/COS 或旧机下载）和 **② 独立离线保存的密钥文件 `shop-keyring.json`**（旧机 `/etc/cardshop/secrets/shop-keyring.json`）。
-
-1. **新服务器准备基础环境与密钥**：按本文第 1–2 步安装 Docker、拉取对应正式版仓库，并将旧机的 **`shop-keyring.json`** 放入 `/etc/cardshop/secrets/shop-keyring.json`（权限 `640`，属主 `root:33`）。若旧机 `/etc/cardshop/runtime.env` 未单独留存，可先从备份包中提取 `config.env` 作为 `/etc/cardshop/runtime.env`（`tar -xzOf shop-*.tar.gz config.env | sudo tee /etc/cardshop/runtime.env >/dev/null`，并确认 `APP_KEY`、`DB_*`、域名、证书路径与新机一致）。**切勿在新机重新执行 `secrets:init` 生成新密钥**，否则无法解密旧备份里的卡密与密文设置。
-2. **启动基础服务并进入维护模式**：
-   ```bash
-   shop pull
-   shop up -d postgres redis app
-   shop exec -T --user www-data app php artisan down
-   ```
-3. **拷贝备份包进容器存储卷并校验完整性**：
-   ```bash
-   docker cp /root/shop-你的备份文件.tar.gz "$(shop ps -q app)":/var/www/html/storage/app/private/shop-backups/
-   shop exec -T --user root app chown 33:33 /var/www/html/storage/app/private/shop-backups/shop-你的备份文件.tar.gz
-   shop exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/shop-你的备份文件.tar.gz --verify-only
-   ```
-4. **执行正式库单事务恢复**（自动同时恢复 PostgreSQL 数据库、上传图片 `uploads/`、私有归档与随机后台路径 `admin-path`）：
-   ```bash
-   shop exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/shop-你的备份文件.tar.gz --database=cardshop --confirm=restore:cardshop
-   ```
-5. **清缓存、拉起全部服务并解除维护模式**：
-   ```bash
-   shop exec -T --user www-data app php artisan optimize:clear
-   shop exec -T --user www-data app php artisan up
-   shop up -d --wait
-   shop exec -T --user www-data app php artisan shop:admin-path
-   ```
-   最后在 Cloudflare DNS 将域名 A/AAAA 记录指向新服务器 IP 并核验后台登录、商品图片与查单功能即可。
-
-> **重要提醒**：正式库恢复必须在维护模式（`artisan down`）且无写入进程运行时执行；数据库恢复使用单事务，数据库失败时自动撤销已发布文件。只读生产镜像中的运行环境文件须由运维按第 1 步离线恢复至 `/etc/cardshop/runtime.env`，不能通过 `--include-config` 改写容器只读层。
+> **重要提醒**：独立库演练不修改正在使用的文件和配置。正式库恢复必须在维护模式（`artisan down`）且无写入进程运行时执行；只读生产镜像中的运行环境文件由 `scripts/restore.sh` 或运维离线维护至 `/etc/cardshop/runtime.env`，不能通过 `--include-config` 改写容器只读层。
 
 ### 记录与源站维护
 

@@ -50,8 +50,8 @@ RUN { \
 
 # Configure PHP
 RUN { \
-    echo 'upload_max_filesize=20M'; \
-    echo 'post_max_size=20M'; \
+    echo 'upload_max_filesize=100M'; \
+    echo 'post_max_size=104M'; \
     echo 'memory_limit=256M'; \
     echo 'max_execution_time=60'; \
     echo 'expose_php=Off'; \

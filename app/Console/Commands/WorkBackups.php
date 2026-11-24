@@ -3,19 +3,26 @@
 namespace App\Console\Commands;
 
 use App\Services\BackupQueue;
+use App\Services\RestoreQueue;
 use Illuminate\Console\Command;
 
 class WorkBackups extends Command
 {
-    protected $signature = 'shop:backup-work {--once : Process at most one queued backup}';
-    protected $description = 'Run the dedicated durable full-backup worker';
+    protected $signature = 'shop:backup-work {--once : Process at most one queued backup or restore}';
+    protected $description = 'Run the dedicated durable full-backup and restore worker';
 
-    public function handle(BackupQueue $queue, \App\Services\MaintenanceWriteBarrier $barrier): int
+    public function handle(BackupQueue $queue, RestoreQueue $restoreQueue, \App\Services\MaintenanceWriteBarrier $barrier): int
     {
         do {
             settings_memo(clear: true);
             try {
-                $processed = $barrier->run(fn () => $queue->process());
+                // Pending one-click restores run outside LOCK_SH so MaintenanceWriteBarrier::restore()
+                // can safely acquire LOCK_EX once in-flight HTTP requests drain.
+                if ($restoreQueue->hasPending()) {
+                    $processed = $restoreQueue->process();
+                } else {
+                    $processed = $barrier->run(fn () => $queue->process());
+                }
             } catch (\Throwable) {
                 // Do not leak database connection strings or mount details in logs.
                 $this->error('备份进程暂时无法访问数据库或锁服务，稍后重试。');

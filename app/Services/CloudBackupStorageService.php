@@ -248,6 +248,7 @@ class CloudBackupStorageService
      *
      * @param  array{host: string, canonical_uri: string, signing_region: string, provider: string}  $target
      * @param  array{access_key: string, secret_key: string}  $cfg
+     * @param  array<string, string>  $queryParams
      * @return array<string, string>
      */
     public function signHeaders(
@@ -258,10 +259,12 @@ class CloudBackupStorageService
         ?string $contentType = null,
         ?string $contentMd5 = null,
         ?int $timestamp = null,
+        array $queryParams = [],
     ): array {
         $ts = $timestamp ?? time();
         $amzDate = gmdate('Ymd\THis\Z', $ts);
         $dateStamp = gmdate('Ymd', $ts);
+        $canonicalQuery = self::buildCanonicalQuery($queryParams);
 
         if ($target['provider'] === 'oss') {
             return $this->signOssV4(
@@ -275,6 +278,7 @@ class CloudBackupStorageService
                 $dateStamp,
                 $contentType,
                 $contentMd5,
+                $canonicalQuery,
             );
         }
 
@@ -290,7 +294,29 @@ class CloudBackupStorageService
             $payloadSha256,
             $contentType,
             $contentMd5,
+            $canonicalQuery,
         );
+    }
+
+    /**
+     * @param  array<string, string>  $queryParams
+     */
+    public static function buildCanonicalQuery(array $queryParams): string
+    {
+        if ($queryParams === []) {
+            return '';
+        }
+        $encoded = [];
+        foreach ($queryParams as $key => $value) {
+            $encoded[rawurlencode((string) $key)] = rawurlencode((string) $value);
+        }
+        ksort($encoded, SORT_STRING);
+        $parts = [];
+        foreach ($encoded as $k => $v) {
+            $parts[] = $k . '=' . $v;
+        }
+
+        return implode('&', $parts);
     }
 
     /**
@@ -310,6 +336,7 @@ class CloudBackupStorageService
         string $payloadSha256,
         ?string $contentType,
         ?string $contentMd5,
+        string $canonicalQuery = '',
     ): array {
         $canonicalMap = [
             'host' => $host,
@@ -333,7 +360,7 @@ class CloudBackupStorageService
         $canonicalRequest = implode("\n", [
             strtoupper($method),
             $canonicalUri,
-            '',
+            $canonicalQuery,
             $canonicalHeaders,
             $signedHeaders,
             $payloadSha256,
@@ -385,6 +412,7 @@ class CloudBackupStorageService
         string $dateStamp,
         ?string $contentType,
         ?string $contentMd5,
+        string $canonicalQuery = '',
     ): array {
         $payloadHash = 'UNSIGNED-PAYLOAD';
         $canonicalMap = [
@@ -409,7 +437,7 @@ class CloudBackupStorageService
         $canonicalRequest = implode("\n", [
             strtoupper($method),
             $canonicalUri,
-            '',
+            $canonicalQuery,
             $canonicalHeaders,
             $additionalHeaders,
             $payloadHash,
@@ -580,6 +608,149 @@ class CloudBackupStorageService
         }
 
         return compact('succeeded', 'failed');
+    }
+
+    /**
+     * List backup archives stored in one cloud provider bucket (ListObjectsV2).
+     *
+     * @param  array<string, mixed>|null  $override
+     * @return list<array{key: string, name: string, size: int, last_modified: string|null}>
+     */
+    public function listBackups(string $provider, ?array $override = null): array
+    {
+        $label = self::label($provider);
+        $cfg = $this->config($provider, $override);
+        $target = $this->resolveTarget($provider, $cfg);
+        $httpOptions = SafeUrl::outboundHttpOptions($target['url']);
+
+        $prefix = self::normalizePrefix((string) ($cfg['prefix'] ?? ''));
+        $queryParams = [
+            'list-type' => '2',
+            'max-keys' => '100',
+        ];
+        if ($prefix !== '') {
+            $queryParams['prefix'] = $prefix . '/';
+        }
+
+        $canonicalQuery = self::buildCanonicalQuery($queryParams);
+        $requestUrl = $target['url'] . '?' . $canonicalQuery;
+        $headers = $this->signHeaders('GET', $target, $cfg, hash('sha256', ''), null, null, null, $queryParams);
+
+        try {
+            $response = Http::timeout(20)
+                ->connectTimeout(10)
+                ->withoutRedirecting()
+                ->withOptions($httpOptions)
+                ->withHeaders($headers)
+                ->get($requestUrl);
+        } catch (\Throwable) {
+            throw new RuntimeException("{$label} 获取备份列表失败：网络连接中断或超时。");
+        }
+
+        if (! $response->successful()) {
+            throw new RuntimeException($this->describeHttpFailure($label, $response->status(), (string) $response->body()));
+        }
+
+        $body = (string) $response->body();
+        $previous = libxml_use_internal_errors(true);
+        try {
+            $xml = simplexml_load_string($body, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($previous);
+        }
+
+        if ($xml === false) {
+            throw new RuntimeException("{$label} 返回的列表 XML 无法解析。");
+        }
+
+        $items = [];
+        foreach ($xml->Contents ?? [] as $node) {
+            $key = trim((string) ($node->Key ?? ''));
+            if ($key === '' || str_contains($key, '..') || preg_match('/[\x00-\x1f]/', $key) === 1) {
+                continue;
+            }
+            $name = basename($key);
+            if (! preg_match('/^shop-[A-Za-z0-9-]+\.tar\.gz$/D', $name)) {
+                continue;
+            }
+            $items[] = [
+                'key' => $key,
+                'name' => $name,
+                'size' => max(0, (int) ($node->Size ?? 0)),
+                'last_modified' => ($lm = trim((string) ($node->LastModified ?? ''))) !== '' ? $lm : null,
+            ];
+        }
+
+        usort($items, static fn (array $a, array $b): int => strcmp((string) ($b['last_modified'] ?? $b['name']), (string) ($a['last_modified'] ?? $a['name'])));
+
+        return $items;
+    }
+
+    /**
+     * Stream-download one backup archive from a cloud provider into a local destination file.
+     *
+     * @param  array<string, mixed>|null  $override
+     */
+    public function downloadFile(string $provider, string $key, string $destination, ?array $override = null): string
+    {
+        $label = self::label($provider);
+        $cleanKey = ltrim(str_replace('\\', '/', trim($key)), '/');
+        if ($cleanKey === '' || str_contains($cleanKey, '..') || preg_match('/[\x00-\x1f]/', $cleanKey) === 1
+            || ! preg_match('/^shop-[A-Za-z0-9-]+\.tar\.gz$/D', basename($cleanKey))) {
+            throw new RuntimeException('云端备份对象键无效。');
+        }
+
+        $cfg = $this->config($provider, $override);
+        $configuredPrefix = self::normalizePrefix((string) ($cfg['prefix'] ?? ''));
+        if ($configuredPrefix !== '' && ! str_starts_with($cleanKey, $configuredPrefix . '/')) {
+            throw new RuntimeException('请求的对象键不在已配置的备份目录前缀范围内。');
+        }
+
+        // Key already includes the prefix, so resolve with empty prefix to avoid doubling.
+        $target = $this->resolveTarget($provider, array_merge($cfg, ['prefix' => '']), $cleanKey);
+        $httpOptions = SafeUrl::outboundHttpOptions($target['url']);
+        $headers = $this->signHeaders('GET', $target, $cfg, hash('sha256', ''));
+
+        $sinkOptions = array_merge($httpOptions, ['sink' => $destination]);
+        try {
+            $response = Http::timeout(600)
+                ->connectTimeout(15)
+                ->withoutRedirecting()
+                ->withOptions($sinkOptions)
+                ->withHeaders($headers)
+                ->get($target['url']);
+        } catch (\Throwable) {
+            if (is_file($destination)) {
+                @unlink($destination);
+            }
+            throw new RuntimeException("{$label} 拉取备份失败：网络连接中断或超时。");
+        }
+
+        if (! $response->successful()) {
+            $errBody = is_file($destination) ? (string) @file_get_contents($destination, false, null, 0, 4096) : (string) $response->body();
+            if (is_file($destination)) {
+                @unlink($destination);
+            }
+            throw new RuntimeException($this->describeHttpFailure($label, $response->status(), $errBody));
+        }
+
+        // Http::fake() in tests does not always populate Guzzle's 'sink' file directly.
+        if (! is_file($destination) || filesize($destination) === 0) {
+            $body = (string) $response->body();
+            if ($body !== '') {
+                file_put_contents($destination, $body);
+            }
+        }
+        if (! is_file($destination) || filesize($destination) === 0) {
+            if (is_file($destination)) {
+                @unlink($destination);
+            }
+            throw new RuntimeException("{$label} 拉取的备份文件为空。");
+        }
+        @chmod($destination, 0600);
+
+        return $destination;
     }
 
     private function describeHttpFailure(string $label, int $status, string $body): string

@@ -283,32 +283,92 @@ class ShopBackupService
         return $manifest;
     }
 
+    /**
+     * Verify that the current external keyring contains the exact key IDs and
+     * fingerprints required to decrypt the given validated backup manifest.
+     */
+    public function verifyKeyringCompatibility(array $manifest): void
+    {
+        if (! isset($manifest['secrets'])) {
+            return;
+        }
+        $current = app(\App\Security\SecretCipher::class)->metadata();
+        if (! is_array($manifest['secrets']) || ! is_string($manifest['secrets']['keyring_id'] ?? null)
+            || ! hash_equals($current['keyring_id'], $manifest['secrets']['keyring_id'])
+            || ! is_array($manifest['secrets']['version_ids'] ?? null)
+            || array_diff($manifest['secrets']['version_ids'], $current['version_ids'])) {
+            throw new RuntimeException('备份对应的独立密钥文件或历史密钥版本缺失，拒绝恢复。');
+        }
+        if (array_key_exists('version_fingerprints', $manifest['secrets'])
+            && (! is_array($manifest['secrets']['version_fingerprints'])
+                || array_diff($manifest['secrets']['version_ids'], array_keys($manifest['secrets']['version_fingerprints'])))) {
+            throw new RuntimeException('备份独立密钥版本标识无效，拒绝恢复。');
+        }
+        foreach ($manifest['secrets']['version_fingerprints'] ?? [] as $version => $fingerprint) {
+            if (! is_string($fingerprint) || ! isset($current['version_fingerprints'][$version])
+                || ! hash_equals($current['version_fingerprints'][$version], $fingerprint)) {
+                throw new RuntimeException('备份对应的独立密钥版本不匹配，拒绝恢复。');
+            }
+        }
+    }
+
+    /**
+     * Validate an uploaded or cloud-downloaded archive and move it into the private backup directory.
+     *
+     * @return array{path: string, filename: string, size: int, manifest: array<string, mixed>}
+     */
+    public function importValidatedArchive(string $sourceFile, string $prefix = 'upload'): array
+    {
+        if (! is_file($sourceFile) || ! is_readable($sourceFile) || is_link($sourceFile)) {
+            throw new RuntimeException('待导入的备份文件不存在或不可读。');
+        }
+
+        if (! is_dir($this->directory())) {
+            $appDir = storage_path('app');
+            if (! is_dir($appDir)) {
+                mkdir($appDir, 0755, true);
+            }
+            mkdir($this->directory(), 0700, true);
+        }
+
+        $safePrefix = preg_replace('/[^a-z0-9]/', '', strtolower($prefix)) ?: 'import';
+        $filename = 'shop-' . $safePrefix . '-' . now()->format('Ymd-His') . '-' . substr((string) Str::uuid(), 0, 8) . '.tar.gz';
+        $destination = $this->directory() . DIRECTORY_SEPARATOR . $filename;
+        // Stage with a .tar.gz suffix so PharData recognizes gzip-compressed tar even
+        // when the source is an extensionless PHP upload temp file (/tmp/phpXXXXXX).
+        $staged = $this->directory() . DIRECTORY_SEPARATOR . '.import-' . Str::uuid() . '.tar.gz';
+
+        try {
+            if (! copy($sourceFile, $staged)) {
+                throw new RuntimeException('无法写入备份归档文件。');
+            }
+            chmod($staged, 0600);
+            $manifest = $this->validate($staged);
+            $this->verifyKeyringCompatibility($manifest);
+            if (! rename($staged, $destination)) {
+                throw new RuntimeException('无法保存导入的备份归档。');
+            }
+        } finally {
+            if (is_file($staged)) {
+                @unlink($staged);
+            }
+        }
+
+        return [
+            'path' => $destination,
+            'filename' => $filename,
+            'size' => (int) filesize($destination),
+            'manifest' => $manifest,
+        ];
+    }
+
     public function restore(string $file, string $database, bool $includeConfig = false, bool $safetyBackup = false): void
     {
         if (! preg_match('/^[A-Za-z0-9_]{1,63}$/D', $database)) {
             throw new RuntimeException('目标数据库名称不允许。');
         }
         $manifest = $this->validate($file);
-        if (isset($manifest['secrets'])) {
-            $current = app(\App\Security\SecretCipher::class)->metadata();
-            if (! is_array($manifest['secrets']) || ! is_string($manifest['secrets']['keyring_id'] ?? null)
-                || ! hash_equals($current['keyring_id'], $manifest['secrets']['keyring_id'])
-                || ! is_array($manifest['secrets']['version_ids'] ?? null)
-                || array_diff($manifest['secrets']['version_ids'], $current['version_ids'])) {
-                throw new RuntimeException('备份对应的独立密钥文件或历史密钥版本缺失，拒绝恢复。');
-            }
-            if (array_key_exists('version_fingerprints', $manifest['secrets'])
-                && (! is_array($manifest['secrets']['version_fingerprints'])
-                    || array_diff($manifest['secrets']['version_ids'], array_keys($manifest['secrets']['version_fingerprints'])))) {
-                throw new RuntimeException('备份独立密钥版本标识无效，拒绝恢复。');
-            }
-            foreach ($manifest['secrets']['version_fingerprints'] ?? [] as $version => $fingerprint) {
-                if (! is_string($fingerprint) || ! isset($current['version_fingerprints'][$version])
-                    || ! hash_equals($current['version_fingerprints'][$version], $fingerprint)) {
-                    throw new RuntimeException('备份对应的独立密钥版本不匹配，拒绝恢复。');
-                }
-            }
-        }
+        $this->verifyKeyringCompatibility($manifest);
         $live = $database === config('database.connections.pgsql.database');
         if ($live && $includeConfig && (string) env('SHOP_RUNTIME_ENV_FILE', '') !== '') {
             throw new RuntimeException('生产运行配置为外部只读挂载；须停服务后由运维离线恢复配置，不能通过应用覆盖。');

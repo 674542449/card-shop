@@ -708,3 +708,112 @@ test('backup tab supports single and simultaneous multi-provider cloud storage s
     await view.close();
   }
 });
+
+test('operations backup tab supports one-click local restore, cloud backup pull, and upload modal without native password autofill', async () => {
+  const typeInto = async (input, value) => {
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, value);
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+  };
+  const posts = [];
+  const gets = [];
+  globalThis.reviewApi = {
+    get: async (path, config) => {
+      gets.push([path, config?.params || null]);
+      if (path === '/maintenance/health') {
+        return { data: { healthy: true, backups: { healthy: true } } };
+      }
+      if (path === '/maintenance/backup-runs') {
+        return { data: { data: [], total: 0 } };
+      }
+      if (path === '/maintenance/backups') {
+        return {
+          data: {
+            data: [{ name: 'shop-20261125-020000-local.tar.gz', size: 204800, created_at: '2026-11-25T02:00:00+08:00' }],
+            health: { enabled: true, healthy: true, pending: 0, worker_required: true, worker_healthy: true },
+            restore: null,
+            enabled_cloud_providers: [{ key: 'r2', label: 'Cloudflare R2' }],
+          },
+        };
+      }
+      if (path === '/maintenance/cloud-backups') {
+        return {
+          data: {
+            provider: 'r2',
+            label: 'Cloudflare R2',
+            data: [{ key: 'daily/shop-20261125-030000-cloud.tar.gz', name: 'shop-20261125-030000-cloud.tar.gz', size: 307200, last_modified: '2026-11-25T03:00:05Z' }],
+          },
+        };
+      }
+      if (path === '/maintenance/restore-status') {
+        return {
+          data: {
+            restore: { status: 'completed', progress: 100, filename: 'shop-20261125-020000-local.tar.gz', source: 'local', phase: '全量恢复已完成' },
+          },
+        };
+      }
+      return { data: { data: [] } };
+    },
+    post: async (path, data) => {
+      posts.push([path, data]);
+      if (path.endsWith('/restore')) {
+        return {
+          data: {
+            message: '恢复任务已提交',
+            restore: { status: 'pending', progress: 5, filename: 'shop-20261125-020000-local.tar.gz', source: 'local', phase: '等待备份进程接管恢复任务' },
+          },
+        };
+      }
+      if (path === '/maintenance/cloud-backups/pull') {
+        return { data: { message: '已从 Cloudflare R2 拉取并校验通过' } };
+      }
+      return { data: { message: 'ok' } };
+    },
+  };
+
+  const view = await mount('/operations');
+  try {
+    await selectTab('备份与恢复');
+    await settleTables();
+
+    assert.ok(gets.some(([p, params]) => p === '/maintenance/cloud-backups' && params?.provider === 'r2'));
+    assert.ok(text().includes('shop-20261125-020000-local.tar.gz'));
+    assert.ok(text().includes('shop-20261125-030000-cloud.tar.gz'));
+
+    // Pull from cloud without immediately restoring
+    await click('拉取到本地');
+    await settleTables();
+    assert.ok(posts.some(([p, d]) => p === '/maintenance/cloud-backups/pull' && d.provider === 'r2' && d.key === 'daily/shop-20261125-030000-cloud.tar.gz' && d.restore_now === false));
+
+    // Open Upload modal and verify file input + zero native password input
+    await click('上传备份包');
+    await settleTables();
+    assert.ok(document.querySelector('#backup-archive-upload-input'));
+    assert.equal(document.querySelectorAll('input[type="password"]').length, 0);
+    await click('取消');
+    await settleTables();
+
+    // Trigger local one-click restore modal, verify masked non-autofill password input, submit
+    await click('一键还原');
+    await settleTables();
+    const pwdInput = document.querySelector('#restore-confirm-password');
+    assert.ok(pwdInput, 'Restore confirmation modal must render #restore-confirm-password');
+    assert.equal(pwdInput.getAttribute('type'), 'text');
+    assert.equal(pwdInput.getAttribute('autocomplete'), 'off');
+    assert.equal(document.querySelectorAll('input[type="password"]').length, 0);
+    assert.ok(pwdInput.closest('.ant-input-affix-wrapper')?.classList.contains('admin-secret-masked'));
+
+    await typeInto(pwdInput, 'admin-secret-pass');
+    await click('确认立即还原');
+    await settleTables();
+    assert.ok(posts.some(([p, d]) =>
+      p === '/maintenance/backups/shop-20261125-020000-local.tar.gz/restore'
+      && d.password === 'admin-secret-pass'
+      && d.confirm === 'RESTORE'
+    ));
+    assert.ok(text().includes('全量恢复任务已入队'));
+  } finally {
+    await view.close();
+  }
+});

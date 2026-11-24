@@ -109,6 +109,7 @@ jobs:
           node --test tests/js/*.test.cjs
           bash tests/shell/composer-install.test.sh
           bash tests/shell/worker-supervisor.test.sh
+          bash tests/shell/restore-script.test.sh
           for script in install.sh scripts/*.sh docker/php/*.sh tests/shell/*.sh; do bash -n "$script"; done
       - name: Production assets and dependency audits
         run: |
