@@ -235,6 +235,7 @@ if php artisan migrate --force --no-interaction; then
     # never overwrites values changed from the admin UI.
     if php artisan db:seed --force --no-interaction; then
         chown -R www-data:www-data storage/app/private 2>/dev/null || true
+        chmod 750 storage/app/private 2>/dev/null || true
         echo "    Seed OK."
     else
         echo "    !! Seeding failed. The admin account may not exist."

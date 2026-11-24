@@ -17,8 +17,15 @@ class RandomAdminPathInstallTest extends TestCase
     {
         AdminPath::resetCache();
         foreach ($this->tempDirs as $dir) {
-            foreach (glob($dir . '/*') ?: [] as $file) {
-                @unlink($file);
+            if (!is_dir($dir)) {
+                continue;
+            }
+            $iterator = new \RecursiveIteratorIterator(
+                new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
+                \RecursiveIteratorIterator::CHILD_FIRST
+            );
+            foreach ($iterator as $item) {
+                $item->isDir() ? @rmdir($item->getPathname()) : @unlink($item->getPathname());
             }
             @rmdir($dir);
         }
@@ -75,6 +82,30 @@ class RandomAdminPathInstallTest extends TestCase
         $this->assertMatchesRegularExpression('/^[A-Za-z][A-Za-z0-9]{23}$/D', $rotated);
         $this->assertNotSame($first, $rotated);
         $this->assertSame($rotated, AdminPath::resolve('', $file));
+    }
+
+    public function test_creating_persisted_admin_path_keeps_parent_storage_app_traversable(): void
+    {
+        $root = base_path('.local/admin-path-nested-' . Str::uuid());
+        mkdir($root, 0755, true);
+        $this->tempDirs[] = $root;
+
+        $appDir = $root . '/app';
+        $privateDir = $appDir . '/private';
+        $file = $privateDir . '/admin-path';
+
+        $segment = AdminPath::resolve('', $file);
+        $this->assertMatchesRegularExpression('/^[A-Za-z][A-Za-z0-9]{23}$/D', $segment);
+        $this->assertDirectoryExists($appDir);
+        $this->assertDirectoryExists($privateDir);
+        $this->assertFileExists($file);
+
+        if (PHP_OS_FAMILY !== 'Windows') {
+            $appPerms = fileperms($appDir) & 0777;
+            $privatePerms = fileperms($privateDir) & 0777;
+            $this->assertSame(0005, $appPerms & 0005, sprintf('Parent app dir must remain o+rx for nginx, got %o', $appPerms));
+            $this->assertSame(0750, $privatePerms, sprintf('Private dir must stay 0750, got %o', $privatePerms));
+        }
     }
 
     public function test_artisan_admin_path_command_outputs_active_segment_and_warns_when_env_locks_regenerate(): void

@@ -36,11 +36,14 @@ COPY --from=frontend /src/public/admin-assets ./public/admin-assets
 RUN mkdir -p bootstrap/cache storage/framework/cache/purifier storage/framework/views storage/logs \
     && composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader \
     && php scripts/validate-admin-assets.php \
-    && mkdir -p build/views storage/app/public storage/app/private storage/framework/cache/data \
+    && mkdir -p build/views storage/app/public/uploads storage/app/private storage/framework/cache/data \
       storage/framework/sessions storage/framework/views storage/logs \
-    && VIEW_COMPILED_PATH=/var/www/html/build/views php artisan view:cache \
+    && ADMIN_PATH=build-placeholder VIEW_COMPILED_PATH=/var/www/html/build/views php artisan view:cache \
+    && rm -f storage/app/private/admin-path storage/app/private/admin-path.lock \
     && find build/views -name '*.php' -exec php -l {} \; \
     && rm -f public/storage && ln -s /var/www/html/storage/app/public public/storage \
+    && chmod 755 storage storage/app storage/app/public storage/app/public/uploads \
+    && chmod 750 storage/app/private \
     && chown -R www-data:www-data storage bootstrap/cache build
 
 FROM php-base AS runtime

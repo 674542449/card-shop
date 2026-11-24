@@ -455,11 +455,21 @@ a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
   box-shadow: 0 6px 18px rgba(2, 132, 199, 0.08);
   transform: translateY(-1px);
 }
+.admin-stat-stack {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.admin-stat-stack .dash-tile-link {
+  flex: 1 1 auto;
+  height: auto;
+}
 .admin-sub-link {
   display: inline-block;
   margin-top: 8px;
   font-size: 12px;
   font-weight: 500;
+  flex-shrink: 0;
 }
 
 .admin-metrics-strip {

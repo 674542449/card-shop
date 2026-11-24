@@ -184,6 +184,11 @@ test('dashboard prioritizes actionable work and links approved refunds separatel
     for(const target of ['/orders?payment_review=1','/refunds?status=requested','/refunds?status=approved','/tasks?tab=notifications&status=failed','/products?low_stock=1']) {
       assert.ok([...todo.querySelectorAll('a')].some(e=>e.getAttribute('href')===target),target);
     }
+    const stack=todo.querySelector('.admin-stat-stack');
+    assert.ok(stack,'refund tile and sub-link should share a flex column wrapper to avoid overflow');
+    assert.ok(stack.querySelector('a.dash-tile-link[href="/refunds?status=requested"]'));
+    assert.ok(stack.querySelector('a.admin-sub-link[href="/refunds?status=approved"]'));
+    assert.equal(stack.querySelector('a a'),null,'links must never be nested');
   } finally {await view.close();}
 });
 

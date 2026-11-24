@@ -659,7 +659,7 @@ export default function Settings() {
                   { label: '仅站长告警会话', value: 'admin' },
                 ]}
               />
-              <Space.Compact style={{ width: 380, maxWidth: '100%' }}>
+              <Space.Compact style={{ width: 440, maxWidth: '100%' }}>
                 <Input
                   type="text"
                   disabled={!canConfigurePrivate}

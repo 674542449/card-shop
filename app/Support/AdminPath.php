@@ -104,10 +104,7 @@ final class AdminPath
     public static function regenerate(?string $storageFileOverride = null): string
     {
         $file = self::storageFile($storageFileOverride);
-        $directory = dirname($file);
-        if (!is_dir($directory)) {
-            @mkdir($directory, 0750, true);
-        }
+        self::ensurePrivateDirectory(dirname($file));
 
         $generated = self::generate();
         $lockHandle = @fopen($file . '.lock', 'c+b');
@@ -146,10 +143,7 @@ final class AdminPath
             }
         }
 
-        $directory = dirname($file);
-        if (!is_dir($directory)) {
-            @mkdir($directory, 0750, true);
-        }
+        self::ensurePrivateDirectory(dirname($file));
 
         $lockHandle = @fopen($file . '.lock', 'c+b');
         try {
@@ -178,6 +172,25 @@ final class AdminPath
         // Unwritable disk fallback: derive an unguessable 24-char segment from APP_KEY
         // so all workers still agree on one path and "/admin" is never implicitly exposed.
         return self::deriveFromAppKey();
+    }
+
+    /**
+     * Create the private storage directory without restricting ancestor traversal
+     * (such as storage/app, which nginx must traverse to reach storage/app/public).
+     */
+    private static function ensurePrivateDirectory(string $directory): void
+    {
+        if (is_dir($directory)) {
+            return;
+        }
+
+        $parent = dirname($directory);
+        if ($parent !== $directory && !is_dir($parent)) {
+            @mkdir($parent, 0755, true);
+        }
+
+        @mkdir($directory, 0750, true);
+        @chmod($directory, 0750);
     }
 
     private static function writeAtomically(string $file, string $segment): bool

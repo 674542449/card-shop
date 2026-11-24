@@ -4,6 +4,10 @@ cd /var/www/html
 # Runtime performs no downloads, migrations, dependency installation or source mutation.
 mkdir -p storage/app/public/uploads storage/app/private storage/framework/cache/data \
     storage/framework/cache/purifier storage/framework/sessions storage/framework/views storage/logs
+# Ensure nginx (non-www-data worker) can traverse to public uploads while private stays restricted.
+chmod 755 storage storage/app storage/app/public storage/app/public/uploads 2>/dev/null || true
+chmod -R a+rX storage/app/public 2>/dev/null || true
+chmod 750 storage/app/private 2>/dev/null || true
 touch storage/framework/shop-write.lock
 case "$1 ${2:-} ${3:-}" in
     "php artisan secrets:init") ;;

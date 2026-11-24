@@ -165,17 +165,19 @@ export default function Dashboard() {
           )}
           {allows(admin, 'refunds') && (
             <Col xs={24} sm={12} xl={6}>
-              <Stat
-                label="售后待审核（退款）"
-                value={data.requested_refunds || 0}
-                tone={data.requested_refunds > 0 ? 'attention' : undefined}
-                hint="审核买家提交的退款申请"
-                to="/refunds?status=requested"
-                icon={<ClockCircleOutlined />}
-              />
-              <Link className="admin-sub-link" to="/refunds?status=approved">
-                已批准待打款：{data.approved_refunds || 0} 笔 →
-              </Link>
+              <div className="admin-stat-stack">
+                <Stat
+                  label="售后待审核（退款）"
+                  value={data.requested_refunds || 0}
+                  tone={data.requested_refunds > 0 ? 'attention' : undefined}
+                  hint="审核买家提交的退款申请"
+                  to="/refunds?status=requested"
+                  icon={<ClockCircleOutlined />}
+                />
+                <Link className="admin-sub-link" to="/refunds?status=approved">
+                  已批准待打款：{data.approved_refunds || 0} 笔 →
+                </Link>
+              </div>
             </Col>
           )}
           {allows(admin, 'notifications') && (

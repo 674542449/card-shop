@@ -237,12 +237,12 @@ export default function Products() {
   }, [refreshCategoryOptions]);
 
   const columns = [
-    { title: 'ID', dataIndex: 'id', width: 64, search: false },
+    { title: 'ID', dataIndex: 'id', width: 56, search: false },
     {
       title: '封面',
       dataIndex: 'image',
       search: false,
-      width: 76,
+      width: 64,
       render: (_, record) =>
         record.image ? (
           <Image src={record.image} width={40} height={40} style={{ objectFit: 'cover', borderRadius: 6 }} />
@@ -250,7 +250,7 @@ export default function Products() {
           '-'
         ),
     },
-    { title: '商品名称', dataIndex: 'name' },
+    { title: '商品名称', dataIndex: 'name', ellipsis: true },
     {
       title: '库存预警',
       dataIndex: 'low_stock',
@@ -261,7 +261,8 @@ export default function Products() {
     {
       title: '所属分类',
       dataIndex: 'category_id',
-      width: 140,
+      width: 116,
+      ellipsis: true,
       render: (_, record) => record.category?.name || '-',
       valueType: 'select',
       fieldProps: { options: categoryOptions },
@@ -270,14 +271,14 @@ export default function Products() {
       title: '销售单价',
       dataIndex: 'price',
       search: false,
-      width: 110,
+      width: 92,
       render: (_, record) => <span className="admin-amount">¥{record.price}</span>,
     },
     {
       title: '可售库存',
       dataIndex: 'stock_count',
       search: false,
-      width: 120,
+      width: 104,
       render: (_, record) => (
         <Space size={6}>
           <span className="admin-amount">{record.stock_count}</span>
@@ -292,15 +293,16 @@ export default function Products() {
       dataIndex: 'is_active',
       valueType: 'select',
       valueEnum: { 1: { text: '上架' }, 0: { text: '下架' } },
-      width: 90,
+      width: 80,
       render: (_, record) =>
         record.is_active ? <Tag color="green">上架</Tag> : <Tag color="red">下架</Tag>,
     },
-    { title: '排序', dataIndex: 'sort_order', search: false, width: 80 },
+    { title: '排序', dataIndex: 'sort_order', search: false, width: 62 },
     {
       title: '操作',
       valueType: 'option',
-      width: 190,
+      width: 164,
+      fixed: 'right',
       render: (_, record) =>
         canWrite
           ? [

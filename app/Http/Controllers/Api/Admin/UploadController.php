@@ -81,11 +81,44 @@ class UploadController extends Controller
             return response()->json(['message' => '图片保存失败，请稍后重试。'], 422);
         }
 
+        self::ensurePublicUploadPermissions($path);
+
         OperationLog::log('上传图片', 'upload', null, $path);
 
         return response()->json([
             'url' => '/storage/' . $path,
             'path' => $path,
         ]);
+    }
+
+    /**
+     * Ensure nginx workers (running under a separate UID) can traverse newly
+     * created upload subdirectories and read uploaded images regardless of umask.
+     */
+    private static function ensurePublicUploadPermissions(string $relativePath): void
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            return;
+        }
+
+        $publicRoot = storage_path('app/public');
+        $fullPath = $publicRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, ltrim($relativePath, '/'));
+        if (is_file($fullPath)) {
+            @chmod($fullPath, 0644);
+        }
+
+        $realRoot = realpath($publicRoot);
+        $cursor = dirname($fullPath);
+        while ($realRoot !== false && is_dir($cursor)) {
+            @chmod($cursor, 0755);
+            if (realpath($cursor) === $realRoot) {
+                break;
+            }
+            $next = dirname($cursor);
+            if ($next === $cursor) {
+                break;
+            }
+            $cursor = $next;
+        }
     }
 }

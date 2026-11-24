@@ -17,6 +17,8 @@ docker image inspect "$SHOP_WEB_IMAGE" >/dev/null
 for SMOKE_IMAGE in "$SHOP_APP_IMAGE" "$SHOP_WEB_IMAGE"; do
     test "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "$SMOKE_IMAGE")" = "linux/$SHOP_EXPECTED_ARCH"
 done
+# Never bake a build-time admin-path into the published image, and keep storage/app traversable by nginx.
+docker run --rm --entrypoint sh "$SHOP_APP_IMAGE" -c 'test ! -e /var/www/html/storage/app/private/admin-path && test "$(stat -c %a /var/www/html/storage/app)" = 755 && test "$(stat -c %a /var/www/html/storage/app/public)" = 755 && test "$(stat -c %a /var/www/html/storage/app/private)" = 750'
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SMOKE_TEMP_ROOT="$(realpath "${RUNNER_TEMP:-/tmp}")"
 SMOKE_DIRECTORY="$(mktemp -d "$SMOKE_TEMP_ROOT/cardshop-smoke.XXXXXX")"
@@ -135,6 +137,10 @@ http_acceptance() {
     [ -n "$SMOKE_ADMIN_ASSET" ]
     curl --fail --silent --show-error --max-time 20 --output "$SMOKE_DIRECTORY/admin.js" "http://127.0.0.1$SMOKE_ADMIN_ASSET"
     [ -s "$SMOKE_DIRECTORY/admin.js" ]
+    "${DC[@]}" exec -T app sh -c 'mkdir -p storage/app/public/uploads/smoke && chmod 755 storage/app/public/uploads storage/app/public/uploads/smoke && printf "%s" "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGAAAAAEAAH2FzhVAAAAAElFTkSuQmCC" | base64 -d > storage/app/public/uploads/smoke/check.png && chmod 644 storage/app/public/uploads/smoke/check.png'
+    curl --fail --silent --show-error --max-time 20 --output "$SMOKE_DIRECTORY/upload-check.png" http://127.0.0.1/storage/uploads/smoke/check.png
+    [ -s "$SMOKE_DIRECTORY/upload-check.png" ]
+    "${DC[@]}" exec -T app rm -rf storage/app/public/uploads/smoke
     "${DC[@]}" exec -T app php scripts/validate-admin-assets.php
 }
 sql() {

@@ -43,6 +43,10 @@ class ShopBackupService
     public function create(?callable $progress = null): string
     {
         if (! is_dir($this->directory())) {
+            $appDir = storage_path('app');
+            if (! is_dir($appDir)) {
+                mkdir($appDir, 0755, true);
+            }
             mkdir($this->directory(), 0700, true);
         }
         $name = 'shop-'.now()->format('Ymd-His').'-'.Str::uuid();
@@ -428,7 +432,8 @@ class ShopBackupService
     /** Atomic per-file publication; overridable for isolated failure-injection tests. */
     protected function publishRestoreFile(string $source, string $destination, int $mode = 0600): void
     {
-        if (! is_dir(dirname($destination)) && ! mkdir(dirname($destination), 0770, true)) {
+        $dirMode = ($mode & 0004) ? 0755 : 0700;
+        if (! is_dir(dirname($destination)) && ! mkdir(dirname($destination), $dirMode, true)) {
             throw new RuntimeException('无法创建恢复目录。');
         }
         $temporary = dirname($destination).'/.restore-'.Str::uuid();
