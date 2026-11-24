@@ -14,7 +14,7 @@ class GuardBuyerMutation
 {
     public function handle(Request $request, Closure $next): Response
     {
-        if (! $request->isMethodSafe()) {
+        if (setting('cross_site_guard_enabled', '1') === '1' && ! $request->isMethodSafe()) {
             $site = strtolower(trim((string) $request->header('Sec-Fetch-Site', '')));
             if ($site === 'cross-site') {
                 $response = $request->expectsJson()

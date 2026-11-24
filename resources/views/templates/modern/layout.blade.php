@@ -11,7 +11,7 @@
             if (savedTheme === 'dark' || savedTheme === 'light') document.documentElement.dataset.uiTheme = savedTheme;
         } catch (e) {}
     </script>
-    @if(setting('turnstile_site_key'))
+    @if(turnstile_site_key())
     <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
     @endif
     @yield('head')

@@ -243,6 +243,29 @@ a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(6px);
 }
+.admin-secret-masked input,
+input.admin-secret-masked {
+  -webkit-text-security: disc;
+}
+.admin-secret-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--admin-subtle);
+  cursor: pointer;
+  line-height: 1;
+}
+.admin-secret-toggle:hover:not(:disabled) {
+  color: var(--admin-ink);
+}
+.admin-secret-toggle:focus-visible {
+  outline: 2px solid var(--admin-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
 .admin-surface-tabs .ant-pro-table > .ant-card { border: 0; box-shadow: none; }
 .admin-surface-tabs .ant-pro-table > .ant-card > .ant-card-body { padding-inline: 0; padding-bottom: 0; }
 .admin-surface-tabs .ant-pro-table-search {

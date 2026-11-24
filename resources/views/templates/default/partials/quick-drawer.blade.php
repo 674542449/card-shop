@@ -106,8 +106,8 @@
                     </div>
                 </div>
 
-                @if(setting('turnstile_site_key'))
-                <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}"></div>
+                @if(turnstile_site_key())
+                <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key() }}"></div>
                 @endif
 
                 <div class="ws-checkout-bar ws-drawer-sticky-bar">

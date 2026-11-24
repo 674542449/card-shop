@@ -5,7 +5,7 @@
     <meta name="theme-color" content="#f7f7f8">
     <link href="{{ theme_asset('style.css') }}" rel="stylesheet">
     <script>try { var savedTheme = localStorage.getItem('ui-theme'); if (savedTheme === 'light' || savedTheme === 'dark') document.documentElement.dataset.uiTheme = savedTheme; } catch (e) {}</script>
-    @if(setting('turnstile_site_key'))<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>@endif
+    @if(turnstile_site_key())<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>@endif
     @yield('head')
 </head>
 <body class="minimal-store">

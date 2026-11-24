@@ -230,14 +230,21 @@ TEMPLATE,
                 'order_expire_minutes' => '30',
             ],
             'security' => [
+                'blacklist_enabled' => '1',
+                'cross_site_guard_enabled' => '1',
+                'form_honeypot_enabled' => '1',
                 'checkout_require_key' => '1',
+                'order_limit_enabled' => '1',
                 'order_max_pending_per_ip' => '3',
                 'order_max_pending_per_email' => '3',
                 'order_max_locked_percent' => '80',
+                'honeypot_enabled' => '1',
+                'honeypot_skip_reserved_ips' => '1',
             ],
 
             // Turnstile settings
             'turnstile' => [
+                'turnstile_enabled' => '1',
                 'turnstile_site_key' => '',
                 'turnstile_secret_key' => '',
             ],

@@ -19,8 +19,9 @@ class SettingsResource extends JsonResource
         'telegram_target_group_enabled', 'telegram_target_group_ids',
         'telegram_target_channel_enabled', 'telegram_target_channel_ids',
         'seo_default_title', 'seo_default_description', 'seo_default_keywords', 'baidu_push_token', 'bing_indexnow_key',
-        'turnstile_site_key', 'turnstile_secret_key', 'order_expire_minutes', 'checkout_require_key',
-        'order_max_pending_per_ip', 'order_max_pending_per_email', 'order_max_locked_percent',
+        'turnstile_enabled', 'turnstile_site_key', 'turnstile_secret_key', 'order_expire_minutes',
+        'blacklist_enabled', 'cross_site_guard_enabled', 'form_honeypot_enabled',
+        'checkout_require_key', 'order_limit_enabled', 'order_max_pending_per_ip', 'order_max_pending_per_email', 'order_max_locked_percent',
         'honeypot_enabled', 'honeypot_ban_minutes', 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
         'refund_enabled', 'backup_auto_enabled', 'backup_schedule_time', 'backup_retention_count', 'backup_retention_days', 'backup_sync_directory', 'backup_stale_hours', 'backup_min_free_mb'];
 
@@ -33,6 +34,9 @@ class SettingsResource extends JsonResource
             $data[$setting->key] = in_array($setting->key, \App\Security\SecretSettings::KEYS, true) && (string) $value !== '' ? self::MASK : $value;
         }
         $data['_available_themes'] = themes_available();
+        $clientIp = \App\Support\IpAddress::normalize((string) $request->ip());
+        $data['_client_ip'] = $clientIp;
+        $data['_client_subnet64'] = \App\Support\IpAddress::subnet64($clientIp);
         return $data;
     }
 }

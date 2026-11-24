@@ -56,8 +56,8 @@
                         @error('order_no')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
                     </div>
 
-                    @if(setting('turnstile_site_key'))
-                    <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}"></div>
+                    @if(turnstile_site_key())
+                    <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key() }}"></div>
                     @error('turnstile')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
                     @endif
 

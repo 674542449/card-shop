@@ -3,7 +3,7 @@
     @if($hasMore ?? false)
     <form action="/order/query/page" method="POST" data-guard>
         @csrf
-        @if(setting('turnstile_site_key'))<div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}" data-size="compact"></div>@endif
+        @if(turnstile_site_key())<div class="cf-turnstile" data-sitekey="{{ turnstile_site_key() }}" data-size="compact"></div>@endif
         <button type="submit" class="ws-btn ws-btn-primary ws-btn-sm">加载下一批订单</button>
     </form>
     @else

@@ -17,6 +17,10 @@ class CheckBlacklist
      */
     public function handle(Request $request, Closure $next): Response
     {
+        if (setting('blacklist_enabled', '1') !== '1') {
+            return $next($request);
+        }
+
         $ip = $request->ip();
 
         // Check IP against blacklist with cache
@@ -70,9 +74,16 @@ class CheckBlacklist
         // sweeps the table, so an expired row would otherwise keep a real visitor out.
         $query = \App\Models\Blacklist::active()->where('type', $type);
 
-        return $type === 'email'
-            ? $query->whereRaw('lower(value) = ?', [$value])->exists()
-            : $query->where('value', $value)->exists();
+        if ($type === 'email') {
+            return $query->whereRaw('lower(value) = ?', [$value])->exists();
+        }
+
+        // Whitelisted IPs/CIDRs are exempt from automatic honeypot bans while keeping manual bans intact.
+        if (\App\Support\IpAddress::matchesWhitelist($value, (string) setting('honeypot_whitelist', ''))) {
+            $query->where('source', '!=', 'honeypot');
+        }
+
+        return $query->where('value', $value)->exists();
     }
 
     /**

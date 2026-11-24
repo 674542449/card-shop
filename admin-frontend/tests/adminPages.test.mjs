@@ -522,3 +522,100 @@ test('telegram notification tab requires explicit save before test push when edi
     await view.close();
   }
 });
+
+test('all settings form inputs disable browser autofill and avoid native password fields', async () => {
+  globalThis.reviewApi = {
+    getSettings: async () => ({
+      data: {
+        site_name: 'CardShop',
+        mail_password: '********',
+        telegram_bot_token: '********',
+        _available_themes: ['default'],
+      },
+    }),
+  };
+  const view = await mount('/settings');
+  try {
+    const form = document.querySelector('form');
+    assert.ok(form);
+    assert.equal(form.getAttribute('autocomplete'), 'off');
+
+    const tabs = ['基本设置', 'SEO 设置', '支付设置', '邮件设置', 'Telegram 通知', '交易与售后', '安全与风控', '自动备份'];
+    for (const label of tabs) {
+      await selectTab(label);
+      const panel = activePanel();
+      assert.equal(panel.querySelectorAll('input[type="password"]').length, 0, `${label} must not render native password inputs`);
+      const editable = [...panel.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="search"]):not([role="combobox"]), textarea')]
+        .filter((el) => !el.getAttribute('data-testid'));
+      assert.ok(editable.length > 0, `${label} should contain editable inputs`);
+      for (const el of editable) {
+        assert.equal(el.getAttribute('autocomplete'), 'off', `${label} -> ${el.id || el.placeholder} missing autocomplete="off"`);
+        assert.equal(el.getAttribute('data-lpignore'), 'true', `${label} -> ${el.id || el.placeholder} missing data-lpignore="true"`);
+        assert.equal(el.getAttribute('data-1p-ignore'), 'true', `${label} -> ${el.id || el.placeholder} missing data-1p-ignore="true"`);
+        assert.equal(el.getAttribute('data-bwignore'), 'true', `${label} -> ${el.id || el.placeholder} missing data-bwignore="true"`);
+      }
+    }
+
+    await selectTab('Telegram 通知');
+    const tokenInput = activePanel().querySelector('[id$="_telegram_bot_token"]');
+    assert.ok(tokenInput);
+    assert.equal(tokenInput.getAttribute('type'), 'text');
+    const wrapper = tokenInput.closest('.ant-input-affix-wrapper');
+    assert.ok(wrapper.classList.contains('admin-secret-masked'));
+    const toggleBtn = wrapper.querySelector('button.admin-secret-toggle');
+    assert.ok(toggleBtn);
+    assert.equal(toggleBtn.getAttribute('type'), 'button');
+    assert.equal(toggleBtn.getAttribute('aria-pressed'), 'false');
+    await act(async () => { toggleBtn.click(); });
+    assert.equal(toggleBtn.getAttribute('aria-pressed'), 'true');
+    assert.ok(!wrapper.classList.contains('admin-secret-masked'));
+  } finally {
+    await view.close();
+  }
+});
+
+test('security tab deep link and one-click honeypot IP/CIDR whitelist buttons require explicit save', async () => {
+  const writes = [];
+  globalThis.reviewApi = {
+    getSettings: async () => ({
+      data: {
+        honeypot_enabled: '1',
+        honeypot_whitelist: '198.51.100.10',
+        _available_themes: ['default'],
+        _client_ip: '2001:db8:abcd::55',
+        _client_subnet64: '2001:db8:abcd::/64',
+      },
+    }),
+    updateSettings: async (data) => {
+      writes.push(data);
+      return { data: { message: '设置已保存。' } };
+    },
+  };
+  const view = await mount('/settings?tab=security');
+  try {
+    const panel = activePanel();
+    for (const suffix of [
+      '_blacklist_enabled',
+      '_cross_site_guard_enabled',
+      '_form_honeypot_enabled',
+      '_turnstile_enabled',
+      '_checkout_require_key',
+      '_order_limit_enabled',
+      '_honeypot_enabled',
+    ]) {
+      assert.ok(panel.querySelector(`[id$="${suffix}"]`), `Missing security toggle ${suffix}`);
+    }
+    const textarea = panel.querySelector('[id$="_honeypot_whitelist"]');
+    assert.ok(textarea, 'Deep link /settings?tab=security should open Security tab directly');
+    assert.ok(panel.textContent.includes('2001:db8:abcd::55'));
+    await click('一键加入当前IP');
+    await click('加入当前IPv6/64网段');
+    assert.equal(textarea.value, '198.51.100.10\n2001:db8:abcd::55\n2001:db8:abcd::/64');
+    assert.deepEqual(writes, []);
+    await click('保存设置');
+    await settleTables();
+    assert.deepEqual(writes, [{ honeypot_whitelist: '198.51.100.10\n2001:db8:abcd::55\n2001:db8:abcd::/64' }]);
+  } finally {
+    await view.close();
+  }
+});

@@ -264,4 +264,68 @@ class AntiAbuseHardeningTest extends TestCase
         $this->assertSame('2', $settings['order_max_pending_per_email']);
         $this->assertSame('75', $settings['order_max_locked_percent']);
     }
+
+    public function test_individual_website_security_protections_can_be_toggled_off_and_back_on(): void
+    {
+        $product = $this->createSeededProduct(20);
+
+        // 1. Blacklist toggle: disabling skips CheckBlacklist and Blacklist::isBlocked without deleting rules.
+        \App\Models\Blacklist::create(['type' => 'ip', 'value' => '203.0.113.55', 'source' => 'manual', 'reason' => 'Test block']);
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.55'])->get('/')->assertForbidden();
+        Setting::set('blacklist_enabled', '0', 'security');
+        settings_forget();
+        $this->assertFalse(\App\Models\Blacklist::isBlocked('203.0.113.55'));
+        $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.55'])->get('/')->assertOk();
+        Setting::set('blacklist_enabled', '1', 'security');
+        settings_forget();
+        $this->assertTrue(\App\Models\Blacklist::isBlocked('203.0.113.55'));
+
+        // 2. Turnstile toggle: disabling hides widget and skips middleware while keeping configured keys intact.
+        Setting::set('turnstile_site_key', 'site-key-keep', 'turnstile');
+        Setting::set('turnstile_secret_key', 'secret-key-keep', 'turnstile');
+        Setting::set('turnstile_enabled', '0', 'turnstile');
+        settings_forget();
+        $this->assertSame('', turnstile_site_key());
+        $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.90'])
+            ->get('/product/' . $product->slug)->assertOk()->assertDontSee('cf-turnstile');
+
+        // 3. Cross-site Sec-Fetch-Site guard + Form honeypot + Order limits can each be toggled off.
+        Setting::set('cross_site_guard_enabled', '0', 'security');
+        Setting::set('form_honeypot_enabled', '0', 'security');
+        Setting::set('checkout_require_key', '0', 'security');
+        Setting::set('order_limit_enabled', '0', 'security');
+        Setting::set('order_max_pending_per_ip', '1', 'security');
+        Setting::set('order_max_pending_per_email', '1', 'security');
+        settings_forget();
+
+        for ($i = 0; $i < 2; $i++) {
+            $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.90'])
+                ->withHeaders(['Sec-Fetch-Site' => 'cross-site', 'Accept' => 'application/json'])
+                ->post('/order/create', [
+                    'product_id' => $product->id,
+                    'email' => 'toggle-buyer@example.test',
+                    'query_password' => 'Pass1234',
+                    'quantity' => 1,
+                    'payment_method' => 'alipay',
+                    'website' => 'filled-while-form-honeypot-disabled',
+                ])
+                ->assertRedirect()
+                ->assertSessionHasNoErrors();
+        }
+        $this->assertSame(2, Order::where('email', 'toggle-buyer@example.test')->count());
+
+        // Re-enabling cross-site guard immediately blocks Sec-Fetch-Site: cross-site again.
+        Setting::set('cross_site_guard_enabled', '1', 'security');
+        settings_forget();
+        $this->withServerVariables(['REMOTE_ADDR' => '198.51.100.90'])
+            ->withHeaders(['Sec-Fetch-Site' => 'cross-site', 'Accept' => 'application/json'])
+            ->post('/order/create', [
+                'product_id' => $product->id,
+                'email' => 'toggle-buyer@example.test',
+                'query_password' => 'Pass1234',
+                'quantity' => 1,
+                'payment_method' => 'alipay',
+            ])
+            ->assertForbidden();
+    }
 }

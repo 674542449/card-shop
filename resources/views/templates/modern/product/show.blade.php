@@ -176,9 +176,9 @@
                     @error('payment_method')<p class="m-field-error" role="alert">{{ $message }}</p>@enderror
                 </fieldset>
 
-                @if(setting('turnstile_site_key'))
+                @if(turnstile_site_key())
                 <div class="m-field m-product-turnstile">
-                    <div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}" data-size="compact"></div>
+                    <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key() }}" data-size="compact"></div>
                     @error('turnstile')<p class="m-field-error" role="alert">{{ $message }}</p>@enderror
                 </div>
                 @endif

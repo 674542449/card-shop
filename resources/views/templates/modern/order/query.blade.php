@@ -37,8 +37,8 @@
                 @error('query_password')<p class="m-field-error">{{ $message }}</p>@enderror
                 <p class="m-hint" id="m-query-password-hint">这是下单时你自己设置的查询密码。</p>
             </div>
-            @if(setting('turnstile_site_key'))
-            <div class="m-field"><div class="cf-turnstile" data-sitekey="{{ setting('turnstile_site_key') }}" data-size="compact"></div></div>
+            @if(turnstile_site_key())
+            <div class="m-field"><div class="cf-turnstile" data-sitekey="{{ turnstile_site_key() }}" data-size="compact"></div></div>
             @error('turnstile')<p class="m-field-error">{{ $message }}</p>@enderror
             @endif
             <button type="submit" class="m-button m-button-primary m-button-wide">查询订单</button>

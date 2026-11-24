@@ -20,6 +20,10 @@ class VerifyTurnstile
      */
     public function handle(Request $request, Closure $next): Response
     {
+        if (setting('turnstile_enabled', '1') !== '1') {
+            return $next($request);
+        }
+
         $secretKey = (string) setting('turnstile_secret_key', '');
         $siteKey = (string) setting('turnstile_site_key', '');
 

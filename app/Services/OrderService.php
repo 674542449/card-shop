@@ -67,7 +67,7 @@ class OrderService
                 if ((int) $held->orders >= $token->max_pending_orders || (int) $held->quantity + $quantity > $token->max_pending_quantity) {
                     throw new CheckoutException('API 未付款订单或库存占用已达额度，请先完成支付或等待过期资源释放');
                 }
-            } else {
+            } elseif (setting('order_limit_enabled', '1') === '1') {
                 $subnet = \App\Support\IpAddress::subnet64($ip);
                 $normalizedEmail = mb_strtolower(trim($data['email']));
                 $lockKeys = ['ip:' . ($subnet ?? $ip), 'email:' . $normalizedEmail];
@@ -101,7 +101,7 @@ class OrderService
             if ($quantity < $product->min_quantity || $quantity > $product->max_quantity) {
                 throw new CheckoutException("购买数量必须在 {$product->min_quantity} - {$product->max_quantity} 之间");
             }
-            if ($tokenId === null) {
+            if ($tokenId === null && setting('order_limit_enabled', '1') === '1') {
                 $rawLockedPct = (int) setting('order_max_locked_percent', 80);
                 $maxLockedPct = ($rawLockedPct >= 20 && $rawLockedPct <= 100) ? $rawLockedPct : 80;
                 if ($maxLockedPct < 100) {

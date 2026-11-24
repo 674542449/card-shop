@@ -1,5 +1,6 @@
 import useWritePermission from '../hooks/useWritePermission';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   ProForm,
   ProFormText,
@@ -15,6 +16,8 @@ import {
   CheckCircleFilled,
   LoadingOutlined,
   ExclamationCircleFilled,
+  EyeOutlined,
+  EyeInvisibleOutlined,
 } from '@ant-design/icons';
 import { getSettings, updateSettings, sendTestEmail, sendTestTelegram } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
@@ -26,6 +29,61 @@ const THEME_LABELS = {
   minimal: '极简主题（卡片网格）',
   modern: '经典暖色主题',
 };
+
+// Disable browser & password-manager autofill across every Settings input.
+const NO_AUTOFILL_PROPS = {
+  autoComplete: 'off',
+  'data-lpignore': 'true',
+  'data-1p-ignore': 'true',
+  'data-bwignore': 'true',
+  'data-form-type': 'other',
+};
+
+const NO_AUTOFILL_IDENTIFIER_PROPS = {
+  ...NO_AUTOFILL_PROPS,
+  autoCorrect: 'off',
+  autoCapitalize: 'none',
+  spellCheck: false,
+};
+
+// Use a masked text input (-webkit-text-security: disc) instead of type="password"
+// so browsers never classify third-party API tokens/SMTP secrets as site login credentials
+// and never autofill the admin username/password into adjacent Settings inputs.
+function SecretInput({ id, value, onChange, disabled, placeholder }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <Input
+      id={id}
+      type="text"
+      value={value}
+      onChange={onChange}
+      disabled={disabled}
+      placeholder={placeholder}
+      className={visible ? undefined : 'admin-secret-masked'}
+      {...NO_AUTOFILL_IDENTIFIER_PROPS}
+      suffix={
+        <button
+          type="button"
+          className="admin-secret-toggle"
+          disabled={disabled}
+          aria-pressed={visible}
+          aria-label={visible ? '隐藏密钥内容' : '显示密钥内容'}
+          onClick={() => setVisible((prev) => !prev)}
+        >
+          {visible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+        </button>
+      }
+    />
+  );
+}
+
+function SecretField({ name, label, extra, disabled, placeholder }) {
+  return (
+    <ProForm.Item name={name} label={label} extra={extra}>
+      <SecretInput disabled={disabled} placeholder={placeholder} />
+    </ProForm.Item>
+  );
+}
 
 const OWNER_SETTINGS = new Set([
   'epay_api_url',
@@ -56,10 +114,15 @@ const OWNER_SETTINGS = new Set([
   'telegram_target_group_ids',
   'telegram_target_channel_enabled',
   'telegram_target_channel_ids',
+  'turnstile_enabled',
   'turnstile_site_key',
   'turnstile_secret_key',
   'order_expire_minutes',
+  'blacklist_enabled',
+  'cross_site_guard_enabled',
+  'form_honeypot_enabled',
   'checkout_require_key',
+  'order_limit_enabled',
   'order_max_pending_per_ip',
   'order_max_pending_per_email',
   'order_max_locked_percent',
@@ -131,11 +194,15 @@ function SaveStatus({ state, dirtyCount }) {
   );
 }
 
+const SETTING_TAB_KEYS = new Set(['basic', 'seo', 'payment', 'mail', 'telegram', 'order', 'security', 'backup']);
+
 function SettingsForm({
   form,
   canWrite,
   initialValues,
   tabItems,
+  activeTab,
+  onTabChange,
   topActions,
   footerActions,
   onValuesChange,
@@ -148,6 +215,7 @@ function SettingsForm({
   return (
     <ProForm
       name="system-settings"
+      autoComplete="off"
       disabled={!canWrite}
       form={form}
       omitNil={false}
@@ -156,7 +224,7 @@ function SettingsForm({
       onFinish={onFinish}
       submitter={false}
     >
-      <Tabs items={tabItems} tabBarExtraContent={topActions} />
+      <Tabs activeKey={activeTab} onChange={onTabChange} items={tabItems} tabBarExtraContent={topActions} />
       {footerActions}
     </ProForm>
   );
@@ -165,6 +233,7 @@ function SettingsForm({
 export default function Settings() {
   const canWrite = useWritePermission('settings');
   const canConfigurePrivate = canWrite;
+  const [searchParams, setSearchParams] = useSearchParams();
   const [form] = ProForm.useForm();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -178,6 +247,22 @@ export default function Settings() {
   const [testTelegramTarget, setTestTelegramTarget] = useState('');
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [themes, setThemes] = useState(['default']);
+  const [clientIp, setClientIp] = useState('');
+  const [clientSubnet64, setClientSubnet64] = useState('');
+
+  const tabParam = searchParams.get('tab');
+  const activeTab = SETTING_TAB_KEYS.has(tabParam) ? tabParam : 'basic';
+  const handleTabChange = useCallback(
+    (nextKey) => {
+      if (!SETTING_TAB_KEYS.has(nextKey)) return;
+      if (nextKey === 'basic') {
+        setSearchParams({}, { replace: true });
+      } else {
+        setSearchParams({ tab: nextKey }, { replace: true });
+      }
+    },
+    [setSearchParams]
+  );
 
   const savedValuesRef = useRef({});
   const dirtyValuesRef = useRef({});
@@ -220,6 +305,8 @@ export default function Settings() {
         if (Array.isArray(data._available_themes) && data._available_themes.length) {
           setThemes(data._available_themes);
         }
+        setClientIp(typeof data._client_ip === 'string' ? data._client_ip : '');
+        setClientSubnet64(typeof data._client_subnet64 === 'string' ? data._client_subnet64 : '');
         const normalised = { ...data };
         for (const [key, defaultValue] of Object.entries({
           telegram_enabled: false,
@@ -228,7 +315,12 @@ export default function Settings() {
           telegram_target_bot_enabled: false,
           telegram_target_group_enabled: false,
           telegram_target_channel_enabled: false,
+          turnstile_enabled: true,
+          blacklist_enabled: true,
+          cross_site_guard_enabled: true,
+          form_honeypot_enabled: true,
           checkout_require_key: false,
+          order_limit_enabled: true,
           honeypot_enabled: true,
           honeypot_skip_reserved_ips: true,
           payment_reconciliation_enabled: false,
@@ -248,6 +340,8 @@ export default function Settings() {
         normalised.backup_stale_hours ||= 30;
         normalised.backup_min_free_mb ??= 1024;
         delete normalised._available_themes;
+        delete normalised._client_ip;
+        delete normalised._client_subnet64;
         savedValuesRef.current = normalised;
         dirtyValuesRef.current = {};
         setInitialValues(normalised);
@@ -338,6 +432,26 @@ export default function Settings() {
     message.info('已恢复为上次保存的设置');
   }, [form]);
 
+  const appendWhitelistEntry = useCallback(
+    (entry) => {
+      if (!canConfigurePrivate || !entry) return;
+      const currentRaw = String(form.getFieldValue('honeypot_whitelist') || '');
+      const existing = currentRaw
+        .split(/[\r\n,;，；]+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      if (existing.some((item) => item.toLowerCase() === entry.toLowerCase())) {
+        message.info(`白名单中已包含 ${entry}`);
+        return;
+      }
+      const nextValue = existing.length > 0 ? `${currentRaw.trimEnd()}\n${entry}` : entry;
+      form.setFieldValue('honeypot_whitelist', nextValue);
+      handleValuesChange({ honeypot_whitelist: nextValue });
+      message.success(`已填入 ${entry}，请点击「保存设置」使其生效`);
+    },
+    [canConfigurePrivate, form, handleValuesChange]
+  );
+
   const handleTestEmail = async () => {
     if (!canConfigurePrivate || loading || loadError) return;
     if (Object.keys(dirtyValuesRef.current).length > 0) {
@@ -405,7 +519,7 @@ export default function Settings() {
       children: (
         <>
           <div className="admin-form-grid-2">
-            <ProFormText name="site_name" label="站点名称" />
+            <ProFormText name="site_name" label="站点名称" fieldProps={NO_AUTOFILL_PROPS} />
             <ProFormSelect
               name="site_theme"
               label="前台视觉主题"
@@ -414,15 +528,16 @@ export default function Settings() {
               extra="保存后立即生效。系统自动加载 resources/views/templates/ 目录下的可用模板。"
             />
           </div>
-          <ProFormTextArea name="site_description" label="站点简介" fieldProps={{ rows: 3 }} />
+          <ProFormTextArea name="site_description" label="站点简介" fieldProps={{ rows: 3, ...NO_AUTOFILL_PROPS }} />
           <div className="admin-form-grid-3">
-            <ProFormText name="contact_text" label="客服联系说明" placeholder="例如：在线客服 / 工单邮箱" />
-            <ProFormText name="contact_url" label="客服跳转链接" placeholder="例如：https://t.me/example" />
+            <ProFormText name="contact_text" label="客服联系说明" placeholder="例如：在线客服 / 工单邮箱" fieldProps={NO_AUTOFILL_PROPS} />
+            <ProFormText name="contact_url" label="客服跳转链接" placeholder="例如：https://t.me/example" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
             <ProFormText
               name="footer_powered_by"
               label="页脚系统标识"
               tooltip="展示在页脚 Powered by 区域；留空则隐藏该标识。"
               placeholder="留空则不展示"
+              fieldProps={NO_AUTOFILL_PROPS}
             />
           </div>
           <div className="admin-form-grid-3">
@@ -450,7 +565,7 @@ export default function Settings() {
             name="popup_interval_hours"
             label="弹窗重复提示间隔（小时）"
             min={0}
-            fieldProps={{ precision: 0 }}
+            fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }}
             extra="设定周期内同一访客不会重复收到相同弹窗公告；填 0 表示每次访问均弹出。"
           />
         </>
@@ -465,20 +580,22 @@ export default function Settings() {
             <ProFormText
               name="site_url"
               label="标准站点域名（Canonical URL）"
+              fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
               extra="用于生成规范链接、站点地图及搜索引擎主动推送地址，如 https://shop.example.com"
             />
             <ProFormText
               name="bing_indexnow_key"
               label="IndexNow 验证密钥"
+              fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
               extra="支持 8–128 位字母、数字或连字符；系统将自动托管对应的密钥校验文件。"
             />
           </div>
-          <ProFormText.Password name="baidu_push_token" label="百度搜索资源平台推送 Token" />
+          <SecretField name="baidu_push_token" disabled={!canWrite} label="百度搜索资源平台推送 Token" />
           <div className="admin-form-grid-2">
-            <ProFormText name="seo_default_title" label="全站默认 SEO 标题" />
-            <ProFormText name="seo_default_keywords" label="全站默认 SEO 关键词" placeholder="多个关键词用英文逗号分隔" />
+            <ProFormText name="seo_default_title" label="全站默认 SEO 标题" fieldProps={NO_AUTOFILL_PROPS} />
+            <ProFormText name="seo_default_keywords" label="全站默认 SEO 关键词" placeholder="多个关键词用英文逗号分隔" fieldProps={NO_AUTOFILL_PROPS} />
           </div>
-          <ProFormTextArea name="seo_default_description" label="全站默认 SEO 描述" fieldProps={{ rows: 3 }} />
+          <ProFormTextArea name="seo_default_description" label="全站默认 SEO 描述" fieldProps={{ rows: 3, ...NO_AUTOFILL_PROPS }} />
         </>
       ),
     },
@@ -495,10 +612,10 @@ export default function Settings() {
           />
           <div className="admin-form-section-title">易支付（EPay）网关配置</div>
           <div className="admin-form-grid-2">
-            <ProFormText name="epay_api_url" disabled={!canConfigurePrivate} label="EPay 网关接口地址" placeholder="如 https://pay.example.com" />
-            <ProFormText name="epay_merchant_id" disabled={!canConfigurePrivate} label="EPay 商户 ID" />
+            <ProFormText name="epay_api_url" disabled={!canConfigurePrivate} label="EPay 网关接口地址" placeholder="如 https://pay.example.com" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
+            <ProFormText name="epay_merchant_id" disabled={!canConfigurePrivate} label="EPay 商户 ID" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
           </div>
-          <ProFormText name="epay_merchant_key" disabled={!canConfigurePrivate} label="EPay 商户通信密钥" />
+          <ProFormText name="epay_merchant_key" disabled={!canConfigurePrivate} label="EPay 商户通信密钥" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
 
           <div className="admin-form-section-title">USDT 加密货币网关配置</div>
           <div className="admin-form-grid-2">
@@ -512,9 +629,9 @@ export default function Settings() {
               ]}
               extra="请与实际部署的 USDT 收款服务协议保持一致，协议不匹配将导致回调签名验证失败。"
             />
-            <ProFormText name="epusdt_api_url" disabled={!canConfigurePrivate} label="USDT 网关地址" placeholder="如 https://usdt.example.com" />
+            <ProFormText name="epusdt_api_url" disabled={!canConfigurePrivate} label="USDT 网关地址" placeholder="如 https://usdt.example.com" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
           </div>
-          <ProFormText name="epusdt_api_token" disabled={!canConfigurePrivate} label="USDT 接口通信 Token" />
+          <ProFormText name="epusdt_api_token" disabled={!canConfigurePrivate} label="USDT 接口通信 Token" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
         </>
       ),
     },
@@ -536,6 +653,7 @@ export default function Settings() {
               disabled={!canConfigurePrivate}
               label="SMTP 服务器主机"
               placeholder="如 smtp.qq.com / smtp.gmail.com"
+              fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
               extra="留空则回退读取服务器环境变量配置。"
             />
             <ProFormSelect
@@ -555,13 +673,13 @@ export default function Settings() {
               label="SMTP 端口"
               min={1}
               max={65535}
-              fieldProps={{ precision: 0 }}
+              fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }}
               extra="SSL 常用 465，STARTTLS 常用 587。"
             />
           </div>
           <div className="admin-form-grid-2">
-            <ProFormText name="mail_username" disabled={!canConfigurePrivate} label="SMTP 认证账号" placeholder="通常为完整发件邮箱地址" />
-            <ProFormText.Password
+            <ProFormText name="mail_username" disabled={!canConfigurePrivate} label="SMTP 认证账号" placeholder="通常为完整发件邮箱地址" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
+            <SecretField
               name="mail_password"
               disabled={!canConfigurePrivate}
               label="SMTP 认证密码 / 授权码"
@@ -573,9 +691,10 @@ export default function Settings() {
               name="mail_from_address"
               disabled={!canConfigurePrivate}
               label="发件人邮箱地址"
+              fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
               extra="多数邮件服务商要求发件地址与认证账号一致。"
             />
-            <ProFormText name="mail_from_name" disabled={!canConfigurePrivate} label="发件人显示名称" placeholder="留空默认采用站点名称" />
+            <ProFormText name="mail_from_name" disabled={!canConfigurePrivate} label="发件人显示名称" placeholder="留空默认采用站点名称" fieldProps={NO_AUTOFILL_PROPS} />
           </div>
 
           <Card size="small" title="SMTP 连通性测试" style={{ marginTop: 8, marginBottom: 20 }}>
@@ -584,7 +703,8 @@ export default function Settings() {
             </Typography.Paragraph>
             <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
               <Input
-                type="email"
+                type="text"
+                inputMode="email"
                 disabled={!canConfigurePrivate}
                 value={testTo}
                 onChange={(e) => setTestTo(e.target.value)}
@@ -593,6 +713,7 @@ export default function Settings() {
                   e.preventDefault();
                   handleTestEmail();
                 }}
+                {...NO_AUTOFILL_IDENTIFIER_PROPS}
                 placeholder="输入接收测试邮件的邮箱地址"
                 allowClear
               />
@@ -622,12 +743,13 @@ export default function Settings() {
             disabled={!canConfigurePrivate}
             label="交付邮件主题"
             placeholder="{{site_name}} - 订单 {{order_no}} 卡密交付通知"
+            fieldProps={NO_AUTOFILL_PROPS}
           />
           <ProFormTextArea
             name="email_template_body"
             disabled={!canConfigurePrivate}
             label="交付邮件正文"
-            fieldProps={{ rows: 12 }}
+            fieldProps={{ rows: 12, ...NO_AUTOFILL_PROPS }}
             extra="支持纯文本与安全 HTML 格式；纯文本换行将自动保留。"
           />
         </>
@@ -654,11 +776,10 @@ export default function Settings() {
             extra="包含订单号与买家联系邮箱等敏感交易信息，建议仅推送至站长个人私聊或内部管理群。"
           />
           <div className="admin-form-grid-2">
-            <ProFormText.Password
+            <SecretField
               name="telegram_bot_token"
               disabled={!canConfigurePrivate}
               label="默认机器人 Token（Bot Token）"
-              fieldProps={{ autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
               extra="从 @BotFather 获取的完整 Token；已保存的 Token 以掩码显示，未变更请保持原样。"
             />
             <ProFormText
@@ -666,7 +787,7 @@ export default function Settings() {
               disabled={!canConfigurePrivate}
               label="站长默认接收会话 ID（Chat ID）"
               placeholder="如 123456789 或 -1001234567890#话题ID"
-              fieldProps={{ autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
               extra="填写站长个人 Chat ID 或内部管理群 ID（支持超级群 #话题ID）。"
             />
           </div>
@@ -686,12 +807,11 @@ export default function Settings() {
               extra="当新建上架商品、下架商品重新上架，或为已上架商品导入新卡密补货时，自动推送价格、库存与直达购买链接。"
             />
           </div>
-          <ProFormText.Password
+          <SecretField
             name="telegram_broadcast_bot_token"
             disabled={!canConfigurePrivate}
             label="指定播报机器人 Token（可选）"
             placeholder="留空则默认共用上方「默认机器人 Token」"
-            fieldProps={{ autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
             extra="如需使用独立的公开播报机器人向客户群组或频道发送售出/上架通知，可单独填写其 Bot Token；留空则共用默认机器人。"
           />
 
@@ -707,7 +827,7 @@ export default function Settings() {
               disabled={!canConfigurePrivate}
               label="私聊接收人 Chat ID"
               placeholder="如 123456789, 987654321（留空默认回退使用站长接收会话 ID）"
-              fieldProps={{ rows: 2, autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              fieldProps={{ rows: 2, ...NO_AUTOFILL_IDENTIFIER_PROPS }}
               extra="接收人需先打开对应机器人点击 Start（发送 /start）激活对话；支持填写多个个人数字 Chat ID，用英文逗号或换行分隔。"
             />
           </Card>
@@ -723,7 +843,7 @@ export default function Settings() {
               disabled={!canConfigurePrivate}
               label="目标群组 Chat ID / @公开群用户名"
               placeholder="如 -1001234567890 或 -1001234567890#12 或 @my_shop_group"
-              fieldProps={{ rows: 2, autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              fieldProps={{ rows: 2, ...NO_AUTOFILL_IDENTIFIER_PROPS }}
               extra="请先将机器人拉入目标群组并确保允许发言。支持普通群（-987654321）、超级群（-1001234567890）、超级群指定话题（-1001234567890#话题ID）及公开群（@group_name），多个群组用逗号或换行分隔。"
             />
           </Card>
@@ -739,7 +859,7 @@ export default function Settings() {
               disabled={!canConfigurePrivate}
               label="目标频道 @用户名 / 频道 ID"
               placeholder="如 @my_shop_channel 或 https://t.me/my_shop_channel 或 -1001234567890"
-              fieldProps={{ rows: 2, autoCorrect: 'off', autoCapitalize: 'none', spellCheck: false }}
+              fieldProps={{ rows: 2, ...NO_AUTOFILL_IDENTIFIER_PROPS }}
               extra="必须先将机器人添加为目标频道的管理员，并开启「发布消息（Post Messages）」权限。支持公开频道 @用户名、t.me 链接或私有频道 -100 开头的数字 ID，多个频道用逗号或换行分隔。"
             />
           </Card>
@@ -774,9 +894,7 @@ export default function Settings() {
                     e.preventDefault();
                     handleTestTelegram();
                   }}
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
+                  {...NO_AUTOFILL_IDENTIFIER_PROPS}
                   placeholder="可选：临时指定测试 Chat ID 或 @频道"
                   allowClear
                 />
@@ -807,7 +925,7 @@ export default function Settings() {
             label="未支付订单超时关闭时间（分钟）"
             min={5}
             max={10080}
-            fieldProps={{ precision: 0 }}
+            fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }}
             extra="订单超过该时长仍未完成支付将自动关闭并释放锁定的卡密库存。"
           />
           <ProFormSwitch
@@ -824,19 +942,55 @@ export default function Settings() {
       label: '安全与风控',
       children: (
         <>
+          <div className="admin-form-section-title">基础请求与黑名单防护（均可独立开关）</div>
+          <div className="admin-form-grid-3">
+            <ProFormSwitch
+              name="blacklist_enabled"
+              disabled={!canConfigurePrivate}
+              label="启用 IP 与邮箱黑名单拦截"
+              extra="关闭后暂不拦截黑名单中的来源，已有黑名单记录会保留，重新开启后立即恢复生效。"
+            />
+            <ProFormSwitch
+              name="cross_site_guard_enabled"
+              disabled={!canConfigurePrivate}
+              label="启用跨站提交拦截（Sec-Fetch-Site）"
+              extra="拦截浏览器标记为 cross-site 的非安全表单/接口提交，关闭后仅保留标准 CSRF 校验。"
+            />
+            <ProFormSwitch
+              name="form_honeypot_enabled"
+              disabled={!canConfigurePrivate}
+              label="启用表单隐藏蜜罐防机器人"
+              extra="下单与查单表单中隐藏诱饵字段若被自动脚本填写则直接拦截；做接口调试或安全测试时可临时关闭。"
+            />
+          </div>
+
           <div className="admin-form-section-title">Cloudflare Turnstile 人机校验</div>
+          <ProFormSwitch
+            name="turnstile_enabled"
+            disabled={!canConfigurePrivate}
+            label="启用 Cloudflare Turnstile 人机校验"
+            extra="开启且下方 Site Key 与 Secret Key 均已填写时在前台生效；临时关闭可跳过验证且保留已填密钥，无需清空重填。"
+          />
           <div className="admin-form-grid-2">
-            <ProFormText name="turnstile_site_key" disabled={!canConfigurePrivate} label="Turnstile Site Key" />
-            <ProFormText.Password name="turnstile_secret_key" disabled={!canConfigurePrivate} label="Turnstile Secret Key" />
+            <ProFormText name="turnstile_site_key" disabled={!canConfigurePrivate} label="Turnstile Site Key" fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS} />
+            <SecretField name="turnstile_secret_key" disabled={!canConfigurePrivate} label="Turnstile Secret Key" />
           </div>
 
           <div className="admin-form-section-title">下单防刷与恶意锁库存限额</div>
-          <ProFormSwitch
-            name="checkout_require_key"
-            disabled={!canConfigurePrivate}
-            label="强制校验页面下单令牌（checkout_key）"
-            extra="开启后下单必须携带当前会话签发的页面令牌，直接阻断未加载商品页的无状态脚本裸发 POST 请求。"
-          />
+          <div className="admin-form-grid-2">
+            <ProFormSwitch
+              name="checkout_require_key"
+              disabled={!canConfigurePrivate}
+              label="强制校验页面下单令牌（checkout_key）"
+              extra="开启后下单必须携带当前会话签发的页面令牌，直接阻断未加载商品页的无状态脚本裸发 POST 请求。"
+            />
+            <ProFormSwitch
+              name="order_limit_enabled"
+              disabled={!canConfigurePrivate}
+              label="启用下单频次与未付锁库限额保护"
+              extra="控制下方单 IP、单邮箱最大待支付单数及单商品未付锁库上限；压测或安全测试时可一键临时关闭并保留已设配额。"
+            />
+          </div>
           <div className="admin-form-grid-2">
             <ProFormDigit
               name="order_max_pending_per_ip"
@@ -844,7 +998,7 @@ export default function Settings() {
               label="单 IP / IPv6 子网最大待支付单数"
               min={1}
               max={50}
-              fieldProps={{ precision: 0 }}
+              fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }}
               extra="默认 3 笔；同一来源未支付订单达到上限后将拒绝继续锁库存。"
             />
             <ProFormDigit
@@ -853,7 +1007,7 @@ export default function Settings() {
               label="单邮箱最大待支付单数"
               min={1}
               max={50}
-              fieldProps={{ precision: 0 }}
+              fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }}
               extra="默认 3 笔；防止秒换代理 IP 使用同一邮箱批量占空库存。"
             />
           </div>
@@ -863,7 +1017,7 @@ export default function Settings() {
             label="单商品未付锁库保护上限（%）"
             min={20}
             max={100}
-            fieldProps={{ precision: 0 }}
+            fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }}
             extra="默认 80%（填 100 表示不限制）；当某商品待支付锁库数已达 10 件且超过该比例时暂停继续占库，为真实付款买家保留现货。"
           />
 
@@ -888,15 +1042,41 @@ export default function Settings() {
             label="自动封禁时长（分钟）"
             min={0}
             max={525600}
-            fieldProps={{ precision: 0 }}
+            fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }}
             extra="默认 10080 分钟（7 天）；填 0 表示永久封禁。"
           />
+          {clientIp && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <Typography.Text type="secondary">
+                当前识别到您的访问 IP：<span className="admin-mono">{clientIp}</span>
+              </Typography.Text>
+              <Button
+                size="small"
+                htmlType="button"
+                disabled={!canConfigurePrivate}
+                onClick={() => appendWhitelistEntry(clientIp)}
+              >
+                一键加入当前 IP
+              </Button>
+              {clientSubnet64 && (
+                <Button
+                  size="small"
+                  htmlType="button"
+                  disabled={!canConfigurePrivate}
+                  onClick={() => appendWhitelistEntry(clientSubnet64)}
+                >
+                  加入当前 IPv6 /64 网段
+                </Button>
+              )}
+            </div>
+          )}
           <ProFormTextArea
             name="honeypot_whitelist"
             disabled={!canConfigurePrivate}
-            label="扫描防护豁免 IP 白名单"
-            placeholder="例如：203.0.113.10, 2001:db8::1"
-            extra="多个 IPv4 / IPv6 地址请以英文逗号分隔。该白名单仅豁免自动扫描封禁，不影响管理员手动添加的黑名单规则。"
+            label="蜜罐扫描防护豁免 IP 白名单（支持单 IP 与 CIDR 网段）"
+            placeholder={'例如：\n203.0.113.10\n198.51.100.0/24\n2001:db8::/64'}
+            fieldProps={{ rows: 4, ...NO_AUTOFILL_IDENTIFIER_PROPS }}
+            extra="支持单个 IPv4 / IPv6 地址及 CIDR 网段（如 203.0.113.0/24、2001:db8::/64），多个条目可用英文逗号或换行分隔。命中白名单的来源做安全扫描测试时不会被蜜罐拉黑（仍正常返回 404）；保存后会自动解除该白名单内已有的蜜罐封禁记录，不影响管理员手动添加的黑名单规则。"
           />
         </>
       ),
@@ -919,21 +1099,23 @@ export default function Settings() {
               name="backup_schedule_time"
               disabled={!canConfigurePrivate}
               label="每日执行时间（Asia/Shanghai）"
+              fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
               rules={[{ pattern: /^([01]\d|2[0-3]):[0-5]\d$/, message: '请按 HH:mm 格式输入时间' }]}
             />
           </div>
           <div className="admin-form-grid-2">
-            <ProFormDigit name="backup_retention_count" disabled={!canConfigurePrivate} label="本地最大保留份数" min={1} max={365} fieldProps={{ precision: 0 }} />
-            <ProFormDigit name="backup_retention_days" disabled={!canConfigurePrivate} label="本地最大保留天数" min={1} max={3650} fieldProps={{ precision: 0 }} />
+            <ProFormDigit name="backup_retention_count" disabled={!canConfigurePrivate} label="本地最大保留份数" min={1} max={365} fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }} />
+            <ProFormDigit name="backup_retention_days" disabled={!canConfigurePrivate} label="本地最大保留天数" min={1} max={3650} fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }} />
           </div>
           <div className="admin-form-grid-2">
-            <ProFormDigit name="backup_stale_hours" disabled={!canConfigurePrivate} label="备份过期告警阈值（小时）" min={1} max={8760} fieldProps={{ precision: 0 }} />
-            <ProFormDigit name="backup_min_free_mb" disabled={!canConfigurePrivate} label="磁盘最低可用空间告警阈值（MB）" min={0} max={1048576} fieldProps={{ precision: 0 }} />
+            <ProFormDigit name="backup_stale_hours" disabled={!canConfigurePrivate} label="备份过期告警阈值（小时）" min={1} max={8760} fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }} />
+            <ProFormDigit name="backup_min_free_mb" disabled={!canConfigurePrivate} label="磁盘最低可用空间告警阈值（MB）" min={0} max={1048576} fieldProps={{ precision: 0, ...NO_AUTOFILL_PROPS }} />
           </div>
           <ProFormText
             name="backup_sync_directory"
             disabled={!canConfigurePrivate}
             label="异机挂载同步目录（可选）"
+            fieldProps={NO_AUTOFILL_IDENTIFIER_PROPS}
             extra="请填写宿主机或容器内已挂载且具备写权限的绝对目录路径（不可填写 URL 或应用根目录）；留空则仅保留本地备份。"
           />
         </>
@@ -987,6 +1169,8 @@ export default function Settings() {
         canWrite={canWrite}
         initialValues={initialValues}
         tabItems={tabItems}
+        activeTab={activeTab}
+        onTabChange={handleTabChange}
         topActions={topActions}
         footerActions={footerActions}
         onValuesChange={handleValuesChange}

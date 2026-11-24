@@ -147,10 +147,8 @@ class TrapScanners
      */
     private function bannable(string $ip, ?Request $request = null): bool
     {
-        // 白名单：永久放行（自己的办公网、监控等）。
-        $whitelist = array_map([\App\Support\IpAddress::class, 'normalize'],
-            array_filter(array_map('trim', explode(',', (string) setting('honeypot_whitelist', '')))));
-        if (in_array($ip, $whitelist, true)) {
+        // 白名单：永久放行（支持单个 IPv4/IPv6 与 CIDR 网段，逗号或换行分隔）。
+        if (\App\Support\IpAddress::matchesWhitelist($ip, (string) setting('honeypot_whitelist', ''))) {
             return false;
         }
 

@@ -25,7 +25,9 @@ class QueryOrderRequest extends FormRequest
             'email' => ['required', 'email', 'max:200'],
             'query_password' => ['bail', 'required', 'string', 'max:50', new \App\Rules\QueryPasswordBytes],
             'order_no' => ['bail', 'nullable', 'string', 'max:30', new \App\Rules\BuyerText],
-            'website' => ['nullable', 'string', 'max:0'],
+            'website' => setting('form_honeypot_enabled', '1') === '1'
+                ? ['nullable', 'string', 'max:0']
+                : ['nullable', 'string', 'max:255'],
         ];
     }
 

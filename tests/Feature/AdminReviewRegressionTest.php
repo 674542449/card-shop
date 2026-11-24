@@ -61,6 +61,54 @@ class AdminReviewRegressionTest extends TestCase
         $this->assertSame(0, Blacklist::count());
     }
 
+    public function test_honeypot_whitelist_supports_cidr_newlines_and_releases_existing_honeypot_bans(): void
+    {
+        $this->admin();
+
+        // Reject invalid CIDR and 0-prefix full-internet ranges.
+        $this->postJson('/api/admin/settings', ['honeypot_whitelist' => '0.0.0.0/0'])->assertUnprocessable()->assertJsonValidationErrors('honeypot_whitelist');
+        $this->postJson('/api/admin/settings', ['honeypot_whitelist' => '::/0'])->assertUnprocessable()->assertJsonValidationErrors('honeypot_whitelist');
+        $this->postJson('/api/admin/settings', ['honeypot_whitelist' => '203.0.113.1/33'])->assertUnprocessable()->assertJsonValidationErrors('honeypot_whitelist');
+
+        // Pre-existing honeypot bans inside the CIDR should be purged on save, while manual bans stay intact.
+        $honeypotIpv4 = Blacklist::create(['type' => 'ip', 'value' => '203.0.113.42', 'source' => 'honeypot', 'reason' => '蜜罐命中: /.env', 'expires_at' => now()->addHour()]);
+        $honeypotIpv6 = Blacklist::create(['type' => 'ip', 'value' => '2001:db8:abcd::99', 'source' => 'honeypot', 'reason' => '蜜罐命中: /.git', 'expires_at' => now()->addHour()]);
+        $manualBan = Blacklist::create(['type' => 'ip', 'value' => '203.0.113.43', 'source' => 'manual', 'reason' => 'Manual block', 'expires_at' => null]);
+
+        $this->postJson('/api/admin/settings', [
+            'honeypot_enabled' => true,
+            'honeypot_skip_reserved_ips' => false,
+            'honeypot_whitelist' => "203.0.113.0/24\n2001:db8:abcd::/64",
+        ])->assertOk();
+
+        $this->assertNull($honeypotIpv4->fresh());
+        $this->assertNull($honeypotIpv6->fresh());
+        $this->assertNotNull($manualBan->fresh());
+        $this->assertTrue(Blacklist::isBlocked('203.0.113.43'));
+        $this->assertFalse(Blacklist::isBlocked('203.0.113.42'));
+        $this->assertFalse(Blacklist::isBlocked('2001:db8:abcd::99'));
+
+        // Probes from whitelisted IPv4/IPv6 CIDR return 404 without banning, while outside IPs are still trapped.
+        foreach (['203.0.113.88', '2001:db8:abcd::1234'] as $allowedIp) {
+            $req = Request::create('/.env', 'GET', server: ['REMOTE_ADDR' => $allowedIp]);
+            try { app(TrapScanners::class)->handle($req, fn () => response('not-found', 404)); }
+            catch (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {}
+            $this->assertFalse(Blacklist::isBlocked($allowedIp), "Whitelisted {$allowedIp} must not be banned");
+        }
+
+        $outsideReq = Request::create('/.env', 'GET', server: ['REMOTE_ADDR' => '198.51.100.77']);
+        try { app(TrapScanners::class)->handle($outsideReq, fn () => response('not-found', 404)); }
+        catch (\Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {}
+        $this->assertTrue(Blacklist::isBlocked('198.51.100.77'));
+
+        // Settings endpoint exposes the admin's normalized client IP (and IPv6 /64 prefix) for one-click whitelisting.
+        $this->withServerVariables(['REMOTE_ADDR' => '2001:0db8:abcd:0000::55'])
+            ->getJson('/api/admin/settings')
+            ->assertOk()
+            ->assertJsonPath('_client_ip', '2001:db8:abcd::55')
+            ->assertJsonPath('_client_subnet64', '2001:db8:abcd::/64');
+    }
+
     public function test_reconciliation_retry_is_authorized_idempotent_and_does_not_mark_paid(): void
     {
         Http::preventStrayRequests();

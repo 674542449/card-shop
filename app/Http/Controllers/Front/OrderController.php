@@ -489,7 +489,9 @@ class OrderController extends Controller
             'email' => ['required', 'email', 'max:200'],
             'order_no' => ['bail', 'nullable', 'string', 'max:30', new \App\Rules\BuyerText],
             'query_password' => ['bail', 'required', 'string', 'max:50', new \App\Rules\QueryPasswordBytes],
-            'website' => ['nullable', 'string', 'max:0'],
+            'website' => setting('form_honeypot_enabled', '1') === '1'
+                ? ['nullable', 'string', 'max:0']
+                : ['nullable', 'string', 'max:255'],
         ], [
             'website.max' => '请求异常，请刷新页面后重试',
         ])->validate();

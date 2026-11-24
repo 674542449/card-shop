@@ -1,5 +1,6 @@
 import useWritePermission from '../hooks/useWritePermission';
 import React, { useRef, useState } from 'react';
+import { Link, useOutletContext } from 'react-router-dom';
 import {
   ProTable,
   ModalForm,
@@ -10,12 +11,15 @@ import {
 } from '@ant-design/pro-components';
 import { Button, message, Popconfirm, Tag, Alert } from 'antd';
 import dayjs from 'dayjs';
-import { PlusOutlined } from '@ant-design/icons';
+import { PlusOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { getBlacklists, createBlacklist, updateBlacklist, deleteBlacklist } from '../services/api';
 import { formatDateMinute, toTablePage } from '../utils/orderMeta';
+import { canVisit } from '../permissions';
 
 export default function Blacklists() {
+  const admin = useOutletContext();
   const canWrite = useWritePermission('blacklists');
+  const canOpenSettings = canVisit(admin, '/settings');
   const actionRef = useRef();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
@@ -124,23 +128,32 @@ export default function Blacklists() {
           const res = await getBlacklists({ page: params.current, per_page: params.pageSize, ...params });
           return toTablePage(res);
         }}
-        toolBarRender={() =>
-          canWrite
-            ? [
-                <Button
-                  key="add"
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    setEditingRecord(null);
-                    setModalVisible(true);
-                  }}
-                >
-                  新增封禁规则
-                </Button>,
-              ]
-            : []
-        }
+        toolBarRender={() => [
+          canOpenSettings && (
+            <Link
+              key="honeypot-whitelist"
+              to="/settings?tab=security"
+              className="ant-btn ant-btn-default"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <SafetyCertificateOutlined />
+              <span>蜜罐 IP 白名单</span>
+            </Link>
+          ),
+          canWrite && (
+            <Button
+              key="add"
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => {
+                setEditingRecord(null);
+                setModalVisible(true);
+              }}
+            >
+              新增封禁规则
+            </Button>
+          ),
+        ].filter(Boolean)}
       />
       <ModalForm
         name="blacklist-editor"

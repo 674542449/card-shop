@@ -36,7 +36,9 @@ class CreateOrderRequest extends FormRequest
                 ? ['alipay', 'wechat', 'usdt_trc20', 'usdt_bep20', 'usdt_polygon'] : \App\Support\PaymentMethods::supported())],
             'checkout_key' => [$requireKey ? 'required' : 'nullable', 'string', 'max:110'],
             'cf-turnstile-response' => ['nullable', 'string'],
-            'website' => ['nullable', 'string', 'max:0'],
+            'website' => setting('form_honeypot_enabled', '1') === '1'
+                ? ['nullable', 'string', 'max:0']
+                : ['nullable', 'string', 'max:255'],
         ];
     }
 

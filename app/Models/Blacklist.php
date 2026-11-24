@@ -75,10 +75,18 @@ class Blacklist extends Model
      */
     public static function isBlocked(string $ip, ?string $email = null): bool
     {
+        if (setting('blacklist_enabled', '1') !== '1') {
+            return false;
+        }
+
         $ip = IpAddress::normalize($ip);
-        $query = static::active()->where(function ($outer) use ($ip, $email) {
-            $outer->where(function ($q) use ($ip) {
+        $honeypotWhitelisted = IpAddress::matchesWhitelist($ip, (string) setting('honeypot_whitelist', ''));
+        $query = static::active()->where(function ($outer) use ($ip, $email, $honeypotWhitelisted) {
+            $outer->where(function ($q) use ($ip, $honeypotWhitelisted) {
                 $q->where('type', 'ip')->where('value', $ip);
+                if ($honeypotWhitelisted) {
+                    $q->where('source', '!=', 'honeypot');
+                }
             });
 
             if ($email !== null) {

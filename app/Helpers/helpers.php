@@ -190,6 +190,21 @@ if (!function_exists('admin_path')) {
     }
 }
 
+if (!function_exists('turnstile_site_key')) {
+    /**
+     * Return the configured Cloudflare Turnstile site key for storefront widgets only
+     * when Turnstile protection is enabled (default '1' for backwards compatibility).
+     */
+    function turnstile_site_key(): string
+    {
+        if (setting('turnstile_enabled', '1') !== '1') {
+            return '';
+        }
+
+        return trim((string) setting('turnstile_site_key', ''));
+    }
+}
+
 if (!function_exists('themes_available')) {
     /**
      * 磁盘上装了哪些前台模板。

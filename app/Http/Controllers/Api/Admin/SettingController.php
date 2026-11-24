@@ -68,8 +68,9 @@ class SettingController extends Controller
                 'baidu_push_token', 'bing_indexnow_key',
             ],
             'security' => [
-                'turnstile_site_key', 'turnstile_secret_key', 'order_expire_minutes',
-                'checkout_require_key', 'order_max_pending_per_ip', 'order_max_pending_per_email', 'order_max_locked_percent',
+                'turnstile_enabled', 'turnstile_site_key', 'turnstile_secret_key', 'order_expire_minutes',
+                'blacklist_enabled', 'cross_site_guard_enabled', 'form_honeypot_enabled',
+                'checkout_require_key', 'order_limit_enabled', 'order_max_pending_per_ip', 'order_max_pending_per_email', 'order_max_locked_percent',
                 // 扫描器蜜罐（TrapScanners 中间件读取）。都有代码级默认值，不配也能跑。
                 'honeypot_enabled', 'honeypot_ban_minutes',
                 'honeypot_whitelist', 'honeypot_skip_reserved_ips',
@@ -139,7 +140,12 @@ class SettingController extends Controller
             'telegram_target_bot_enabled',
             'telegram_target_group_enabled',
             'telegram_target_channel_enabled',
+            'turnstile_enabled',
+            'blacklist_enabled',
+            'cross_site_guard_enabled',
+            'form_honeypot_enabled',
             'checkout_require_key',
+            'order_limit_enabled',
             'honeypot_enabled',
             'honeypot_skip_reserved_ips',
         ] as $key) {
@@ -170,13 +176,13 @@ class SettingController extends Controller
                 }
             }];
         }
-        $rules['honeypot_whitelist'] = ['nullable', 'string', function (string $attribute, mixed $value, \Closure $fail) {
+        $rules['honeypot_whitelist'] = ['nullable', 'string', 'max:10000', function (string $attribute, mixed $value, \Closure $fail) {
             if (!is_string($value)) {
                 return;
             }
-            foreach (array_filter(array_map('trim', explode(',', $value))) as $ip) {
-                if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
-                    $fail('白名单必须是用逗号分隔的有效 IP 地址。');
+            foreach (\App\Support\IpAddress::parseWhitelistEntries($value) as $entry) {
+                if (!\App\Support\IpAddress::isValidIpOrCidr($entry)) {
+                    $fail("白名单条目无效（{$entry}），请填写有效的 IPv4/IPv6 地址或 CIDR 网段（如 203.0.113.10、198.51.100.0/24、2001:db8::/64），多个条目用逗号或换行分隔。");
                     return;
                 }
             }
@@ -221,6 +227,22 @@ class SettingController extends Controller
             }
         });
         settings_forget();
+
+        // Automatically release existing honeypot bans matching newly whitelisted IPs/CIDRs
+        // (never touches manual bans), and drop their Redis blacklist cache immediately.
+        if ($request->has('honeypot_whitelist')) {
+            $rawWhitelist = (string) ($request->input('honeypot_whitelist') ?? '');
+            if (\App\Support\IpAddress::parseWhitelistEntries($rawWhitelist) !== []) {
+                \App\Models\Blacklist::where('type', 'ip')
+                    ->where('source', 'honeypot')
+                    ->get()
+                    ->each(function (\App\Models\Blacklist $ban) use ($rawWhitelist) {
+                        if (\App\Support\IpAddress::matchesWhitelist((string) $ban->value, $rawWhitelist)) {
+                            $ban->delete();
+                        }
+                    });
+            }
+        }
 
         OperationLog::log('更新设置', 'setting', null, '更新系统设置');
 
