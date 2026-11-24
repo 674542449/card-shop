@@ -251,6 +251,12 @@ input { min-width: 0; }
 .n-input::placeholder { color: var(--n-muted); opacity: .8; }
 .n-input:focus { outline: none; border-color: var(--n-focus); box-shadow: 0 0 0 2px color-mix(in srgb, var(--n-focus) 16%, transparent); }
 .n-input[aria-invalid="true"] { border-color: var(--n-negative); }
+.n-input.is-secret-masked { -webkit-text-security: disc; }
+.n-secret-wrap { position: relative; display: flex; align-items: center; }
+.n-secret-wrap .n-input { padding-inline-end: 58px; }
+.n-secret-toggle { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); min-height: 30px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--n-muted); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.n-secret-toggle:hover { color: var(--n-ink); }
+.n-secret-toggle:focus-visible { outline: 2px solid var(--n-focus); outline-offset: 1px; }
 .n-field .n-hint { margin-top: 6px; }
 .n-field-error { color: var(--n-negative); font-size: 12px; margin-top: 6px; }
 .n-product-hero { display: grid; grid-template-columns: 170px minmax(0,1fr) minmax(0,180px); gap: 30px; align-items: center; padding: 26px; background: var(--n-surface); border: 1px solid var(--n-line); border-radius: 12px; margin-bottom: 36px; }

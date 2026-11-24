@@ -40,4 +40,10 @@ abstract class TestCase extends \Illuminate\Foundation\Testing\TestCase
             ]],
         ]);
     }
+
+    /** Signed cross-device payment page path for an order. */
+    protected function signedPayPath(\App\Models\Order $order): string
+    {
+        return \App\Support\OrderPayAccess::path($order);
+    }
 }

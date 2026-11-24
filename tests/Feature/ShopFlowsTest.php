@@ -180,7 +180,8 @@ class ShopFlowsTest extends TestCase
         $this->post('/order/create', $this->data($product, ['payment_method' => 'usdt_trc20']))->assertRedirect('https://usdt.example.test/pay/1');
         $order = Order::firstOrFail();
         $this->app['session']->flush();
-        $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('https://usdt.example.test/pay/1');
+        $this->get('/order/pay/'.$order->order_no)->assertRedirect('/order/query');
+        $this->get($this->signedPayPath($order))->assertOk()->assertSee('https://usdt.example.test/pay/1');
         Http::assertSentCount(1);
     }
 

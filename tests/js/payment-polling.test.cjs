@@ -4,18 +4,19 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const code = fs.readFileSync('public/js/front.js', 'utf8');
 const flush = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
-function page(responses, lifetime = 60 * 60000) {
+function page(responses, lifetime = 60 * 60000, datasetOverrides = {}) {
     let now = 0, nextId = 0, reloads = 0, calls = 0;
+    const fetchedUrls = [];
     const timers = new Map();
     const status = {textContent: ''};
     const verify = {hidden: true};
     const retry = {disabled: false, addEventListener: (_, fn) => { retry.click = fn; }};
-    const polling = {dataset: {orderNo: 'DUMMY', expires: new Date(lifetime).toISOString()}, querySelector: sel => ({'[data-payment-status]':status, '[data-payment-recheck]':retry, '[data-payment-verify]':verify})[sel]};
+    const polling = {dataset: {orderNo: 'DUMMY', expires: new Date(lifetime).toISOString(), ...datasetOverrides}, querySelector: sel => ({'[data-payment-status]':status, '[data-payment-recheck]':retry, '[data-payment-verify]':verify})[sel]};
     class ClockDate extends Date { static now() { return now; } }
     const document = {getElementById: id => id === 'payment-polling' ? polling : null, querySelectorAll: () => [], addEventListener: (event, fn) => { if (event === 'DOMContentLoaded') document.start = fn; }};
-    const context = {document, window:{addEventListener(){}, location:{reload(){reloads++;}}}, navigator:{}, Date:ClockDate, AbortController, setTimeout:(fn, delay) => { timers.set(++nextId, {fn, due:now+delay}); return nextId; }, clearTimeout:id => timers.delete(id), setInterval(){}, clearInterval(){}, fetch: async () => { calls++; const value = responses.shift(); if (value instanceof Error) throw value; return {ok:(value.http || 200) === 200, status:value.http || 200, redirected:false, json:async () => value}; }};
+    const context = {document, window:{addEventListener(){}, location:{reload(){reloads++;}}}, navigator:{}, Date:ClockDate, AbortController, setTimeout:(fn, delay) => { timers.set(++nextId, {fn, due:now+delay}); return nextId; }, clearTimeout:id => timers.delete(id), setInterval(){}, clearInterval(){}, fetch: async (url) => { calls++; fetchedUrls.push(url); const value = responses.shift(); if (value instanceof Error) throw value; return {ok:(value.http || 200) === 200, status:value.http || 200, redirected:false, json:async () => value}; }};
     vm.runInNewContext(code, context); document.start();
-    return {status, verify, retry, timers, get reloads(){return reloads;}, get calls(){return calls;}, async tick(time){now=time; const due=[...timers].filter(([,t])=>t.due<=now); for(const [id,t] of due){timers.delete(id);t.fn();} await flush();}, async manual(){retry.click();await flush();}};
+    return {status, verify, retry, timers, fetchedUrls, get reloads(){return reloads;}, get calls(){return calls;}, async tick(time){now=time; const due=[...timers].filter(([,t])=>t.due<=now); for(const [id,t] of due){timers.delete(id);t.fn();} await flush();}, async manual(){retry.click();await flush();}};
 }
 test('an order valid for an hour still detects payment after thirty minutes', async () => {
     const p=page([{status:'pending'}, {status:'pending'}, {status:'paid'}]); await flush();
@@ -39,4 +40,14 @@ test('a failed check beyond the deadline stops and remains manually recoverable'
     const p=page([{status:'pending'},new Error('offline'),{status:'paid'}],60000); await flush();
     await p.tick(61000); assert.match(p.status.textContent,/截止/); assert.equal(p.timers.size,0);
     await p.manual(); assert.equal(p.reloads,1);
+});
+test('uses signed data-poll-url when provided for cross-device polling', async () => {
+    const p=page([{status:'pending'}], 60000, {pollUrl: '/order/pay/DUMMY?sig=0123456789abcdef0123456789abcdef'});
+    await flush();
+    assert.deepEqual(p.fetchedUrls, ['/order/pay/DUMMY?sig=0123456789abcdef0123456789abcdef']);
+});
+test('403 permission denied stops automatic polling and exposes verification', async () => {
+    const p=page([{http:403}]); await flush();
+    assert.equal(p.verify.hidden,false); assert.match(p.status.textContent,/验证/);
+    assert.equal(p.timers.size,0); assert.equal(p.reloads,0);
 });

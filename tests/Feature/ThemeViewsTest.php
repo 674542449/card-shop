@@ -108,9 +108,9 @@ class ThemeViewsTest extends TestCase
         $attempt = \App\Models\PaymentAttempt::create(['order_id' => $order->id, 'method' => 'alipay', 'status' => 'processing']);
         foreach (['processing', 'uncertain'] as $status) {
             $attempt->update(['status' => $status]);
-            $page = $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('刷新订单状态')->assertSee('验证并查询订单');
+            $page = $this->get($this->signedPayPath($order))->assertOk()->assertSee('刷新订单状态')->assertSee('验证并查询订单');
             $dom = $this->dom($page->getContent());
-            $this->assertSame(1, $dom->query('//a[@href="/order/pay/DUMMY-RECOVERY"]')->length);
+            $this->assertSame(1, $dom->query('//a[@href="'.$this->signedPayPath($order).'"]')->length);
             $this->assertGreaterThanOrEqual(1, $dom->query('//a[@href="/order/query?order_no=DUMMY-RECOVERY"]')->length);
             $this->assertSame(0, $dom->query('//*[@id="countdown-timer"]')->length);
             $this->assertSame(0, $dom->query('//a[@target="_blank"][contains(.,"前往支付")]')->length);
@@ -118,7 +118,7 @@ class ThemeViewsTest extends TestCase
             $this->assertSame('pending', $order->fresh()->status);
         }
         $attempt->update(['status' => 'succeeded', 'response_payload' => ['url' => 'https://gateway.example.test/recovered']]);
-        $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('https://gateway.example.test/recovered');
+        $this->get($this->signedPayPath($order))->assertOk()->assertSee('https://gateway.example.test/recovered');
         $this->assertSame(1, \App\Models\PaymentAttempt::where('order_id', $order->id)->count());
     }
 
@@ -207,6 +207,7 @@ class ThemeViewsTest extends TestCase
         $polling = $dom->query('//*[@id="payment-polling"]')->item(0);
         $this->assertInstanceOf(DOMElement::class, $polling);
         $this->assertSame($order->order_no, $polling->getAttribute('data-order-no'));
+        $this->assertSame($this->signedPayPath($order), $polling->getAttribute('data-poll-url'));
 
         $timer = $dom->query('//*[@id="countdown-timer"]')->item(0);
         $this->assertInstanceOf(DOMElement::class, $timer);
@@ -259,7 +260,7 @@ class ThemeViewsTest extends TestCase
         $query = $this->get('/order/query')->assertOk()->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
         $this->assertSame('noindex, nofollow, noarchive', $this->metaContent($this->dom($query->getContent()), 'name', 'robots'));
         $order = $this->modernOrder($product);
-        $pay = $this->get('/order/pay/'.$order->order_no)->assertOk()->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+        $pay = $this->get($this->signedPayPath($order))->assertOk()->assertHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
         $this->assertSame('noindex, nofollow, noarchive', $this->metaContent($this->dom($pay->getContent()), 'name', 'robots'));
     }
 
@@ -340,9 +341,31 @@ class ThemeViewsTest extends TestCase
         $this->assertSame('6', $checkoutPassword->getAttribute('minlength'));
 
         $query = $this->get('/order/query')->assertOk();
-        $queryPassword = $this->dom($query->getContent())->query('//form[@action="/order/query"]//input[@name="query_password"]')->item(0);
+        $queryDom = $this->dom($query->getContent());
+        $queryForm = $queryDom->query('//form[@action="/order/query"]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $queryForm);
+        $this->assertSame('off', $queryForm->getAttribute('autocomplete'));
+        $this->assertSame(0, $queryDom->query('//form[@action="/order/query"]//input[@type="password"]')->length, 'Order lookup must avoid type="password" so browsers never autofill saved site passwords.');
+        foreach (['email', 'query_password', 'order_no'] as $fieldName) {
+            $input = $queryDom->query('//form[@action="/order/query"]//input[@name="'.$fieldName.'"]')->item(0);
+            $this->assertInstanceOf(DOMElement::class, $input);
+            $this->assertSame('off', $input->getAttribute('autocomplete'));
+            $this->assertSame('true', $input->getAttribute('data-lpignore'));
+            $this->assertSame('true', $input->getAttribute('data-1p-ignore'));
+            $this->assertSame('true', $input->getAttribute('data-bwignore'));
+            $this->assertSame('other', $input->getAttribute('data-form-type'));
+            $this->assertSame('off', $input->getAttribute('autocorrect'));
+            $this->assertSame('none', $input->getAttribute('autocapitalize'));
+            $this->assertSame('false', $input->getAttribute('spellcheck'));
+        }
+        $queryPassword = $queryDom->query('//form[@action="/order/query"]//input[@name="query_password"]')->item(0);
         $this->assertInstanceOf(DOMElement::class, $queryPassword);
+        $this->assertSame('text', $queryPassword->getAttribute('type'));
+        $this->assertStringContainsString('is-secret-masked', $queryPassword->getAttribute('class'));
         $this->assertTrue($queryPassword->hasAttribute('required'));
+        $toggle = $queryDom->query('//form[@action="/order/query"]//button[@type="button" and @data-secret-toggle="'.$queryPassword->getAttribute('id').'"]')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $toggle);
+        $this->assertSame('false', $toggle->getAttribute('aria-pressed'));
     }
 
     #[DataProvider('independentThemes')]
@@ -358,12 +381,15 @@ class ThemeViewsTest extends TestCase
         $form = $queryDom->query('//main//form[@action="/order/query"]')->item(0);
         $this->assertInstanceOf(DOMElement::class, $form);
         $this->assertSame('POST', strtoupper($form->getAttribute('method')));
+        $this->assertSame('off', $form->getAttribute('autocomplete'));
         $this->assertTrue($form->hasAttribute('data-guard'));
         $this->assertSame(1, $queryDom->query('//form[@action="/order/query"]//input[@name="_token" and @type="hidden"]')->length);
         $this->assertSame(1, $queryDom->query('//form[@action="/order/query"]//input[@name="email" and @type="email" and @required]')->length);
         $password = $queryDom->query('//form[@action="/order/query"]//input[@name="query_password"]')->item(0);
         $this->assertInstanceOf(DOMElement::class, $password);
-        $this->assertSame('password', $password->getAttribute('type'));
+        $this->assertSame('text', $password->getAttribute('type'));
+        $this->assertStringContainsString('is-secret-masked', $password->getAttribute('class'));
+        $this->assertSame('off', $password->getAttribute('autocomplete'));
         $this->assertTrue($password->hasAttribute('required'));
         $this->assertFalse($password->hasAttribute('value'), 'A rejected query password must never be redisplayed.');
         $this->assertSame(1, $queryDom->query('//form[@action="/order/query"]//button[@type="submit"]')->length);
@@ -395,7 +421,7 @@ class ThemeViewsTest extends TestCase
         Setting::set('epay_api_url', 'https://gateway.example.test', 'payment');
         Setting::set('epay_merchant_id', 'theme-merchant', 'payment');
         Setting::set('epay_merchant_key', 'theme-gateway-key', 'payment');
-        $response = $this->get('/order/pay/'.$order->order_no)->assertViewIs('templates.'.$theme.'.order.pay');
+        $response = $this->get($this->signedPayPath($order))->assertViewIs('templates.'.$theme.'.order.pay');
         $response->assertSee('12.00')->assertDontSee('theme-test-card');
         $dom = $this->assertIndependentShell($response);
         $this->assertPendingPaymentContract($dom, $order);
@@ -412,7 +438,7 @@ class ThemeViewsTest extends TestCase
             ->get('/order/detail/'.$order->order_no)->assertViewIs('templates.'.$theme.'.order.detail');
         $detail->assertDontSee('theme-test-card');
         $detailDom = $this->assertIndependentShell($detail);
-        $this->assertSame(1, $detailDom->query('//main//a[@href="/order/pay/'.$order->order_no.'"]')->length, 'The verified owner must be able to continue an unpaid order.');
+        $this->assertSame(1, $detailDom->query('//main//a[@href="'.$this->signedPayPath($order).'"]')->length, 'The verified owner must be able to continue an unpaid order.');
         $this->assertSame(0, $detailDom->query('//*[@id="card-content-text"]')->length);
         $this->assertSame(0, $detailDom->query('//main//a[@href="/order/cards/'.$order->order_no.'/download"]')->length);
     }
@@ -422,12 +448,12 @@ class ThemeViewsTest extends TestCase
     {
         $this->useTheme($theme);
         $order = $this->modernOrder($this->product());
-        $response = $this->get('/order/pay/'.$order->order_no)->assertViewIs('templates.'.$theme.'.order.pay');
+        $response = $this->get($this->signedPayPath($order))->assertViewIs('templates.'.$theme.'.order.pay');
         $response->assertSee('支付渠道暂时不可用')->assertDontSee('theme-test-card');
         $dom = $this->assertIndependentShell($response);
         $this->assertPendingPaymentContract($dom, $order);
         $this->assertGreaterThan(0, $dom->query('//main//*[@role="alert"]')->length, 'A missing gateway must produce an actionable error instead of indefinite preparation.');
-        $this->assertSame(1, $dom->query('//main//a[@href="/order/pay/'.$order->order_no.'"]')->length);
+        $this->assertSame(1, $dom->query('//main//a[@href="'.$this->signedPayPath($order).'"]')->length);
         $this->assertSame(0, $dom->query('//main//a[starts-with(@href, "https://gateway.example.test/")]')->length);
         $this->assertSame('pending', $order->fresh()->status);
     }
@@ -447,7 +473,7 @@ class ThemeViewsTest extends TestCase
         } else {
             app(OrderService::class)->closeOrder($order);
         }
-        $response = $this->get('/order/pay/'.$order->order_no)->assertViewIs('templates.'.$theme.'.order.pay');
+        $response = $this->get($this->signedPayPath($order))->assertViewIs('templates.'.$theme.'.order.pay');
         $response->assertSee($state === 'expired' ? '订单已过期' : '订单已关闭')->assertDontSee('theme-test-card');
         $dom = $this->assertIndependentShell($response);
         $this->assertSame($state, $order->fresh()->status);
@@ -464,7 +490,7 @@ class ThemeViewsTest extends TestCase
         app(OrderService::class)->closeOrder($order);
         $order->update(['payment_no' => 'theme-received-payment']);
 
-        $pay = $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('付款待核对')->assertSee('请勿重复支付');
+        $pay = $this->get($this->signedPayPath($order))->assertOk()->assertSee('付款待核对')->assertSee('请勿重复支付');
         $pay->assertDontSee('countdown-timer')->assertDontSee('payment-polling')->assertDontSee('theme-test-card');
         $this->withBuyerSession($order)
             ->get('/order/detail/'.$order->order_no)->assertOk()->assertSee('付款待核对')->assertSee('请勿重复支付')->assertDontSee('theme-test-card');

@@ -181,7 +181,7 @@ class BuyerAdversarialFlowTest extends TestCase
             $this->post('/payment/epay/notify', array_replace($outbound, $changes))->assertContent('fail');
         }
         $this->postJson('/payment/epusdt/notify', ['order_id' => $order->order_no, 'trade_id' => 'FORGED', 'status' => 2, 'amount' => '10.00', 'signature' => str_repeat('0', 32)])->assertContent('invalid signature');
-        $this->get('/order/pay/'.$order->order_no.'?status=paid&payment_review=0')->assertOk()->assertDontSee('buyer-secret-');
+        $this->get($this->signedPayPath($order).'&status=paid&payment_review=0')->assertOk()->assertDontSee('buyer-secret-');
         $this->assertSame('pending', $order->fresh()->status);
         $this->assertSame(0, $order->cards()->where('status', 'sold')->count());
         $this->assertSame(0, $order->paymentReceipts()->count());
@@ -309,7 +309,7 @@ class BuyerAdversarialFlowTest extends TestCase
         $p = $this->product();
         $token = ApiToken::where('token', hash('sha256', 'buyer-test-token'))->firstOrFail();
         $order = app(OrderService::class)->createOrder($this->data($p, ['api_token_id' => $token->id]));
-        for ($i = 0; $i < 6; $i++) { $this->getJson('/order/pay/'.$order->order_no)->assertOk()->assertJsonPath('status', 'pending'); }
+        for ($i = 0; $i < 6; $i++) { $this->getJson($this->signedPayPath($order))->assertOk()->assertJsonPath('status', 'pending'); }
         $this->postJson('/order/quote', ['product_id' => $p->id, 'quantity' => 1])->assertOk();
         $this->withToken('buyer-test-token')->postJson('/api/v1/orders/'.$order->order_no.'/query', ['email' => $order->email, 'query_password' => 'public-buyer-password'])->assertOk();
         $this->post('/order/create', $this->data($p))->assertRedirect()->assertSessionHasNoErrors();

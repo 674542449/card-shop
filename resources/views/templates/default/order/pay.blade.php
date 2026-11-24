@@ -26,12 +26,12 @@
 
                 <div class="ws-cashier-cta-wrap">
                     @if($paymentUrl)
-                    <a href="{{ $paymentUrl }}" class="ws-btn ws-btn-primary ws-btn-lg ws-cashier-cta" target="_blank" rel="noopener">前往支付平台付款 &nearr;</a>
+                    <a href="{{ $paymentUrl }}" class="ws-btn ws-btn-primary ws-btn-lg ws-cashier-cta" target="_blank" rel="noopener noreferrer">前往支付平台付款 &nearr;</a>
                     <span class="ws-cashier-hint">支付完成后请保持当前页面开启，系统确认回执后将自动跳转至交付页面</span>
                     @elseif($paymentUnavailable ?? false)
                     <div class="ws-alert ws-alert-danger" role="alert" style="margin:0;max-width:520px;text-align:left;">
                         <strong>支付渠道暂时不可用</strong>：当前未能生成支付链接，请稍后点击
-                        <a href="/order/pay/{{ $order->order_no }}" style="text-decoration:underline;font-weight:700;">刷新本页重试</a>；如持续异常请联系在线客服并提供下方订单编号。
+                        <a href="{{ $payUrl ?? \App\Support\OrderPayAccess::path($order) }}" style="text-decoration:underline;font-weight:700;">刷新本页重试</a>；如持续异常请联系在线客服并提供下方订单编号。
                     </div>
                     @else
                     <span class="ws-cashier-hint">请按页面提示完成支付，系统确认回执后将自动发放卡密凭据</span>
@@ -56,6 +56,7 @@
 
         <div class="ws-polling-bar" id="payment-polling" aria-live="polite"
              data-order-no="{{ $order->order_no }}"
+             data-poll-url="{{ $payUrl ?? \App\Support\OrderPayAccess::path($order) }}"
              data-expires="{{ $order->expires_at->toIso8601String() }}">
             <span data-payment-status>正在同步支付状态，确认到账后将自动展示交付信息…</span>
             <div class="ws-polling-actions">
@@ -74,7 +75,7 @@
                     {{ $deadReason ?? '此订单已超过支付有效期，请重新提交订单。' }}
                 </p>
                 <div class="ws-dead-actions">
-                    <a href="/order/pay/{{ $order->order_no }}" class="ws-btn ws-btn-primary">刷新订单状态</a>
+                    <a href="{{ $payUrl ?? \App\Support\OrderPayAccess::path($order) }}" class="ws-btn ws-btn-primary">刷新订单状态</a>
                     <a href="/order/query?order_no={{ $order->order_no }}" class="ws-btn ws-btn-secondary">验证并查询订单</a>
                     <a href="/" class="ws-btn ws-btn-secondary">返回商品目录</a>
                 </div>

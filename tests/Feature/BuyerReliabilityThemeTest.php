@@ -40,7 +40,7 @@ class BuyerReliabilityThemeTest extends TestCase
         $category = Category::create(['name' => 'Theme', 'slug' => 'buyer-theme', 'is_active' => true]);
         $product = Product::create(['category_id' => $category->id, 'name' => 'Theme product', 'slug' => 'buyer-theme', 'price' => '100', 'is_active' => true]);
         $order = Order::create(['order_no' => 'BUYERTHEME', 'product_id' => $product->id, 'email' => 'buyer@example.test', 'query_password' => bcrypt('buyer-password'), 'quantity' => 1, 'unit_price' => 100, 'total_amount' => 100, 'status' => 'pending', 'payment_method' => 'manual', 'ip' => '192.0.2.1', 'expires_at' => now()->addHour()]);
-        $this->get('/order/pay/'.$order->order_no)->assertOk()->assertViewIs('templates.'.$theme.'.order.pay')->assertSee('data-payment-recheck', false)->assertSee('data-payment-verify', false)->assertSee('data-expires="'.$order->expires_at->toIso8601String().'"', false);
+        $this->get($this->signedPayPath($order))->assertOk()->assertViewIs('templates.'.$theme.'.order.pay')->assertSee('data-payment-recheck', false)->assertSee('data-payment-verify', false)->assertSee('data-expires="'.$order->expires_at->toIso8601String().'"', false);
         $this->get('/category/'.$category->slug.'?q=other%26category')->assertOk()->assertSee('搜索当前分类')->assertSee('在全部商品中搜索')->assertSee('q=other%26category', false);
         $order->update(['status' => 'paid']);
         Card::create(['product_id' => $product->id, 'order_id' => $order->id, 'content' => 'PUBLIC-DUMMY', 'status' => 'sold']);

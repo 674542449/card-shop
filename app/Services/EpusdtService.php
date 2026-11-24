@@ -103,7 +103,7 @@ class EpusdtService
             // a JSON string would be rejected by a float64 field.
             'amount' => (float) $order->total_amount,
             'notify_url' => url('/payment/epusdt/notify'),
-            'redirect_url' => url("/order/pay/{$order->order_no}"),
+            'redirect_url' => \App\Support\OrderPayAccess::url($order),
         ];
 
         // The three USDT options on the checkout form were decoration until now: the

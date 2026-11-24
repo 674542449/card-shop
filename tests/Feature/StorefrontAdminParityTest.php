@@ -94,7 +94,7 @@ class StorefrontAdminParityTest extends TestCase
             'payment_method' => 'alipay',
             'ip' => '192.0.2.11',
         ]);
-        $payHtml = $this->get('/order/pay/' . $order->order_no)->assertOk()->getContent();
+        $payHtml = $this->get($this->signedPayPath($order))->assertOk()->getContent();
         $this->assertStringContainsString(urlencode(rtrim((string) config('app.url'), '/') . '/payment/epay/notify'), $payHtml);
     }
 

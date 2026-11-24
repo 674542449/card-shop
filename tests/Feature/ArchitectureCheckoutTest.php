@@ -141,12 +141,12 @@ class ArchitectureCheckoutTest extends TestCase
         $oldUrl = 'https://architecture-gateway.example.test/pay/old-cached-payment';
         \Illuminate\Support\Facades\Cache::put('payment_url:'.$order->order_no, $oldUrl, 300);
         \Illuminate\Support\Facades\Cache::put('epusdt_payment:'.$order->order_no, ['payment_url' => $oldUrl, 'trade_id' => 'old-cached-trade'], 300);
-        $this->withSession(['payment_url_'.$order->order_no => $oldUrl])->get('/order/pay/'.$order->order_no)
+        $this->withSession(['payment_url_'.$order->order_no => $oldUrl])->get($this->signedPayPath($order))
             ->assertOk()->assertSee('请勿重复下单或付款')->assertDontSee($oldUrl)->assertDontSee('前往支付');
-        $this->getJson('/order/pay/'.$order->order_no)->assertOk()->assertJsonPath('payment_initialization', $state)->assertJsonPath('status', 'pending');
+        $this->getJson($this->signedPayPath($order))->assertOk()->assertJsonPath('payment_initialization', $state)->assertJsonPath('status', 'pending');
         $this->assertSame(1, Card::where('status', 'locked')->count());
         $order->update(['expires_at' => now()->subMinute()]);
-        $this->get('/order/pay/'.$order->order_no)->assertOk()->assertDontSee($oldUrl)->assertDontSee('前往支付');
+        $this->get($this->signedPayPath($order))->assertOk()->assertDontSee($oldUrl)->assertDontSee('前往支付');
         $this->assertSame('expired', $order->fresh()->status);
         $this->assertSame(8, $this->product->stockCount());
         Http::assertSentCount(1);

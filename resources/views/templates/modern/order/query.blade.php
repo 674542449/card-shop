@@ -22,18 +22,21 @@
             <h2 class="m-section-title" id="m-query-form-heading">查询订单</h2>
             <p class="m-muted">两项信息，找回属于你的购买记录。</p>
         </div>
-        <form action="/order/query" method="POST" class="m-form" data-guard>
+        <form action="/order/query" method="POST" class="m-form" autocomplete="off" data-guard>
             @csrf
             <div style="position:absolute;clip-path:inset(50%);overflow:hidden;width:1px;height:1px;margin:-1px;padding:0;border:0;white-space:nowrap" aria-hidden="true"><label for="m-oq-hp">请勿填写</label><input type="text" id="m-oq-hp" name="website" value="" tabindex="-1" autocomplete="off"></div>
-            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input class="m-input" id="lookup-order-no" name="order_no" value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" placeholder="留空查询历史订单"></div>
+            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input type="text" class="m-input" id="lookup-order-no" name="order_no" value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" placeholder="留空查询历史订单" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
             <div class="m-field">
                 <label class="m-label" for="oq-email">下单邮箱</label>
-                <input type="email" id="oq-email" name="email" class="m-input @error('email') is-invalid @enderror" value="{{ old('email') }}" required autocomplete="email" placeholder="购买时使用的邮箱">
+                <input type="email" id="oq-email" name="email" class="m-input @error('email') is-invalid @enderror" value="{{ old('email') }}" required autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" placeholder="购买时使用的邮箱">
                 @error('email')<p class="m-field-error">{{ $message }}</p>@enderror
             </div>
             <div class="m-field">
                 <label class="m-label" for="oq-pass">查询密码</label>
-                <input type="password" id="oq-pass" name="query_password" class="m-input @error('query_password') is-invalid @enderror" required autocomplete="current-password" placeholder="购买时设置的查询密码" aria-describedby="m-query-password-hint">
+                <div class="m-secret-wrap">
+                    <input type="text" id="oq-pass" name="query_password" class="m-input is-secret-masked @error('query_password') is-invalid @enderror" maxlength="50" required autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" data-clear-on-restore placeholder="购买时设置的查询密码" aria-describedby="m-query-password-hint">
+                    <button type="button" class="m-secret-toggle" data-secret-toggle="oq-pass" aria-pressed="false" aria-label="显示查询密码">显示</button>
+                </div>
                 @error('query_password')<p class="m-field-error">{{ $message }}</p>@enderror
                 <p class="m-hint" id="m-query-password-hint">这是下单时你自己设置的查询密码。</p>
             </div>

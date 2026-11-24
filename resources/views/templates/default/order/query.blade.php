@@ -13,7 +13,7 @@
             </div>
 
             <div class="ws-panel-body">
-                <form action="/order/query" method="POST" class="ws-form" data-guard>
+                <form action="/order/query" method="POST" class="ws-form" autocomplete="off" data-guard>
                     @csrf
                     <div class="ws-hp-field" aria-hidden="true">
                         <label for="query-hp-website">请勿填写此项</label>
@@ -28,7 +28,9 @@
                         <input type="email" id="query-email" name="email"
                                class="ws-input @error('email') is-invalid @enderror"
                                placeholder="请输入下单时填写的接收邮箱"
-                               value="{{ old('email') }}" maxlength="200" autocomplete="email" required>
+                               value="{{ old('email') }}" maxlength="200"
+                               autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+                               data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" required>
                         @error('email')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
                     </div>
 
@@ -37,10 +39,16 @@
                             <span>查询密码</span>
                             <small>必填</small>
                         </label>
-                        <input type="password" id="query-password" name="query_password"
-                               class="ws-input @error('query_password') is-invalid @enderror"
-                               placeholder="请输入下单时设置的查询密码"
-                               maxlength="50" autocomplete="current-password" required>
+                        <div class="ws-secret-wrap">
+                            <input type="text" id="query-password" name="query_password"
+                                   class="ws-input is-secret-masked @error('query_password') is-invalid @enderror"
+                                   placeholder="请输入下单时设置的查询密码"
+                                   maxlength="50"
+                                   autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+                                   data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"
+                                   data-clear-on-restore required>
+                            <button type="button" class="ws-secret-toggle" data-secret-toggle="query-password" aria-pressed="false" aria-label="显示查询密码">显示</button>
+                        </div>
                         @error('query_password')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
                     </div>
 
@@ -52,7 +60,9 @@
                         <input type="text" id="query-order-no" name="order_no"
                                class="ws-input @error('order_no') is-invalid @enderror"
                                placeholder="请输入订单编号（选填）"
-                               value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" autocomplete="off">
+                               value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30"
+                               autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false"
+                               data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">
                         @error('order_no')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
                     </div>
 

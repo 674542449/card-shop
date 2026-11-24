@@ -200,7 +200,7 @@ class PaymentSafetyTest extends TestCase
         $this->assertSame(0, $expired->cards()->where('status', 'sold')->count());
         $this->assertSame(1, $coupon->fresh()->used_count);
         // An operator can still reconcile this genuine received payment explicitly.
-        $this->get('/order/pay/'.$expired->order_no)->assertOk()->assertSee('收到付款回执')->assertDontSee('countdown-timer');
+        $this->get($this->signedPayPath($expired))->assertOk()->assertSee('收到付款回执')->assertDontSee('countdown-timer');
         $this->assertTrue(app(OrderFulfilmentService::class)->fulfilManually($expired->fresh())->wasFulfilled());
         $this->assertSame('paid', $expired->fresh()->status);
     }

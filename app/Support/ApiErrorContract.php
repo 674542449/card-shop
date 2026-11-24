@@ -24,6 +24,11 @@ final class ApiErrorContract
             404 => 'not_found', 405 => 'method_not_allowed', 409 => 'state_conflict',
             410 => 'resource_gone', 419 => 'csrf_token_expired', 422 => 'validation_failed',
             429 => 'rate_limited', 503 => 'service_unavailable'];
+        if ($response->getStatusCode() === 404
+            && is_string($payload['message'] ?? null)
+            && str_starts_with($payload['message'], 'No query results for model [')) {
+            $payload['message'] = '请求的资源不存在';
+        }
         $payload['code'] ??= $codes[$response->getStatusCode()] ?? ($response->getStatusCode() >= 500 ? 'internal_error' : 'request_failed');
         $response->setData($payload);
         return $response;

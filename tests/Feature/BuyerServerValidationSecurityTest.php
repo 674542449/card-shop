@@ -480,7 +480,7 @@ class BuyerServerValidationSecurityTest extends TestCase
             Setting::set('site_theme', $theme);
             Cache::put('payment_url:'.$order->order_no, 'data:text/html,<script>alert(1)</script>', 60);
             $this->withSession(['payment_url_'.$order->order_no => 'javascript:alert(1)'])
-                ->get('/order/pay/'.$order->order_no)->assertOk()
+                ->get($this->signedPayPath($order))->assertOk()
                 ->assertSee('https://gateway.example.test/submit.php?', false)
                 ->assertDontSee('javascript:alert(1)', false)->assertDontSee('data:text/html', false);
             $this->assertStringStartsWith('https://gateway.example.test/submit.php?', session('payment_url_'.$order->order_no));

@@ -111,9 +111,9 @@ class OperationalSafetyTest extends TestCase
         $order->update(['payment_no' => 'verified-pending', 'payment_review_reason' => '库存需核对']);
         foreach (['default', 'modern', 'minimal'] as $theme) {
             Setting::set('site_theme', $theme);
-            $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('收到付款回执')->assertDontSee('countdown-timer')->assertDontSee('gateway.example.test');
+            $this->get($this->signedPayPath($order))->assertOk()->assertSee('收到付款回执')->assertDontSee('countdown-timer')->assertDontSee('gateway.example.test');
         }
-        $this->getJson('/order/pay/'.$order->order_no)->assertJsonPath('payment_review', true)->assertJsonPath('status', 'pending');
+        $this->getJson($this->signedPayPath($order))->assertJsonPath('payment_review', true)->assertJsonPath('status', 'pending');
     }
 
     public function test_gateway_trade_cannot_be_reused_for_a_second_order(): void

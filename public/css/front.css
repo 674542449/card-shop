@@ -1962,6 +1962,41 @@ body.ws-drawer-lock .ws-mobile-buybar {
 .ws-input:not([type="range"]):user-invalid {
     border-color: var(--ws-danger);
 }
+.ws-input.is-secret-masked {
+    -webkit-text-security: disc;
+}
+.ws-secret-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.ws-secret-wrap .ws-input {
+    padding-inline-end: 58px;
+}
+.ws-secret-toggle {
+    position: absolute;
+    inset-inline-end: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 28px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: calc(var(--ws-r-sm) - 2px);
+    background: transparent;
+    color: var(--ws-muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.ws-secret-toggle:hover {
+    color: var(--ws-ink);
+    background: var(--ws-surface-alt, rgba(15, 23, 42, 0.05));
+}
+.ws-secret-toggle:focus-visible {
+    outline: 2px solid var(--ws-accent-ink, var(--ws-accent));
+    outline-offset: 1px;
+}
 
 .ws-field-error {
     font-size: 12px;

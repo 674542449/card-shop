@@ -49,7 +49,7 @@
                 </div>
 
                 @if($stateKey === 'pending' && empty($order->payment_no))
-                <a href="/order/pay/{{ $order->order_no }}" class="ws-btn ws-btn-primary ws-detail-pay-btn">继续完成支付 &rarr;</a>
+                <a href="{{ \App\Support\OrderPayAccess::path($order) }}" class="ws-btn ws-btn-primary ws-detail-pay-btn">继续完成支付 &rarr;</a>
                 @endif
             </div>
         </section>

@@ -7,11 +7,13 @@ use App\Http\Requests\CreateOrderRequest;
 use App\Http\Requests\QueryOrderRequest;
 use App\Exceptions\CheckoutException;
 use App\Models\Order;
+use App\Support\OrderPayAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Validator;
 
 class OrderController extends Controller
@@ -35,9 +37,9 @@ class OrderController extends Controller
                 return redirect('/order/query?order_no='.$order->order_no)->withErrors(['error' => '订单凭据已变化，请重新验证。']);
             }
             $this->grantAccess(collect([$order]));
-            if (!$order->isPending()) return redirect('/order/pay/'.$order->order_no);
+            if (!$order->isPending()) return redirect(OrderPayAccess::path($order));
             $paymentUrl = $this->initiatePayment($order);
-            return redirect($paymentUrl ?: '/order/pay/'.$order->order_no);
+            return redirect($paymentUrl ?: OrderPayAccess::path($order));
         } catch (\Throwable $e) {
             Log::error('Order creation failed', ['exception_class' => $e::class]);
             $message = $e instanceof CheckoutException || $e instanceof \App\Exceptions\IdempotencyConflictException
@@ -71,7 +73,26 @@ class OrderController extends Controller
     {
         $order = Order::where('order_no', $orderNo)
             ->with('product')
-            ->firstOrFail();
+            ->first();
+
+        $verified = $order !== null && $this->isVerified($order);
+        $hasPaySignature = $order !== null && OrderPayAccess::verifyRequest($order);
+
+        // Require either the verified buyer session OR a valid HMAC capability
+        // signature (?sig=...) before touching order state or returning status.
+        // Missing orders and unauthorized requests receive identical replies so
+        // bare order numbers cannot be probed for existence or payment status.
+        if ($order === null || (!$verified && !$hasPaySignature)) {
+            return $this->denyUnauthorizedOrderRead(
+                request(),
+                'order-pay-denied',
+                '请先验证订单身份后再查看支付状态',
+                '请先验证身份后查看订单支付状态',
+            );
+        }
+
+        $payUrl = OrderPayAccess::path($order);
+
         \App\Models\PaymentAttempt::where('order_id', $order->id)
             ->where('status', 'processing')
             ->whereNotNull('lease_expires_at')
@@ -87,8 +108,7 @@ class OrderController extends Controller
         // The pay page polls this same URL every 5s waiting for the callback to land.
         // Answer it with the bare status. It used to get the full HTML page back and
         // substring-search it for '"paid"' — a test the page could satisfy while the
-        // order was still pending, sending the buyer into a reload loop. Nothing
-        // sensitive is disclosed: the status is already on the page this URL renders.
+        // order was still pending, sending the buyer into a reload loop.
         if (request()->expectsJson()) {
             if ($order->isExpired()) {
                 $this->expireOrder($order);
@@ -97,16 +117,15 @@ class OrderController extends Controller
 
             return response()->json(['status' => $order->status, 'payment_initialization' => $initialization,
                 'payment_review' => !$order->isPaid() && ($order->requiresPaymentReview() || ($order->isPending() && $initialization === 'uncertain')),
-                'verification_required' => $order->isPaid() && ! $this->isVerified($order),
+                'verification_required' => $order->isPaid() && ! $verified,
                 'expires_at' => $order->expires_at->toIso8601String()])
                 ->header('Cache-Control', 'no-store');
         }
 
         if ($order->isPaid()) {
-            // Order numbers are predictable (timestamp + 5 digits), so knowing one must
-            // not be enough to read the card secrets. Require the same session proof the
-            // detail page requires.
-            if (!$this->isVerified($order)) {
+            // A signed pay-page URL must never unlock delivered card secrets. Require
+            // the same session proof bound to email + query_password as /order/detail.
+            if (!$verified) {
                 return redirect('/order/query')
                     ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
             }
@@ -136,7 +155,7 @@ class OrderController extends Controller
         if ($order->isPending() && in_array($initialization, ['processing', 'uncertain'], true)) {
             return theme_view('order.pay', ['order' => $order, 'expired' => true, 'paymentReview' => true,
                 'deadTitle' => $initialization === 'processing' ? '付款正在创建' : '付款创建待核对',
-                'deadReason' => '请稍后刷新原订单或联系客服核对，请勿重复下单或付款。', 'paymentUrl' => null]);
+                'deadReason' => '请稍后刷新原订单或联系客服核对，请勿重复下单或付款。', 'paymentUrl' => null, 'payUrl' => $payUrl]);
         }
 
         // Decide from the STATUS, not from isExpired(). isExpired() is
@@ -158,6 +177,7 @@ class OrderController extends Controller
                     : '此订单已超过支付时限。若已付款，请先查询订单或联系客服核对，请勿重复支付；尚未付款可重新下单。'),
                 'deadTitle' => $paymentReview ? '付款待核对' : ($order->status === 'closed' ? '订单已关闭' : '订单已过期'),
                 'paymentUrl' => null,
+                'payUrl' => $payUrl,
             ]);
         }
 
@@ -202,7 +222,7 @@ class OrderController extends Controller
             if (!$paymentUrl && in_array($initialization, ['processing', 'uncertain'], true)) {
                 return theme_view('order.pay', ['order' => $order, 'expired' => true, 'paymentReview' => true,
                     'deadTitle' => $initialization === 'processing' ? '付款正在创建' : '付款创建待核对',
-                    'deadReason' => '请稍后刷新原订单或联系客服核对，请勿重复下单或付款。', 'paymentUrl' => null]);
+                    'deadReason' => '请稍后刷新原订单或联系客服核对，请勿重复下单或付款。', 'paymentUrl' => null, 'payUrl' => $payUrl]);
             }
 
             if ($paymentUrl) {
@@ -220,6 +240,7 @@ class OrderController extends Controller
             'order' => $order,
             'expired' => false,
             'paymentUrl' => $paymentUrl,
+            'payUrl' => $payUrl,
             // 生成不出链接时（网关没配置、或网关调用失败），要明确告诉买家，而不是
             // 让他对着一个「正在准备支付渠道」的骨架屏一直等。订单本身还占着库存，
             // 到期会自动关闭并把卡密放回去。
@@ -347,11 +368,43 @@ class OrderController extends Controller
         return app(\App\Services\BrowserOrderCredentialProof::class)->has($order);
     }
 
+    private const UNAUTHORIZED_READ_LIMIT = 20;
+
+    private function denyUnauthorizedOrderRead(Request $request, string $bucket, string $jsonMessage, string $redirectMessage)
+    {
+        $key = $bucket . ':' . (string) $request->ip();
+        if (RateLimiter::tooManyAttempts($key, self::UNAUTHORIZED_READ_LIMIT)) {
+            $retryAfter = max(1, RateLimiter::availableIn($key));
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'message' => '请求过于频繁，请稍后再试',
+                    'code' => 'rate_limited',
+                ], 429)->header('Retry-After', (string) $retryAfter)->header('Cache-Control', 'no-store');
+            }
+
+            return response('请求过于频繁，请稍后再试', 429)
+                ->header('Retry-After', (string) $retryAfter)
+                ->header('Cache-Control', 'no-store');
+        }
+
+        RateLimiter::hit($key, 60);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'message' => $jsonMessage,
+                'code' => 'permission_denied',
+            ], 403)->header('Cache-Control', 'no-store');
+        }
+
+        return redirect('/order/query')
+            ->withErrors(['error' => $redirectMessage]);
+    }
+
     public function requestRefund(Request $request, string $orderNo, \App\Services\RefundService $service)
     {
         \App\Support\BuyerCredentialInput::rejectUrlCredentials($request);
-        $order = Order::where('order_no', $orderNo)->firstOrFail();
-        abort_unless($this->isVerified($order), 403);
+        $order = Order::where('order_no', $orderNo)->first();
+        abort_unless($order !== null && $this->isVerified($order), 403);
         $data = $request->validate(['amount' => 'required|numeric|gt:0|decimal:0,2|max:9999999999999999',
             'reason' => ['bail', 'required', 'string', 'max:2000', new \App\Rules\BuyerText(true)]]);
         try { $service->request($order, (string) $data['amount'], $data['reason'], null, 'buyer'); }
@@ -362,8 +415,8 @@ class OrderController extends Controller
     public function cancel(Request $request, string $orderNo, \App\Services\OrderService $service)
     {
         \App\Support\BuyerCredentialInput::rejectUrlCredentials($request);
-        $order = Order::where('order_no', $orderNo)->firstOrFail();
-        abort_unless($this->isVerified($order), 403);
+        $order = Order::where('order_no', $orderNo)->first();
+        abort_unless($order !== null && $this->isVerified($order), 403);
         try {
             $service->closeOrder($order, true);
         } catch (CheckoutException $e) {
@@ -399,13 +452,17 @@ class OrderController extends Controller
     {
         $order = Order::where('order_no', $orderNo)
             ->with(['product', 'refunds', 'coupon'])
-            ->firstOrFail();
+            ->first();
 
-        $verified = $this->isVerified($order);
+        $verified = $order !== null && $this->isVerified($order);
 
-        if (!$verified) {
-            return redirect('/order/query')
-                ->withErrors(['error' => '请先验证身份后查看订单详情']);
+        if ($order === null || !$verified) {
+            return $this->denyUnauthorizedOrderRead(
+                request(),
+                'order-detail-denied',
+                '请先验证身份后查看订单详情',
+                '请先验证身份后查看订单详情',
+            );
         }
 
         // Settle a lapsed order here, the same way the pay page does. Without it the
@@ -435,11 +492,15 @@ class OrderController extends Controller
     {
         $order = Order::where('order_no', $orderNo)
             ->with('product')
-            ->firstOrFail();
+            ->first();
 
-        if (!$this->isVerified($order)) {
-            return redirect('/order/query')
-                ->withErrors(['error' => '请先验证身份后下载卡密']);
+        if ($order === null || !$this->isVerified($order)) {
+            return $this->denyUnauthorizedOrderRead(
+                request(),
+                'order-download-denied',
+                '请先验证身份后下载卡密',
+                '请先验证身份后下载卡密',
+            );
         }
 
         $cards = $order->isPaid() ? $order->deliveryCards()->get() : collect();

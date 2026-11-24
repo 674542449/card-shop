@@ -120,6 +120,12 @@ button, a, input, select, textarea, [tabindex] { -webkit-tap-highlight-color: tr
 .m-input::placeholder { color: var(--m-muted); opacity: .8; }
 .m-input:focus { outline: 2px solid var(--m-clay-soft); border-color: var(--m-clay); outline-offset: 0; }
 .m-input[aria-invalid="true"], .m-input.is-invalid { border-color: var(--m-red); }
+.m-input.is-secret-masked { -webkit-text-security: disc; }
+.m-secret-wrap { position: relative; display: flex; align-items: center; }
+.m-secret-wrap .m-input { padding-inline-end: 58px; }
+.m-secret-toggle { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); min-height: 30px; padding: 0 8px; border: 0; border-radius: 4px; background: transparent; color: var(--m-muted); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.m-secret-toggle:hover { color: var(--m-ink); }
+.m-secret-toggle:focus-visible { outline: 2px solid var(--m-clay); outline-offset: 1px; }
 .m-hint { font-size: 11px; color: var(--m-muted); line-height: 1.75; }
 .m-field-error { color: var(--m-red); font-size: 12px; }
 .m-details { margin: 0; font-size: 13px; }

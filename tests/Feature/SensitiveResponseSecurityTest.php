@@ -28,7 +28,8 @@ class SensitiveResponseSecurityTest extends TestCase
             'admin login shell' => ['/admin/login', 200],
             'unauthenticated admin API' => ['/api/admin/orders', 401],
             'unauthenticated buyer API' => ['/api/v1/products', 401],
-            'unknown order' => ['/order/detail/UNKNOWN-ORDER', 404],
+            'unknown order redirect' => ['/order/detail/UNKNOWN-ORDER', 302],
+            'unknown product' => ['/product/unknown-product', 404],
         ];
     }
 

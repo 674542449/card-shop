@@ -718,7 +718,7 @@ class CheckoutAndPaymentHardeningTest extends TestCase
             'lease_expires_at' => now()->subSeconds(5),
         ]);
 
-        $this->getJson('/order/pay/' . $stuckOrder->order_no)
+        $this->getJson($this->signedPayPath($stuckOrder))
             ->assertOk()
             ->assertJsonPath('payment_initialization', 'uncertain')
             ->assertJsonPath('payment_review', true);

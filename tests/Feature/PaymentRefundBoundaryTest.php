@@ -165,8 +165,8 @@ class PaymentRefundBoundaryTest extends TestCase
         $this->withSession(['admin_id' => $admin->id, 'admin_pw' => AdminAuth::passwordFingerprint($admin->password)])
             ->putJson('/api/admin/refunds/'.$refund->id, ['status' => 'completed', 'reference' => 'DUMMY-AGAIN'])->assertUnprocessable();
         $this->assertSame(0, $coupon->fresh()->used_count);
-        $this->getJson('/order/pay/'.$order->order_no)->assertOk()->assertJsonPath('status', 'closed')->assertJsonPath('payment_review', false);
-        $this->get('/order/pay/'.$order->order_no)->assertOk()->assertSee('订单已关闭')->assertDontSee('付款待核对');
+        $this->getJson($this->signedPayPath($order))->assertOk()->assertJsonPath('status', 'closed')->assertJsonPath('payment_review', false);
+        $this->get($this->signedPayPath($order))->assertOk()->assertSee('订单已关闭')->assertDontSee('付款待核对');
     }
 
     public function test_reconciliation_of_a_fully_refunded_collection_does_not_create_false_operator_work(): void

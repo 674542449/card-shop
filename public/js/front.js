@@ -264,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let recheckPayment = null;
     if (paymentPollingEl) {
         const orderNo = paymentPollingEl.dataset.orderNo;
-        const checkUrl = '/order/pay/' + orderNo;
+        const checkUrl = paymentPollingEl.dataset.pollUrl || ('/order/pay/' + orderNo);
         let paymentDeadline = new Date(paymentPollingEl.dataset.expires).getTime();
         const paymentStatus = paymentPollingEl.querySelector('[data-payment-status]');
         const paymentRetry = paymentPollingEl.querySelector('[data-payment-recheck]');
@@ -457,12 +457,34 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.classList.remove('is-loading');
             if (btn.dataset.guardLabel) btn.textContent = btn.dataset.guardLabel;
         });
+        document.querySelectorAll('input[data-clear-on-restore]').forEach((input) => {
+            input.value = '';
+            input.classList.add('is-secret-masked');
+        });
+        document.querySelectorAll('[data-secret-toggle]').forEach((btn) => {
+            btn.setAttribute('aria-pressed', 'false');
+            btn.setAttribute('aria-label', '显示查询密码');
+            btn.textContent = '显示';
+        });
         if (window.turnstile && typeof window.turnstile.reset === 'function') {
             document.querySelectorAll('.cf-turnstile').forEach((node) => {
                 try { window.turnstile.reset(node); } catch {}
             });
         }
         refreshCheckoutIntents();
+    });
+
+    // Masked secret input visibility toggle (no-autofill password inputs)
+    document.addEventListener('click', (e) => {
+        const toggle = e.target.closest?.('[data-secret-toggle]');
+        if (!toggle) return;
+        const target = document.getElementById(toggle.getAttribute('data-secret-toggle') || '');
+        if (!target) return;
+        const unmask = target.classList.contains('is-secret-masked');
+        target.classList.toggle('is-secret-masked', !unmask);
+        toggle.setAttribute('aria-pressed', unmask ? 'true' : 'false');
+        toggle.setAttribute('aria-label', unmask ? '隐藏查询密码' : '显示查询密码');
+        toggle.textContent = unmask ? '隐藏' : '显示';
     });
 
     // 9. Sticky topbar auto-hide fallback when CSS scroll-state queries aren't supported

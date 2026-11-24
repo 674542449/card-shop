@@ -35,7 +35,7 @@
             <h2 class="m-section-title">{{ $deadTitle ?? (($paymentReview ?? false) ? '等待人工核对' : '这笔订单已结束') }}</h2>
             <p class="m-muted">{{ $deadReason ?? '订单已经超过支付时限，请重新下单。' }}</p>
             <a href="/" class="m-button m-button-primary m-button-wide">{{ ($paymentReview ?? false) ? '返回商品目录' : '重新挑选商品' }} <span aria-hidden="true">↗</span></a>
-            <a href="/order/pay/{{ $order->order_no }}" class="m-button m-button-secondary m-button-wide">刷新订单状态</a>
+            <a href="{{ $payUrl ?? \App\Support\OrderPayAccess::path($order) }}" class="m-button m-button-secondary m-button-wide">刷新订单状态</a>
             <a href="/order/query?order_no={{ $order->order_no }}" class="m-order-text-link">验证并查询订单</a>
         </section>
         @else
@@ -46,16 +46,16 @@
             <div class="m-order-payment-amount"><span>应付金额</span><strong><small>¥</small>{{ number_format($order->total_amount, 2) }}</strong></div>
             <div class="m-order-timer" id="countdown-timer" data-expires="{{ $order->expires_at->toIso8601String() }}"><span>剩余支付时间</span><strong class="time">--:--</strong></div>
             @if($paymentUrl)
-            <a href="{{ $paymentUrl }}" class="m-button m-button-primary m-button-wide" target="_blank" rel="noopener">前往支付 <span aria-hidden="true">↗</span></a>
+            <a href="{{ $paymentUrl }}" class="m-button m-button-primary m-button-wide" target="_blank" rel="noopener noreferrer">前往支付 <span aria-hidden="true">↗</span></a>
             <p class="m-hint m-order-payment-hint">收银台将在新标签页打开，付款完成后回到这里。</p>
             @elseif($paymentUnavailable ?? false)
             <div class="m-order-message m-order-message-warning" role="alert"><strong>支付渠道暂时不可用</strong><p>无法生成支付链接，请稍后刷新重试。若持续如此，请联系站点客服并提供订单编号。</p></div>
-            <a href="/order/pay/{{ $order->order_no }}" class="m-button m-button-secondary m-button-wide">刷新支付页面</a>
+            <a href="{{ $payUrl ?? \App\Support\OrderPayAccess::path($order) }}" class="m-button m-button-secondary m-button-wide">刷新支付页面</a>
             @else
             <div class="m-order-message" role="status"><strong>正在准备支付渠道</strong><p>如果支付按钮迟迟未出现，请刷新本页重试。</p></div>
-            <a href="/order/pay/{{ $order->order_no }}" class="m-button m-button-secondary m-button-wide">刷新支付页面</a>
+            <a href="{{ $payUrl ?? \App\Support\OrderPayAccess::path($order) }}" class="m-button m-button-secondary m-button-wide">刷新支付页面</a>
             @endif
-            <div class="m-order-polling" id="payment-polling" data-order-no="{{ $order->order_no }}" data-expires="{{ $order->expires_at->toIso8601String() }}" aria-live="polite"><span class="m-order-status-dot" aria-hidden="true"></span><span data-payment-status>正在确认支付状态，成功后自动显示卡密。</span><button type="button" class="m-button m-button-secondary" data-payment-recheck>重新检查付款</button> <a href="/order/query?order_no={{ $order->order_no }}" data-payment-verify hidden>验证并查询订单</a></div>
+            <div class="m-order-polling" id="payment-polling" data-order-no="{{ $order->order_no }}" data-poll-url="{{ $payUrl ?? \App\Support\OrderPayAccess::path($order) }}" data-expires="{{ $order->expires_at->toIso8601String() }}" aria-live="polite"><span class="m-order-status-dot" aria-hidden="true"></span><span data-payment-status>正在确认支付状态，成功后自动显示卡密。</span><button type="button" class="m-button m-button-secondary" data-payment-recheck>重新检查付款</button> <a href="/order/query?order_no={{ $order->order_no }}" data-payment-verify hidden>验证并查询订单</a></div>
             <noscript><p class="m-order-message m-order-message-warning">当前浏览器未启用 JavaScript，付款后请手动刷新本页；支付截止时间见订单清单。</p></noscript>
         </section>
         @endif

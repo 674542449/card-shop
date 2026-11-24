@@ -39,7 +39,7 @@
             <span class="m-order-state-symbol" aria-hidden="true"><svg width="36" height="36" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="7" y="9" width="26" height="22" rx="3"/><path d="M7 16h26m-20 8h6"/></svg></span>
             <h2 class="m-section-title">{{ $stateKey === 'pending' ? '完成付款，即可获取卡密' : ($stateKey === 'paid' ? '暂无可展示的卡密' : '这笔订单没有发放卡密') }}</h2>
             <p class="m-muted">{{ $paymentReview ? $stateNotes[$stateKey] : ($stateKey === 'pending' ? '这份订单还在等待付款。支付成功后，卡密会显示在这里。' : ($stateKey === 'paid' ? '请稍后重新查看；如果仍未显示，请联系站点客服并提供订单编号。' : '你可以重新挑选商品，创建一份新的订单。')) }}</p>
-            <div class="m-order-actions">@if($stateKey === 'pending' && empty($order->payment_no))<a href="/order/pay/{{ $order->order_no }}" class="m-button m-button-primary">继续支付 <span aria-hidden="true">↗</span></a>@else<a href="/" class="m-button m-button-primary">浏览商品 <span aria-hidden="true">↗</span></a>@endif<a href="/order/query" class="m-button m-button-secondary">返回订单查询</a></div>
+            <div class="m-order-actions">@if($stateKey === 'pending' && empty($order->payment_no))<a href="{{ \App\Support\OrderPayAccess::path($order) }}" class="m-button m-button-primary">继续支付 <span aria-hidden="true">↗</span></a>@else<a href="/" class="m-button m-button-primary">浏览商品 <span aria-hidden="true">↗</span></a>@endif<a href="/order/query" class="m-button m-button-secondary">返回订单查询</a></div>
         </section>
         @endif
         <div class="m-order-bottom-links"><a href="/" class="m-order-text-link">继续浏览商品 <span aria-hidden="true">↗</span></a><a href="/order/query" class="m-order-text-link">查询其他订单</a></div>
