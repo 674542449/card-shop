@@ -97,10 +97,10 @@ if docker compose version >/dev/null 2>&1; then DC="docker compose"
 elif docker-compose version >/dev/null 2>&1; then DC="docker-compose"
 fi
 
-# Read the current release's compose file, so rollback also works with older
-# releases which have no dedicated backup worker.
+# Read the current release's compose file, so upgrade and rollback work across
+# both the consolidated `worker` service and older multi-worker releases.
 background_services() {
-    $DC config --services 2>/dev/null | awk '/^(scheduler|notifications|backups|seo|reconciliation)$/ { print }'
+    $DC config --services 2>/dev/null | awk '/^(worker|scheduler|notifications|backups|seo|reconciliation)$/ { print }'
 }
 
 # ---------------------------------------------------------------- 回滚
@@ -351,10 +351,10 @@ STARTED_BEFORE=""
 if [ "$NEED_BUILD" = "1" ]; then
     echo "  正在重建镜像（会慢一些）..."
     $DC build || die "docker compose build 失败"
-    $DC up -d app nginx || die "docker compose up -d 失败"
+    $DC up -d --remove-orphans app nginx || die "docker compose up -d 失败"
     ok "镜像已重建，容器已按新镜像启动"
 elif [ "$NEED_UP" = "1" ]; then
-    $DC up -d app nginx || die "docker compose up -d 失败"
+    $DC up -d --remove-orphans app nginx || die "docker compose up -d 失败"
     ok "compose 配置已应用"
 fi
 

@@ -2,7 +2,7 @@
 
 从一台空的 Linux 服务器和一个正式域名开始，完成 HTTPS、商城初始化、后台配置和首次下单验收。功能介绍见 [README](README.md)，对接接口见 [API 文档](docs/API.md)。
 
-适用正式版本：**v1.0.4**，核对日期：2026-11-24。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
+适用正式版本：**v1.0.5**，核对日期：2026-11-24。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
 
 本文使用 **Docker Compose + Cloudflare 橙云代理**，示例域名为 **`shop.example.com`**。所有域名、服务器 IP 和账号都应替换成自己的值。服务器命令在受控的 root 管理终端执行：SSH 登录后先运行 `sudo -i`；标注「外部电脑」的验证在你自己的电脑执行。这样 Compose 能读取仅 root 与容器组可读的外部环境文件，商城不提供员工账户。
 
@@ -48,7 +48,7 @@ docker compose version
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-git checkout v1.0.4
+git checkout v1.0.5
 sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
 sudo cp .env.example /etc/cardshop/runtime.env
 sudo chown root:33 /etc/cardshop/runtime.env
@@ -76,8 +76,8 @@ TLS_CERT_DIR=/opt/cf
 SHOP_ENV_FILE=/etc/cardshop/runtime.env
 SHOP_SECRETS_DIR=/etc/cardshop/secrets
 SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
-SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.4
-SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.4
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.5
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.5
 ```
 
 发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
@@ -137,7 +137,7 @@ shop exec app php artisan shop:health
 
 `initialize` 在外部密钥目录创建 keyring，已有文件时拒绝覆盖。`migrate` 是单独的一次性操作，初始化数据库与基础配置、管理员；不会导入商品订单或测试卡密。运行容器使用只读镜像和只读 keyring，重启不会下载依赖、重新建库或更新数据库结构。
 
-应有 **9 个运行服务**：`app`、`scheduler`、`notifications`、`seo`、`reconciliation`、`backups`、`nginx`、`postgres`、`redis`。初始化任务执行完即退出。数据库和 Redis 不发布宿主机端口。`shop:ready` 检查数据库、迁移、Redis、密钥、构建产物、存储和维护状态；`shop:health` 检查工作进程心跳及业务积压，启动后等约一分钟再执行。
+应有 **5 个运行服务**：`app`、`worker`、`nginx`、`postgres`、`redis`（其中 `worker` 容器内以独立子进程并行托管调度、通知、SEO、对账和备份五项后台任务）。初始化任务执行完即退出。数据库和 Redis 不发布宿主机端口。`shop:ready` 检查数据库、迁移、Redis、密钥、构建产物、存储和维护状态；`shop:health` 检查五项工作进程心跳及业务积压，启动后等约一分钟再执行。
 
 等待失败时看 `shop logs --tail=80 app`，按实际错误修复；不要删数据库卷。初始 keyring 须单独保存到安全离线介质，保留所有版本。**只有商城备份而没有 keyring，无法恢复卡密与支付密钥。**
 
@@ -256,7 +256,7 @@ Turnstile 小组件允许的主机名需包含实际商城域名，再将配对�
 sudo ./scripts/doctor.sh --production --env-file /etc/cardshop/runtime.env
 ```
 
-生产自检读取外部环境，检查九个服务、就绪状态与业务健康。退出码 `0` 为通过，`1` 为警告或跳过，`2` 为失败。真实支付到账、外部邮件、代理证书与防火墙仍须按前文用实际环境验收。
+生产自检读取外部环境，检查五个运行服务（含 `worker` 内五项后台子进程）、就绪状态与业务健康。退出码 `0` 为通过，`1` 为警告或跳过，`2` 为失败。真实支付到账、外部邮件、代理证书与防火墙仍须按前文用实际环境验收。
 
 ## 日常运行
 
@@ -264,7 +264,7 @@ sudo ./scripts/doctor.sh --production --env-file /etc/cardshop/runtime.env
 
 ```bash
 shop ps
-shop logs --tail=50 notifications seo reconciliation backups scheduler
+shop logs --tail=50 worker
 shop exec -T --user www-data app php artisan shop:health --alert
 ```
 
@@ -289,11 +289,11 @@ shop exec -T --user www-data app php artisan shop:health --alert
 管理员在 **运维 → 备份与恢复** 创建、查看进度、校验和下载备份。归档包含数据库、可读取的运行配置、上传文件、私有素材和历史操作归档，保存在 `storage/app/private/shop-backups/`，必须作为含密钥的私有数据保管。外部 keyring 不进入归档，运行环境文件和完整 keyring 也应独立安全备份。
 
 ```bash
-shop exec -T --user www-data backups php artisan shop:backup --wait
+shop exec -T --user www-data worker php artisan shop:backup --wait
 shop exec -T --user www-data app php artisan shop:restore storage/app/private/shop-backups/实际文件.tar.gz --verify-only
 ```
 
-CLI 不带 `--wait` 时只入队，带 `--wait` 可执行并等待任务，放在备份容器运行以便使用其异机挂载。自动备份默认关闭，启用后的默认计划为应用时区 Asia/Shanghai（北京时间）每日 03:00、保留 14 份 / 30 天；新副本验证成功后才应用保留策略，保留最新成功副本。该计划不随宿主机时区变化。
+CLI 不带 `--wait` 时只入队，带 `--wait` 可执行并等待任务，放在 `worker` 后台容器运行以便使用其异机挂载。自动备份默认关闭，启用后的默认计划为应用时区 Asia/Shanghai（北京时间）每日 03:00、保留 14 份 / 30 天；新副本验证成功后才应用保留策略，保留最新成功副本。该计划不随宿主机时区变化。
 
 可选异机复制只支持已存在且可写的挂载目录。在外部环境文件设置 `BACKUP_SYNC_MOUNT=/你的受控挂载目录`，应用 Compose 配置后，在后台填 `/mnt/shop-backup-sync`。确保容器 UID/GID 33 可写，并自行设置远端保留策略。后台留空时不复制；程序不直接连接 SFTP 或云存储。
 

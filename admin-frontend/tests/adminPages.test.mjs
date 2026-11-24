@@ -108,7 +108,7 @@ const selectTab = async label => {
 };
 const activePanel = () => document.querySelector('[role="tabpanel"][aria-hidden="false"]') || document.querySelector('.ant-tabs-tabpane-active');
 
-test('payment and mail groups expose all existing fields and save only the edited setting', async () => {
+test('payment and mail groups expose all existing fields and save only on explicit submit', async () => {
   const writes = [];
   globalThis.reviewApi = { getSettings: async () => ({ data: { epay_api_url:'https://old.example.test', epusdt_api_url:'https://usdt.example.test', mail_host:'smtp.example.test', email_template_subject:'Delivery', _available_themes:['default'] } }), updateSettings: async data => { writes.push(data); return { data:{} }; } };
   const view = await mount('/settings');
@@ -126,8 +126,46 @@ test('payment and mail groups expose all existing fields and save only the edite
     assert.ok(activePanel().querySelector('[id$="_mail_host"]'));
     assert.ok(activePanel().querySelector('[id$="_email_template_subject"]'));
     assert.ok(activePanel().querySelector('[id$="_email_template_body"]'));
+    // Switching tabs or waiting must never auto-save settings.
+    await settleTables();
+    assert.deepEqual(writes, []);
+    assert.ok(text().includes('有1项未保存更改'));
+    await click('保存设置');
+    await settleTables();
+    assert.deepEqual(writes, [{epay_api_url:'https://new.example.test'}]);
+    assert.ok(!text().includes('有1项未保存更改'));
+    assert.ok(text().includes('更改已保存'));
   } finally { await view.close(); }
-  assert.deepEqual(writes, [{epay_api_url:'https://new.example.test'}]);
+});
+
+test('leaving or resetting settings never auto-saves unsaved edits', async () => {
+  const writes = [];
+  globalThis.reviewApi = {
+    getSettings: async () => ({ data: { site_name: 'Original Shop', _available_themes: ['default'] } }),
+    updateSettings: async data => { writes.push(data); return { data: {} }; },
+  };
+  const view = await mount('/settings');
+  try {
+    const input = activePanel().querySelector('[id$="_site_name"]');
+    assert.equal(input.value, 'Original Shop');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'Draft Name');
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    assert.ok(text().includes('有1项未保存更改'));
+    await click('重置未保存更改');
+    assert.equal(input.value, 'Original Shop');
+    assert.ok(!text().includes('有1项未保存更改'));
+    assert.deepEqual(writes, []);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(input, 'Abandoned Draft');
+      input.dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
+    await settleTables();
+    assert.deepEqual(writes, []);
+  } finally { await view.close(); }
+  // Unmounting with unsaved edits must not auto-save either.
+  assert.deepEqual(writes, []);
 });
 
 test('task center switches queues without losing notification filters or requesting other modules', async () => {
@@ -420,7 +458,7 @@ test('multi-selecting products applies a unified description in one batch reques
   }
 });
 
-test('telegram notification tab exposes bot/group/channel broadcast controls and flushes unsaved edits before test push', async () => {
+test('telegram notification tab requires explicit save before test push when edits are unsaved', async () => {
   const sequence = [];
   globalThis.reviewApi = {
     getSettings: async () => ({
@@ -467,6 +505,13 @@ test('telegram notification tab exposes bot/group/channel broadcast controls and
       Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set.call(channelTextarea, '@oracle_shop_channel, -1009988776655');
       channelTextarea.dispatchEvent(new window.Event('input', { bubbles: true }));
     });
+    // Clicking test push before saving must NOT auto-save or send with stale settings.
+    await click('发送测试通知');
+    await settleTables();
+    assert.deepEqual(sequence, []);
+    // After explicitly clicking Save, test push proceeds cleanly.
+    await click('保存设置');
+    await settleTables();
     await click('发送测试通知');
     await settleTables();
     assert.deepEqual(sequence, [

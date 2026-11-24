@@ -65,31 +65,22 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-  scheduler:
+  worker:
     <<: *runtime
-    depends_on: {app: {condition: service_healthy}}
-    command: [php, artisan, "schedule:work"]
-  notifications:
-    <<: *runtime
-    depends_on: {app: {condition: service_healthy}}
-    command: [php, artisan, "notifications:send", --work]
-  seo:
-    <<: *runtime
-    depends_on: {app: {condition: service_healthy}}
-    command: [php, artisan, "seo:work"]
-  reconciliation:
-    <<: *runtime
-    depends_on: {app: {condition: service_healthy}}
-    command: [php, artisan, "payments:work"]
-  backups:
-    <<: *runtime
+    init: true
     depends_on: {app: {condition: service_healthy}}
     volumes:
       - storage:/var/www/html/storage
-      - ${SHOP_SECRETS_DIR:?Set SHOP_SECRETS_DIR}:/run/secrets:ro
+      - ${SHOP_SECRETS_DIR:?Set SHOP_SECRETS_DIR to an external private key directory}:/run/secrets:ro
       - ${SHOP_ENV_FILE:?Set SHOP_ENV_FILE}:/run/config/runtime.env:ro
       - ${BACKUP_SYNC_MOUNT:-/var/lib/cardshop/backup-sync}:/mnt/shop-backup-sync
-    command: [php, artisan, "shop:backup-work"]
+    command: [worker-supervisor]
+    healthcheck:
+      test: [CMD, worker-supervisor, --healthcheck]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
   nginx:
     image: ${SHOP_WEB_IMAGE:-cardshop-nginx:local}
     restart: unless-stopped

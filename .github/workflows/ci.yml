@@ -108,7 +108,8 @@ jobs:
           npm test --prefix admin-frontend
           node --test tests/js/*.test.cjs
           bash tests/shell/composer-install.test.sh
-          for script in install.sh scripts/*.sh docker/php/*.sh; do bash -n "$script"; done
+          bash tests/shell/worker-supervisor.test.sh
+          for script in install.sh scripts/*.sh docker/php/*.sh tests/shell/*.sh; do bash -n "$script"; done
       - name: Production assets and dependency audits
         run: |
           npm run build --prefix admin-frontend

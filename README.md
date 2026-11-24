@@ -6,9 +6,9 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 正式 Docker 镜像支持 **Linux AMD64（Intel / AMD）与 ARM64**，同一版本标签自动选择服务器架构。两种架构分别执行原生测试、镜像构建和生产容器首次安装 / 重启验收；不支持 32 位 ARM。
 
-**当前正式版本：[v1.0.4](https://github.com/674542449/card-shop/releases/tag/v1.0.4)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
+**当前正式版本：[v1.0.5](https://github.com/674542449/card-shop/releases/tag/v1.0.5)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
 
-文档核对日期：**2026-11-24**。正式版本 `v1.0.4` 通过 AMD64 与 ARM64 原生自动化回归（**554 个 PHP 测试、35 个后台 Node 测试、12 个前台与多架构索引测试、7 项启动脚本测试**）、依赖安全审计、多阶段镜像构建及九服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
+文档核对日期：**2026-11-24**。正式版本 `v1.0.5` 通过 AMD64 与 ARM64 原生自动化回归（**554 个 PHP 测试、36 个后台 Node 测试、12 个前台与多架构索引测试、10 项启动与进程守护脚本测试**）、依赖安全审计、多阶段镜像构建及五服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
 
 ## 功能介绍
 
@@ -124,7 +124,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 1. 准备 Linux 服务器、Docker Engine、Compose 插件及 Git，接入正式域名。
 2. 拉取正式版，配置项目目录之外的运行环境文件、加密密钥目录和正式域名。
 3. 在启动前放好 HTTPS 证书并启用 TLS 配置。
-4. 单独完成密钥初始化与数据库初始化，再启动九个运行服务，检查就绪状态和业务心跳。
+4. 单独完成密钥初始化与数据库初始化，再启动五个运行服务（`nginx`、`app`、`worker`、`postgres`、`redis`），检查就绪状态和业务心跳。
 5. 登录后台，配置支付、SMTP、人机验证及商品库存，完成首次真实小额下单验收。
 
 后台构建产物随正式版提交，生产多阶段镜像预装锁定依赖并构建静态资源，宿主机无需安装 PHP、Composer 或 Node.js。正式运行使用 `docker-compose.production.yml`；密钥与数据库初始化是单独执行的一次性步骤，运行容器重启时不下载依赖或执行迁移。开发环境使用 `docker-compose.yml`。
@@ -161,11 +161,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 | --- | --- |
 | `nginx` / `app` | HTTPS 静态资源、Laravel 业务与后台 API |
 | `postgres` / `redis` | 商品订单及持久任务、缓存、会话、限流与锁 |
-| `scheduler` | 订单过期、低库存检查、定时备份排队与可选对账 |
-| `notifications` | 独立投递邮件和 Telegram，失败重试 |
-| `seo` | 独立处理 SEO 推送，避免占用发货邮件进程 |
-| `reconciliation` | 消费持久付款核对任务，记录租约、失败和重试 |
-| `backups` | 独立执行完整备份，记录阶段、进度与校验结果 |
+| `worker` | 统一后台守护容器，独立子进程运行调度（订单过期、低库存与定时备份排队）、通知（邮件/Telegram 投递与重试）、SEO 推送、持久付款核对与完整备份，互不阻塞且异常自动拉起 |
 
 卡密和敏感系统配置使用独立外部 keyring 加密存储；Redis 中的敏感设置也保存密文，卡密查重使用稳定 HMAC 指纹。完整备份包含数据库、运行配置、上传素材和私有归档，需私有保存；**外部 keyring 不包含在商城备份内，必须单独备份并保留旧密钥版本**。支持复制到已由管理员挂载的异机目录，程序不自行建立云存储或 SFTP 连接。通知采用至少一次投递，外部服务已受理但本地状态未写回时可能重发。
 

@@ -228,6 +228,21 @@ a:focus-visible, button:focus-visible, [role="button"]:focus-visible {
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
 }
 .admin-surface-tabs > .ant-tabs > .ant-tabs-nav { margin-bottom: 20px; }
+.admin-settings-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 20px;
+  padding: 14px 0 4px;
+  border-top: 1px solid var(--admin-line);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(6px);
+}
 .admin-surface-tabs .ant-pro-table > .ant-card { border: 0; box-shadow: none; }
 .admin-surface-tabs .ant-pro-table > .ant-card > .ant-card-body { padding-inline: 0; padding-bottom: 0; }
 .admin-surface-tabs .ant-pro-table-search {

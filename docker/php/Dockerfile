@@ -60,9 +60,10 @@ RUN { \
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy entrypoint script
+# Copy entrypoint and worker supervisor scripts
 COPY docker/php/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY docker/php/worker-supervisor.sh /usr/local/bin/worker-supervisor
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/worker-supervisor
 
 EXPOSE 9000
 

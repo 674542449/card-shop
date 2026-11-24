@@ -229,7 +229,7 @@ fi
 sect "容器"
 
 RUNNING="$(docker compose ps --services --status running 2>/dev/null)"
-for svc in app nginx postgres redis scheduler notifications backups seo reconciliation; do
+for svc in app nginx worker postgres redis; do
     if printf '%s\n' "$RUNNING" | grep -qx "$svc"; then
         pass "$svc 在运行"
     else
@@ -260,20 +260,20 @@ if printf '%s\n' "$RUNNING" | grep -qx app; then
         fi
     fi
 
-    # scheduler 以 root 跑会产生 root 属主的日志文件，之后 www-data 追加失败
-    SCHED_UID="$(docker compose exec -T scheduler id -u 2>/dev/null | tr -d '\r')"
-    if [ "$SCHED_UID" = "33" ]; then
-        pass "scheduler 以 www-data(33) 运行"
-    elif [ -z "$SCHED_UID" ]; then
-        skip "scheduler 运行身份" "读不到（容器没起来或 exec 失败）"
+    # worker 以 root 跑会产生 root 属主的日志文件，之后 www-data 追加失败
+    WORKER_UID="$(docker compose exec -T worker id -u 2>/dev/null | tr -d '\r')"
+    if [ "$WORKER_UID" = "33" ]; then
+        pass "worker 以 www-data(33) 运行"
+    elif [ -z "$WORKER_UID" ]; then
+        skip "worker 运行身份" "读不到（容器没起来或 exec 失败）"
     else
-        warn "scheduler 以 uid $SCHED_UID 运行（期望 33）" \
+        warn "worker 以 uid $WORKER_UID 运行（期望 33）" \
              "它跨天新建的日志文件会是 root 属主，之后 www-data 写不进去，表现为半夜开始随机 500"
         if [ "$FIX" = "1" ]; then
-            docker compose up -d --force-recreate scheduler >/dev/null 2>&1
-            NEWU="$(docker compose exec -T scheduler id -u 2>/dev/null | tr -d '\r')"
-            [ "$NEWU" = "33" ] && did "scheduler 已重建，现在以 www-data 运行" \
-                || note "重建后仍是 uid ${NEWU:-?}，检查 docker-compose.yml 里 scheduler 的 user 字段"
+            docker compose up -d --force-recreate worker >/dev/null 2>&1
+            NEWU="$(docker compose exec -T worker id -u 2>/dev/null | tr -d '\r')"
+            [ "$NEWU" = "33" ] && did "worker 已重建，现在以 www-data 运行" \
+                || note "重建后仍是 uid ${NEWU:-?}，检查 docker-compose.yml 里 worker 的 user 字段"
         fi
     fi
 fi

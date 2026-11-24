@@ -50,8 +50,9 @@ FROM php-base AS runtime
 WORKDIR /var/www/html
 COPY --from=application-build --chown=www-data:www-data /var/www/html /var/www/html
 COPY docker/php/production-entrypoint.sh /usr/local/bin/production-entrypoint
+COPY docker/php/worker-supervisor.sh /usr/local/bin/worker-supervisor
 COPY docker/php/production-pool.conf /usr/local/etc/php-fpm.d/zz-production.conf
-RUN chmod 755 /usr/local/bin/production-entrypoint
+RUN chmod 755 /usr/local/bin/production-entrypoint /usr/local/bin/worker-supervisor
 ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr \
     VIEW_COMPILED_PATH=/var/www/html/build/views \
     SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json \

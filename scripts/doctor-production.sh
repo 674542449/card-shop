@@ -19,7 +19,7 @@ export SHOP_ENV_FILE="$RESOLVED_ENV"
 DC=(docker compose --env-file "$RESOLVED_ENV" -f "$REPO_ROOT/docker-compose.production.yml")
 "${DC[@]}" config --quiet
 FAIL=0
-for SERVICE in app nginx postgres redis scheduler notifications backups seo reconciliation; do
+for SERVICE in app nginx worker postgres redis; do
     CID="$("${DC[@]}" ps -q "$SERVICE")"
     if [ -z "$CID" ] || [ "$(docker inspect -f '{{.State.Running}}' "$CID")" != true ]; then
         echo "FAIL: $SERVICE is not running."
@@ -38,6 +38,18 @@ if [ -n "$APP_CID" ]; then
         echo "FAIL: independent keyring is not mounted read-only."
         FAIL=1
     fi
+fi
+WORKER_CID="$("${DC[@]}" ps -q worker)"
+if [ -n "$WORKER_CID" ]; then
+    if [ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$WORKER_CID")" != true ]; then
+        echo "FAIL: worker root filesystem is writable."
+        FAIL=1
+    fi
+    if [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/run/secrets"}}{{.RW}}{{end}}{{end}}' "$WORKER_CID")" != false ]; then
+        echo "FAIL: worker keyring is not mounted read-only."
+        FAIL=1
+    fi
+    "${DC[@]}" exec -T worker worker-supervisor --healthcheck || { echo "FAIL: not all 5 background sub-workers are running."; FAIL=1; }
 fi
 "${DC[@]}" exec -T app php artisan shop:ready || FAIL=1
 "${DC[@]}" exec -T app php artisan shop:health || FAIL=1

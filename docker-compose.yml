@@ -48,14 +48,16 @@ services:
       # 新手看到这个报错会以为部署失败，从而去做各种不必要的重来。
       start_period: 300s
 
-  # Release abandoned stock and check low-stock thresholds every minute.
-  # entrypoint is overridden so this container does not re-run migrations/seeds —
-  # it waits for `app` to be healthy, by which point those have already happened.
-  scheduler:
+  # Consolidated background worker container supervising five independent PHP CLI
+  # subprocesses (scheduler, notifications, seo, reconciliation, backups) under UID 33
+  # so backup archives never block order expiration or notification delivery while
+  # keeping the stack to 5 persistent containers total.
+  worker:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
-    container_name: cardshop-scheduler
+    container_name: cardshop-worker
+    init: true
     restart: unless-stopped
     depends_on:
       app:
@@ -63,16 +65,19 @@ services:
     volumes:
       - .:/var/www/html
       - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
+      # Copying is disabled until the owner configures /mnt/shop-backup-sync.
+      - ${BACKUP_SYNC_MOUNT:-./.local/backup-sync}:/mnt/shop-backup-sync
     working_dir: /var/www/html
-    entrypoint: ["php", "artisan", "schedule:work"]
-    # 跟 PHP-FPM 的工作进程同一个身份（www-data，uid/gid 33）。
-    # 不指定的话它以 root 跑，而它和 app 共享同一个 bind mount：跨天的第一条日志
-    # 如果是它写的，storage/logs 里当天那个文件就属于 root，之后 www-data 再想往里
-    # 追加就是 EACCES —— 表现为「半夜之后开始随机 500，重启一下就好」，症状和原因
-    # 之间几乎没有可见联系。它启动时 app 已经 healthy，storage 的属主早就设好了。
+    entrypoint: ["worker-supervisor"]
+    # 跟 PHP-FPM 的工作进程同一个身份（www-data，uid/gid 33），避免 root 属主日志阻塞 www-data。
     user: "33:33"
-    # json-file 默认不轮转，会一直长到把磁盘吃光。届时 PostgreSQL 写不下 WAL，
-    # 站点整体挂掉，而 docker ps 全是 Up、应用日志干干净净，极难定位。
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "worker-supervisor", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     logging:
       driver: json-file
       options:
@@ -86,95 +91,6 @@ services:
       # Must be a container env var, not just a .env line: bootstrap/app.php reads it
       # before .env is parsed.
       - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
-
-  notifications:
-    build:
-      context: .
-      dockerfile: docker/php/Dockerfile
-    container_name: cardshop-notifications
-    restart: unless-stopped
-    depends_on:
-      app:
-        condition: service_healthy
-    volumes:
-      - .:/var/www/html
-      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
-    working_dir: /var/www/html
-    entrypoint: ["php", "artisan", "notifications:send", "--work"]
-    user: "33:33"
-    stop_grace_period: 60s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - cardshop
-    environment:
-      - DB_HOST=postgres
-      - REDIS_HOST=redis
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
-
-  # Full archives execute separately from checkout and notification delivery.
-  backups:
-    build:
-      context: .
-      dockerfile: docker/php/Dockerfile
-    container_name: cardshop-backups
-    restart: unless-stopped
-    depends_on:
-      app:
-        condition: service_healthy
-    volumes:
-      - .:/var/www/html
-      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
-      # Copying is disabled until the owner configures /mnt/shop-backup-sync.
-      - ${BACKUP_SYNC_MOUNT:-./.local/backup-sync}:/mnt/shop-backup-sync
-    working_dir: /var/www/html
-    entrypoint: ["php", "artisan", "shop:backup-work"]
-    user: "33:33"
-    stop_grace_period: 60s
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - cardshop
-    environment:
-      - DB_HOST=postgres
-      - REDIS_HOST=redis
-      - TRUSTED_PROXIES=${TRUSTED_PROXIES:-}
-
-  seo:
-    build: {context: ., dockerfile: docker/php/Dockerfile}
-    restart: unless-stopped
-    depends_on: {app: {condition: service_healthy}}
-    volumes:
-      - .:/var/www/html
-      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
-    working_dir: /var/www/html
-    entrypoint: [php, artisan, "seo:work"]
-    user: "33:33"
-    stop_grace_period: 60s
-    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
-    networks: [cardshop]
-    environment: {DB_HOST: postgres, REDIS_HOST: redis}
-
-  reconciliation:
-    build: {context: ., dockerfile: docker/php/Dockerfile}
-    restart: unless-stopped
-    depends_on: {app: {condition: service_healthy}}
-    volumes:
-      - .:/var/www/html
-      - ${SHOP_SECRETS_DIR:-/var/lib/cardshop/secrets}:/run/secrets:ro
-    working_dir: /var/www/html
-    entrypoint: [php, artisan, "payments:work"]
-    user: "33:33"
-    stop_grace_period: 60s
-    logging: {driver: json-file, options: {max-size: "10m", max-file: "3"}}
-    networks: [cardshop]
-    environment: {DB_HOST: postgres, REDIS_HOST: redis}
 
   nginx:
     image: nginx:stable

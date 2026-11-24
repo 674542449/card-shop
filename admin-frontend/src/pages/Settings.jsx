@@ -1,5 +1,5 @@
 import useWritePermission from '../hooks/useWritePermission';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ProForm,
   ProFormText,
@@ -8,8 +8,9 @@ import {
   ProFormSelect,
   ProFormSwitch,
 } from '@ant-design/pro-components';
-import { Card, Tabs, Spin, message, Alert, Button, Input, Select, Space, Typography, Result } from 'antd';
+import { Card, Tabs, Spin, message, Alert, Button, Input, Select, Space, Tag, Typography, Result } from 'antd';
 import {
+  SaveOutlined,
   SendOutlined,
   CheckCircleFilled,
   LoadingOutlined,
@@ -18,7 +19,6 @@ import {
 import { getSettings, updateSettings, sendTestEmail, sendTestTelegram } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
-import { createSerialSaveQueue } from '../utils/serialSaveQueue';
 import { onAdminSessionChange } from '../services/sessionLifecycle';
 
 const THEME_LABELS = {
@@ -27,7 +27,6 @@ const THEME_LABELS = {
   modern: '经典暖色主题',
 };
 
-const AUTO_SAVE_DELAY = 800;
 const OWNER_SETTINGS = new Set([
   'epay_api_url',
   'epay_merchant_id',
@@ -78,53 +77,70 @@ const OWNER_SETTINGS = new Set([
   'backup_min_free_mb',
 ]);
 
-const settingsSaver = createSerialSaveQueue(updateSettings, AUTO_SAVE_DELAY);
-onAdminSessionChange(() => settingsSaver.reset());
+function valuesEqual(nextValue, savedValue) {
+  if (Object.is(nextValue, savedValue)) return true;
+  if ((nextValue === '' || nextValue == null) && (savedValue === '' || savedValue == null)) return true;
+  if (typeof nextValue === 'boolean' || typeof savedValue === 'boolean') {
+    return Boolean(nextValue) === Boolean(savedValue);
+  }
+  return String(nextValue) === String(savedValue);
+}
 
-window.addEventListener('beforeunload', (event) => {
-  if (!settingsSaver.pending()) return;
-  event.preventDefault();
-  event.returnValue = '';
-});
-
-function AutoSaveStatus({ state, onRetry }) {
+function SaveStatus({ state, dirtyCount }) {
   if (state.status === 'saving') {
     return (
-      <Typography.Text type="secondary">
+      <Typography.Text type="secondary" role="status" aria-live="polite">
         <LoadingOutlined style={{ marginRight: 6 }} />
-        正在保存更改…
-      </Typography.Text>
-    );
-  }
-
-  if (state.status === 'saved') {
-    return (
-      <Typography.Text type="success">
-        <CheckCircleFilled style={{ marginRight: 6 }} />
-        更改已保存
+        正在保存设置…
       </Typography.Text>
     );
   }
 
   if (state.status === 'error') {
     return (
-      <Space size={8}>
-        <Typography.Text type="danger">
-          <ExclamationCircleFilled style={{ marginRight: 6 }} />
-          {state.error}
-        </Typography.Text>
-        <Button size="small" onClick={onRetry}>
-          重试
-        </Button>
-      </Space>
+      <Typography.Text type="danger" role="status" aria-live="polite">
+        <ExclamationCircleFilled style={{ marginRight: 6 }} />
+        {state.error}
+      </Typography.Text>
     );
   }
 
-  return <Typography.Text type="secondary">配置项变更后将自动保存</Typography.Text>;
+  if (dirtyCount > 0) {
+    return (
+      <span role="status" aria-live="polite">
+        <Tag color="warning" style={{ marginInlineEnd: 0 }}>
+          有 {dirtyCount} 项未保存更改
+        </Tag>
+      </span>
+    );
+  }
+
+  if (state.status === 'saved') {
+    return (
+      <Typography.Text type="success" role="status" aria-live="polite">
+        <CheckCircleFilled style={{ marginRight: 6 }} />
+        更改已保存
+      </Typography.Text>
+    );
+  }
+
+  return (
+    <Typography.Text type="secondary" role="status" aria-live="polite">
+      修改后请点击「保存设置」生效
+    </Typography.Text>
+  );
 }
 
-function SettingsForm({ canWrite, initialValues, tabItems, saveIndicator, onValuesChange }) {
-  const [form] = ProForm.useForm();
+function SettingsForm({
+  form,
+  canWrite,
+  initialValues,
+  tabItems,
+  topActions,
+  footerActions,
+  onValuesChange,
+  onFinish,
+}) {
   useEffect(() => {
     form.setFieldsValue(initialValues);
   }, [form, initialValues]);
@@ -137,9 +153,11 @@ function SettingsForm({ canWrite, initialValues, tabItems, saveIndicator, onValu
       omitNil={false}
       initialValues={initialValues}
       onValuesChange={onValuesChange}
+      onFinish={onFinish}
       submitter={false}
     >
-      <Tabs items={tabItems} tabBarExtraContent={saveIndicator} />
+      <Tabs items={tabItems} tabBarExtraContent={topActions} />
+      {footerActions}
     </ProForm>
   );
 }
@@ -147,40 +165,62 @@ function SettingsForm({ canWrite, initialValues, tabItems, saveIndicator, onValu
 export default function Settings() {
   const canWrite = useWritePermission('settings');
   const canConfigurePrivate = canWrite;
+  const [form] = ProForm.useForm();
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [loadRevision, setLoadRevision] = useState(0);
   const [initialValues, setInitialValues] = useState({});
+  const [dirtyValues, setDirtyValues] = useState({});
+  const [saveState, setSaveState] = useState({ status: 'idle', error: '' });
   const [testTo, setTestTo] = useState('');
   const [testing, setTesting] = useState(false);
   const [testTelegramScope, setTestTelegramScope] = useState('auto');
   const [testTelegramTarget, setTestTelegramTarget] = useState('');
   const [testingTelegram, setTestingTelegram] = useState(false);
   const [themes, setThemes] = useState(['default']);
-  const [autoSave, setAutoSave] = useState({ status: 'idle', error: '' });
 
-  useEffect(() => settingsSaver.subscribe(setAutoSave), []);
+  const savedValuesRef = useRef({});
+  const dirtyValuesRef = useRef({});
+  const savingRef = useRef(false);
+
+  const dirtyKeys = Object.keys(dirtyValues);
+  const dirtyCount = dirtyKeys.length;
+  const saving = saveState.status === 'saving';
+
+  useEffect(() => {
+    dirtyValuesRef.current = dirtyValues;
+  }, [dirtyValues]);
+
+  useEffect(() => {
+    return onAdminSessionChange(() => {
+      dirtyValuesRef.current = {};
+      setDirtyValues({});
+      setSaveState({ status: 'idle', error: '' });
+    });
+  }, []);
+
+  useEffect(() => {
+    const handleBeforeUnload = (event) => {
+      if (Object.keys(dirtyValuesRef.current).length === 0) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
 
   useEffect(() => {
     let current = true;
     setLoading(true);
     setLoadError('');
-    (canWrite ? settingsSaver.flush().catch(() => {}) : Promise.resolve())
-      .then(() => getSettings())
+    getSettings()
       .then((res) => {
         if (!current) return;
         const data = res.data?.data || res.data;
         if (Array.isArray(data._available_themes) && data._available_themes.length) {
           setThemes(data._available_themes);
         }
-        const retained = canWrite
-          ? Object.fromEntries(
-              Object.entries(settingsSaver.unsaved()).filter(
-                ([key]) => canConfigurePrivate || !OWNER_SETTINGS.has(key)
-              )
-            )
-          : {};
-        const normalised = { ...data, ...retained };
+        const normalised = { ...data };
         for (const [key, defaultValue] of Object.entries({
           telegram_enabled: false,
           telegram_notify_product_sold: false,
@@ -208,7 +248,11 @@ export default function Settings() {
         normalised.backup_stale_hours ||= 30;
         normalised.backup_min_free_mb ??= 1024;
         delete normalised._available_themes;
+        savedValuesRef.current = normalised;
+        dirtyValuesRef.current = {};
         setInitialValues(normalised);
+        setDirtyValues({});
+        setSaveState({ status: 'idle', error: '' });
       })
       .catch(() => {
         if (current) setLoadError('加载设置失败，请检查网络连接后重试。');
@@ -221,39 +265,91 @@ export default function Settings() {
     };
   }, [canWrite, canConfigurePrivate, loadRevision]);
 
-  const flush = useCallback(
-    () => (canWrite && !loading && !loadError ? settingsSaver.flush().catch(() => {}) : Promise.resolve()),
-    [canWrite, loading, loadError]
-  );
-
   const handleValuesChange = useCallback(
     (changed) => {
-      if (canWrite && !loading && !loadError) {
-        settingsSaver.enqueue(
-          Object.fromEntries(
-            Object.entries(changed).filter(([key]) => canConfigurePrivate || !OWNER_SETTINGS.has(key))
-          )
-        );
-      }
+      if (!canWrite || loading || loadError) return;
+      setDirtyValues((prev) => {
+        const next = { ...prev };
+        let mutated = false;
+        for (const [key, value] of Object.entries(changed)) {
+          if (!canConfigurePrivate && OWNER_SETTINGS.has(key)) continue;
+          if (valuesEqual(value, savedValuesRef.current[key])) {
+            if (Object.prototype.hasOwnProperty.call(next, key)) {
+              delete next[key];
+              mutated = true;
+            }
+          } else {
+            next[key] = value;
+            mutated = true;
+          }
+        }
+        if (mutated) {
+          dirtyValuesRef.current = next;
+          setSaveState((cur) => (cur.status === 'idle' ? cur : { status: 'idle', error: '' }));
+        }
+        return mutated ? next : prev;
+      });
     },
     [canWrite, canConfigurePrivate, loading, loadError]
   );
 
-  useEffect(() => {
-    return () => {
-      if (canWrite) settingsSaver.flush().catch(() => {});
-    };
-  }, [canWrite]);
+  const handleSave = useCallback(async () => {
+    if (!canWrite || loading || loadError || savingRef.current) return false;
+    const payload = { ...dirtyValuesRef.current };
+    if (Object.keys(payload).length === 0) {
+      message.info('当前没有未保存的更改');
+      return true;
+    }
+
+    savingRef.current = true;
+    setSaveState({ status: 'saving', error: '' });
+    try {
+      const res = await updateSettings(payload);
+      const nextSaved = { ...savedValuesRef.current, ...payload };
+      savedValuesRef.current = nextSaved;
+      const remaining = {};
+      for (const [key, value] of Object.entries(dirtyValuesRef.current)) {
+        if (!valuesEqual(value, nextSaved[key])) {
+          remaining[key] = value;
+        }
+      }
+      dirtyValuesRef.current = remaining;
+      setInitialValues(nextSaved);
+      setDirtyValues(remaining);
+      setSaveState({ status: Object.keys(remaining).length === 0 ? 'saved' : 'idle', error: '' });
+      message.success(res?.data?.message || '设置已保存');
+      return true;
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || '保存失败，请检查输入内容或网络连接后重试';
+      setSaveState({ status: 'error', error: errorMsg });
+      message.error(errorMsg, 6);
+      return false;
+    } finally {
+      savingRef.current = false;
+    }
+  }, [canWrite, loading, loadError]);
+
+  const handleReset = useCallback(() => {
+    if (savingRef.current) return;
+    form.setFieldsValue(savedValuesRef.current);
+    dirtyValuesRef.current = {};
+    setDirtyValues({});
+    setSaveState({ status: 'idle', error: '' });
+    message.info('已恢复为上次保存的设置');
+  }, [form]);
 
   const handleTestEmail = async () => {
     if (!canConfigurePrivate || loading || loadError) return;
+    if (Object.keys(dirtyValuesRef.current).length > 0) {
+      message.warning('当前有未保存的设置更改，请先点击「保存设置」后再发送测试邮件');
+      return;
+    }
     if (!testTo) {
       message.warning('请填写接收测试邮件的目标邮箱地址');
       return;
     }
     setTesting(true);
     try {
-      await settingsSaver.flush();
       const res = await sendTestEmail(testTo);
       message.success(res.data?.message || '测试邮件已提交发送');
     } catch (err) {
@@ -265,9 +361,12 @@ export default function Settings() {
 
   const handleTestTelegram = async () => {
     if (!canConfigurePrivate || loading || loadError) return;
+    if (Object.keys(dirtyValuesRef.current).length > 0) {
+      message.warning('当前有未保存的设置更改，请先点击「保存设置」后再发送测试通知');
+      return;
+    }
     setTestingTelegram(true);
     try {
-      await settingsSaver.flush();
       const payload = { scope: testTelegramScope };
       if (testTelegramTarget.trim()) {
         payload.target = testTelegramTarget.trim();
@@ -312,7 +411,7 @@ export default function Settings() {
               label="前台视觉主题"
               options={themes.map((t) => ({ label: THEME_LABELS[t] || t, value: t }))}
               allowClear={false}
-              extra="切换后即时生效。系统自动加载 resources/views/templates/ 目录下的可用模板。"
+              extra="保存后立即生效。系统自动加载 resources/views/templates/ 目录下的可用模板。"
             />
           </div>
           <ProFormTextArea name="site_description" label="站点简介" fieldProps={{ rows: 3 }} />
@@ -429,7 +528,7 @@ export default function Settings() {
             showIcon
             style={{ marginBottom: 16 }}
             message="SMTP 邮件投递服务配置"
-            description="系统通过此处配置的 SMTP 通道向买家发送卡密交付与退款通知邮件。买家同时可通过前台订单查询页自助提取卡密；修改参数后请执行发信测试以验证连通性。"
+            description="系统通过此处配置的 SMTP 通道向买家发送卡密交付与退款通知邮件。买家同时可通过前台订单查询页自助提取卡密；修改参数并保存后请执行发信测试以验证连通性。"
           />
           <div className="admin-form-grid-3">
             <ProFormText
@@ -481,7 +580,7 @@ export default function Settings() {
 
           <Card size="small" title="SMTP 连通性测试" style={{ marginTop: 8, marginBottom: 20 }}>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-              点击发送后将自动保存当前编辑的邮件参数并投递测试邮件。正式业务通知若投递失败将自动转入任务中心重试队列，不影响订单履约。
+              将使用已保存的 SMTP 邮件参数投递测试邮件；修改参数后请先点击「保存设置」。正式业务通知若投递失败将自动转入任务中心重试队列，不影响订单履约。
             </Typography.Paragraph>
             <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
               <Input
@@ -489,12 +588,17 @@ export default function Settings() {
                 disabled={!canConfigurePrivate}
                 value={testTo}
                 onChange={(e) => setTestTo(e.target.value)}
-                onPressEnter={handleTestEmail}
+                onPressEnter={(e) => {
+                  if (e.nativeEvent?.isComposing) return;
+                  e.preventDefault();
+                  handleTestEmail();
+                }}
                 placeholder="输入接收测试邮件的邮箱地址"
                 allowClear
               />
               <Button
                 type="primary"
+                htmlType="button"
                 icon={<SendOutlined />}
                 loading={testing}
                 disabled={!canConfigurePrivate}
@@ -642,7 +746,7 @@ export default function Settings() {
 
           <Card size="small" title="Telegram 推送连通性测试" style={{ marginTop: 8, marginBottom: 8 }}>
             <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-              点击发送后将自动保存当前编辑的 Telegram 配置并立即推送测试消息。留空右侧临时目标时，将按所选范围测试当前已开启的接收端；正式业务通知若遇到网络波动将自动转入任务中心重试队列。
+              将使用已保存的 Telegram 配置推送测试消息；修改配置后请先点击「保存设置」。留空右侧临时目标时，将按所选范围测试当前已开启的接收端；正式业务通知若遇到网络波动将自动转入任务中心重试队列。
             </Typography.Paragraph>
             <Space wrap style={{ width: '100%' }}>
               <Select
@@ -837,11 +941,35 @@ export default function Settings() {
     },
   ];
 
-  const saveIndicator = canWrite ? (
-    <AutoSaveStatus state={autoSave} onRetry={flush} />
+  const topActions = canWrite ? (
+    <Space size={10} wrap>
+      <SaveStatus state={saveState} dirtyCount={dirtyCount} />
+      {dirtyCount > 0 && (
+        <Button size="small" htmlType="button" disabled={saving} onClick={handleReset}>
+          重置
+        </Button>
+      )}
+      <Button type="primary" size="small" htmlType="submit" icon={<SaveOutlined />} loading={saving}>
+        保存设置
+      </Button>
+    </Space>
   ) : (
     <Typography.Text type="secondary">当前为只读权限</Typography.Text>
   );
+
+  const footerActions = canWrite ? (
+    <div className="admin-settings-footer">
+      <SaveStatus state={saveState} dirtyCount={dirtyCount} />
+      <Space size={10} wrap>
+        <Button htmlType="button" disabled={dirtyCount === 0 || saving} onClick={handleReset}>
+          重置未保存更改
+        </Button>
+        <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>
+          保存设置
+        </Button>
+      </Space>
+    </div>
+  ) : null;
 
   return (
     <div className="admin-surface-tabs">
@@ -855,11 +983,14 @@ export default function Settings() {
       )}
       <SettingsForm
         key={loadRevision}
+        form={form}
         canWrite={canWrite}
         initialValues={initialValues}
         tabItems={tabItems}
-        saveIndicator={saveIndicator}
+        topActions={topActions}
+        footerActions={footerActions}
         onValuesChange={handleValuesChange}
+        onFinish={handleSave}
       />
     </div>
   );

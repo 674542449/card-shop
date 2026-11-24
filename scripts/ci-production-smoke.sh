@@ -79,7 +79,7 @@ cleanup() {
     if [ "$SMOKE_STATUS" -ne 0 ]; then
         echo "Production smoke failed; showing container states and bounded logs."
         "${DC[@]}" ps -a || true
-        "${DC[@]}" logs --no-color --tail=100 app nginx scheduler notifications backups seo reconciliation postgres redis || true
+        "${DC[@]}" logs --no-color --tail=100 app nginx worker postgres redis || true
     fi
     # Only this generated CI project and this generated external fixture may be removed.
     "${DC[@]}" down --volumes --remove-orphans --timeout 15 >/dev/null 2>&1 || true
@@ -96,7 +96,7 @@ echo "Starting an isolated production first-install fixture."
 "${DC[@]}" up -d --wait --wait-timeout 180 postgres redis
 "${DC[@]}" run --rm --no-deps initialize
 "${DC[@]}" run --rm --no-deps migrate
-"${DC[@]}" up -d --pull never --wait --wait-timeout 180 app nginx scheduler notifications backups seo reconciliation
+"${DC[@]}" up -d --pull never --wait --wait-timeout 180 app nginx worker
 
 await_readiness() {
     for SMOKE_ATTEMPT in $(seq 1 45); do
@@ -158,7 +158,7 @@ SMOKE_HEARTBEAT_SINCE="$(application_clock)"
 await_heartbeats
 http_acceptance
 SMOKE_INITIAL_ADMIN_PATH="$SMOKE_ADMIN_PATH"
-for SMOKE_SERVICE in app nginx postgres redis scheduler notifications backups seo reconciliation; do
+for SMOKE_SERVICE in app nginx worker postgres redis; do
     SMOKE_CID="$("${DC[@]}" ps -q "$SMOKE_SERVICE")"
     [ -n "$SMOKE_CID" ] && [ "$(docker inspect -f '{{.State.Running}}' "$SMOKE_CID")" = true ]
     SMOKE_IMAGE_ID="$(docker inspect -f '{{.Image}}' "$SMOKE_CID")"
@@ -170,6 +170,11 @@ SMOKE_APP_CID="$("${DC[@]}" ps -q app)"
 [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/run/secrets"}}{{.RW}}{{end}}{{end}}' "$SMOKE_APP_CID")" = false ]
 [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/run/config/runtime.env"}}{{.RW}}{{end}}{{end}}' "$SMOKE_APP_CID")" = false ]
 [ "$("${DC[@]}" exec -T app id -u | tr -d '\r\n')" = 33 ]
+SMOKE_WORKER_CID="$("${DC[@]}" ps -q worker)"
+[ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$SMOKE_WORKER_CID")" = true ]
+[ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/run/secrets"}}{{.RW}}{{end}}{{end}}' "$SMOKE_WORKER_CID")" = false ]
+[ "$("${DC[@]}" exec -T worker id -u | tr -d '\r\n')" = 33 ]
+"${DC[@]}" exec -T worker worker-supervisor --healthcheck
 [ "$("${DC[@]}" exec -T app stat -c '%u:%g:%a' /run/secrets/shop-keyring.json | tr -d '\r\n')" = 33:33:600 ]
 SMOKE_MIGRATIONS_BEFORE="$(sql "SELECT count(*)::text || ':' || md5(string_agg(migration || ':' || batch::text, ',' ORDER BY migration)) FROM migrations")"
 [ "$(sql 'SELECT count(*) FROM admins')" = 1 ]
@@ -180,10 +185,11 @@ SMOKE_DEPENDENCIES_BEFORE="$(dependency_snapshot)"
 SMOKE_INITDB_BEFORE="$(grep -c 'initdb' "$SMOKE_DIRECTORY/postgres-before.log" || true)"
 SMOKE_RESTART_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 SMOKE_HEARTBEAT_SINCE="$(application_clock)"
-echo "Restarting all nine fixture services without initialization or migrations."
-"${DC[@]}" restart app nginx postgres redis scheduler notifications backups seo reconciliation
+echo "Restarting all five fixture services without initialization or migrations."
+"${DC[@]}" restart app nginx worker postgres redis
 await_readiness
 await_heartbeats
+"${DC[@]}" exec -T worker worker-supervisor --healthcheck
 http_acceptance
 [ "$SMOKE_INITIAL_ADMIN_PATH" = "$SMOKE_ADMIN_PATH" ]
 [ "$SMOKE_MIGRATIONS_BEFORE" = "$(sql "SELECT count(*)::text || ':' || md5(string_agg(migration || ':' || batch::text, ',' ORDER BY migration)) FROM migrations")" ]
@@ -196,4 +202,4 @@ if grep -Eiq 'Composer dependencies|composer install|npm install|Nothing to migr
     echo "A runtime restart attempted installation or migrations." >&2
     exit 1
 fi
-echo "Production smoke passed: first install, nine services, HTTP/CSRF/admin assets, protected readiness, heartbeats and restart invariants."
+echo "Production smoke passed: first install, five services (consolidated worker), HTTP/CSRF/uploads/admin assets, protected readiness, heartbeats and restart invariants."
