@@ -20,10 +20,13 @@
     @php
         $siteLogo = \App\Support\SafeUrl::asset(setting('site_logo'));
         $siteName = setting('site_name', 'CardShop');
+        $contactUrl = \App\Support\SafeUrl::contact(setting('contact_url'));
+        $contactText = trim((string) setting('contact_text', ''));
+        $contactQr = \App\Support\SafeUrl::asset(setting('contact_qr_image'));
         $navItems = [
             ['url' => '/', 'label' => '商品目录', 'active' => request()->is('/') || request()->is('category/*') || request()->is('product/*')],
-            ['url' => '/order/query', 'label' => '查询订单', 'active' => request()->is('order/*')],
-            ['url' => '/articles', 'label' => '公告与指南', 'active' => request()->is('articles*')],
+            ['url' => '/order/query', 'label' => '订单查询', 'active' => request()->is('order/*')],
+            ['url' => '/articles', 'label' => '帮助中心', 'active' => request()->is('articles*')],
         ];
     @endphp
     <a href="#main-content" class="m-skip-link">跳到主要内容</a>
@@ -47,8 +50,8 @@
                 @endforeach
             </nav>
             <div class="m-header-actions">
-                @if(\App\Support\SafeUrl::contact(setting('contact_url')))
-                <a class="m-contact-link" href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
+                @if($contactUrl)
+                <a class="m-contact-link" href="{{ $contactUrl }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
                 @endif
                 <button type="button" class="m-icon-button" id="ui-theme-toggle" aria-label="切换深色模式" title="切换深色模式" aria-pressed="false">
                     <svg class="m-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 13a8.8 8.8 0 1 1-9.8-9.8A7.2 7.2 0 0 0 20.8 13z"/></svg>
@@ -63,8 +66,8 @@
             @foreach($navItems as $item)
             <a href="{{ $item['url'] }}" @class(['m-nav-link', 'is-active' => $item['active']]) @if($item['active']) aria-current="page" @endif>{{ $item['label'] }} <span aria-hidden="true">↗</span></a>
             @endforeach
-            @if(\App\Support\SafeUrl::contact(setting('contact_url')))
-            <a class="m-nav-link" href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
+            @if($contactUrl)
+            <a class="m-nav-link" href="{{ $contactUrl }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
             @endif
         </nav>
     </header>
@@ -83,14 +86,19 @@
         <div class="m-container m-footer-top">
             <div>
                 <a href="/" class="m-footer-brand">{{ $siteName }}</a>
-                <p>挑选、支付，然后领取你的数字商品。</p>
+                <p>{{ $contactText !== '' ? '客服支持：' . $contactText : '数字商品在线交易与自动交付' }}</p>
             </div>
             <div class="m-footer-links">
                 @foreach($navItems as $item)<a href="{{ $item['url'] }}">{{ $item['label'] }}</a>@endforeach
-                @if(\App\Support\SafeUrl::contact(setting('contact_url')))<a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系客服 ↗</a>@endif
+                @if($contactUrl)<a href="{{ $contactUrl }}" target="_blank" rel="noopener">联系客服 ↗</a>@endif
+                @if($contactQr)<a href="{{ $contactQr }}" target="_blank" rel="noopener">客服二维码 ↗</a>@endif
             </div>
         </div>
-        <div class="m-container m-footer-bottom"><span>&copy; {{ date('Y') }} {{ $siteName }}</span>@include('shared.footer-brand')<span>简单购买 · 自动交付</span></div>
+        <div class="m-container m-footer-bottom">
+            <span>&copy; {{ date('Y') }} {{ $siteName }}</span>
+            @include('shared.footer-brand')
+            <span>24/7 自动交付</span>
+        </div>
     </footer>
     <button type="button" class="m-back-top" id="back-to-top" aria-label="回到顶部" title="回到顶部"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 20V4M5 11l7-7 7 7"/></svg></button>
     @if(request()->is('/') || request()->is('product/*'))

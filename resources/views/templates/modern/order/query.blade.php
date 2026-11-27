@@ -3,50 +3,60 @@
 @section('title', '订单查询 - ' . setting('site_name', 'CardShop'))
 
 @section('content')
-<nav class="m-breadcrumb" aria-label="当前位置"><a href="/">首页</a><span aria-hidden="true">/</span><span>订单查询</span></nav>
-<div class="m-query-layout">
-    <section class="m-query-intro">
-        <p class="m-eyebrow">YOUR ORDERS · 订单查询</p>
-        <h1 class="m-page-heading">每一份购买，<br>都能在这里找回。</h1>
-        <p class="m-lead">使用下单时填写的邮箱与查询密码，查看订单进度、继续付款，或取回已经购买的卡密。</p>
-        <ol class="m-query-steps">
-            <li><span>01</span><div><h2>找到你的订单</h2><p>填写购买时使用的邮箱和自己设置的查询密码。</p></div></li>
-            <li><span>02</span><div><h2>查看支付进度</h2><p>未完成付款的订单，可在有效期内继续支付。</p></div></li>
-            <li><span>03</span><div><h2>保存卡密内容</h2><p>已支付订单支持再次查看、复制和下载 TXT。</p></div></li>
-        </ol>
-        <a href="/" class="m-query-back">继续浏览商品 <span aria-hidden="true">↗</span></a>
-    </section>
+<div class="m-query-shell">
+    <header class="m-query-header">
+        <span class="m-eyebrow">订单查询与卡密提取</span>
+        <h1 class="m-page-heading">查询你的订单</h1>
+        <p class="m-store-strip-desc">输入下单时填写的邮箱与查询密码，查看进度、继续付款或提取卡密。</p>
+    </header>
+
     <section class="m-panel m-query-card" aria-labelledby="m-query-form-heading">
-        <div class="m-query-card-heading">
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 5h16v22l-8-4-8 4V5Z"/><path d="M12 11h8m-8 5h5"/></svg>
-            <h2 class="m-section-title" id="m-query-form-heading">查询订单</h2>
-            <p class="m-muted">两项信息，找回属于你的购买记录。</p>
-        </div>
+        <h2 class="m-sr-only" id="m-query-form-heading">订单验证表单</h2>
         <form action="/order/query" method="POST" class="m-form" autocomplete="off" data-guard>
             @csrf
-            <div style="position:absolute;clip-path:inset(50%);overflow:hidden;width:1px;height:1px;margin:-1px;padding:0;border:0;white-space:nowrap" aria-hidden="true"><label for="m-oq-hp">请勿填写</label><input type="text" id="m-oq-hp" name="website" value="" tabindex="-1" autocomplete="off"></div>
-            <div style="margin:12px 0"><label for="lookup-order-no">订单号（选填，可精确找回旧订单）</label><input type="text" class="m-input" id="lookup-order-no" name="order_no" value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" placeholder="留空查询历史订单" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other"></div>
+            <div class="m-sr-only" aria-hidden="true"><label for="m-oq-hp">请勿填写</label><input type="text" id="m-oq-hp" name="website" value="" tabindex="-1" autocomplete="off"></div>
+
             <div class="m-field">
                 <label class="m-label" for="oq-email">下单邮箱</label>
                 <input type="email" id="oq-email" name="email" class="m-input @error('email') is-invalid @enderror" value="{{ old('email') }}" required autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" placeholder="购买时使用的邮箱">
-                @error('email')<p class="m-field-error">{{ $message }}</p>@enderror
+                @error('email')<p class="m-field-error" role="alert">{{ $message }}</p>@enderror
             </div>
+
             <div class="m-field">
                 <label class="m-label" for="oq-pass">查询密码</label>
                 <div class="m-secret-wrap">
                     <input type="text" id="oq-pass" name="query_password" class="m-input is-secret-masked @error('query_password') is-invalid @enderror" maxlength="50" required autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other" data-clear-on-restore placeholder="购买时设置的查询密码" aria-describedby="m-query-password-hint">
                     <button type="button" class="m-secret-toggle" data-secret-toggle="oq-pass" aria-pressed="false" aria-label="显示查询密码">显示</button>
                 </div>
-                @error('query_password')<p class="m-field-error">{{ $message }}</p>@enderror
-                <p class="m-hint" id="m-query-password-hint">这是下单时你自己设置的查询密码。</p>
+                @error('query_password')<p class="m-field-error" role="alert">{{ $message }}</p>@enderror
+                <p class="m-hint" id="m-query-password-hint">下单时自行设置的查询密码。</p>
             </div>
+
+            <div class="m-field">
+                <label class="m-label" for="lookup-order-no">订单编号 <span class="m-muted">· 选填，精确检索指定订单</span></label>
+                <input type="text" class="m-input" id="lookup-order-no" name="order_no" value="{{ old('order_no', $lookupOrderNo ?? '') }}" maxlength="30" placeholder="留空则查询历史订单" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" data-form-type="other">
+            </div>
+
             @if(turnstile_site_key())
-            <div class="m-field"><div class="cf-turnstile" data-sitekey="{{ turnstile_site_key() }}" data-size="compact"></div></div>
-            @error('turnstile')<p class="m-field-error">{{ $message }}</p>@enderror
+            <div class="m-field">
+                <div class="cf-turnstile" data-sitekey="{{ turnstile_site_key() }}" data-size="compact"></div>
+                @error('turnstile')<p class="m-field-error" role="alert">{{ $message }}</p>@enderror
+            </div>
             @endif
-            <button type="submit" class="m-button m-button-primary m-button-wide">查询订单</button>
+
+            <button type="submit" class="m-button m-button-primary m-button-wide">验证并查询订单</button>
         </form>
-        <p class="m-query-privacy"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg> 订单与卡密仅在验证信息后展示。</p>
+        <p class="m-query-privacy">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
+            订单与卡密仅在校验邮箱和密码一致后展示。
+        </p>
     </section>
+
+    <div class="m-query-foot">
+        <a href="/" class="m-text-link"><span aria-hidden="true">←</span> 返回商品目录</a>
+        @if(\App\Support\SafeUrl::contact(setting('contact_url')))
+        <a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" class="m-order-text-link" target="_blank" rel="noopener">需要帮助？ ↗</a>
+        @endif
+    </div>
 </div>
 @endsection

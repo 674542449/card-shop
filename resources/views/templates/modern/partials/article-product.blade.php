@@ -1,3 +1,41 @@
-<aside class="m-panel" style="padding:24px;margin:24px 0">
-<span class="m-eyebrow">文章中的好物</span>@if($product)<h3>{{ $product->name }}</h3><p class="m-muted">¥{{ number_format($product->price, 2) }} · 可售 {{ $product->stockCount() }} 件</p><a class="m-button m-button-primary" href="/product/{{ $product->slug }}">看看这份好物 ↗</a>@else<p class="m-muted">这份商品暂时不可售。</p><a class="m-text-link" href="/#catalog">浏览其他好物 ↗</a>@endif
+@if($product)
+@php
+    $embedStock = $product->stockCount();
+    $embedMinQty = max(1, (int) $product->min_quantity);
+    $embedBuyable = $embedStock >= $embedMinQty;
+    $embedHasWholesale = $product->relationLoaded('wholesalePrices') && $product->wholesalePrices->isNotEmpty();
+    $embedImg = \App\Support\SafeUrl::asset($product->image);
+@endphp
+<aside class="m-embed-product">
+    <div class="m-embed-product-main">
+        @if($embedImg)
+        <a href="/product/{{ $product->slug }}" class="m-embed-product-thumb" tabindex="-1" aria-hidden="true">
+            <img src="{{ $embedImg }}" alt="" width="56" height="56" loading="lazy" decoding="async">
+        </a>
+        @endif
+        <div class="m-embed-product-info">
+            @if($product->category)
+            <span class="m-embed-product-cat">{{ $product->category->name }}</span>
+            @endif
+            <strong class="m-embed-product-name">{{ $product->name }}</strong>
+            <div class="m-embed-product-meta">
+                <span class="m-embed-product-price">¥{{ number_format($product->price, 2) }}{{ $embedHasWholesale ? ' 起' : '' }}</span>
+                <span aria-hidden="true">·</span>
+                <span @class(['m-embed-product-stock', 'is-unavailable' => !$embedBuyable])>
+                    {{ $embedBuyable ? '库存 ' . $embedStock . ' 件' : '暂时缺货' }}
+                </span>
+            </div>
+        </div>
+    </div>
+    <a class="m-button {{ $embedBuyable ? 'm-button-primary' : 'm-button-secondary' }} m-button-sm" href="/product/{{ $product->slug }}">
+        {{ $embedBuyable ? '立即选购' : '查看详情' }}<span class="m-sr-only">：{{ $product->name }}</span> <span aria-hidden="true">→</span>
+    </a>
 </aside>
+@else
+<aside class="m-embed-product is-missing">
+    <div class="m-embed-product-info">
+        <p class="m-muted">该关联商品当前暂不可售，请前往商品目录浏览其他在售商品。</p>
+    </div>
+    <a class="m-button m-button-secondary m-button-sm" href="/#catalog">浏览其他商品 →</a>
+</aside>
+@endif

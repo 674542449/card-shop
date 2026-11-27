@@ -27,6 +27,7 @@ import { onAdminSessionChange } from '../services/sessionLifecycle';
 
 const THEME_LABELS = {
   default: '默认主题（现代数字工作台）',
+  mall: '现代商城主题（电商橱窗）',
   minimal: '极简主题（卡片网格）',
   modern: '经典暖色主题',
 };

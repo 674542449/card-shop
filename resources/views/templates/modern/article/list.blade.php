@@ -7,19 +7,19 @@
 
 @section('content')
 <header class="m-article-index-heading">
-    <span class="m-eyebrow">商店笔记 / JOURNAL</span>
-    <h1 class="m-page-heading">{{ $currentCategory ? $currentCategory->name : '公告与指南' }}</h1>
-    <p class="m-lead">关于商品、使用方法，以及商店的新消息。</p>
+    <div class="m-store-strip-title">
+        <h1 class="m-page-heading">{{ $currentCategory ? $currentCategory->name : '公告与指南' }}</h1>
+        <span class="m-pill m-pill-muted">{{ $articles->total() }} 篇</span>
+    </div>
+    <p class="m-store-strip-desc">商品使用说明、常见问题与店铺公告。</p>
 </header>
 
 <div class="m-article-layout">
     <section class="m-article-list" aria-label="文章列表">
-        <div class="m-article-list-caption">
-            <span>{{ $currentCategory ? $currentCategory->name : '全部文章' }}</span>
-            <span class="m-muted">{{ $articles->total() }} 篇内容</span>
-        </div>
-
         @forelse($articles as $article)
+        @php
+            $summaryText = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) preg_replace('/\[\[product:\d+\]\]/', '', (string) $article->summary))));
+        @endphp
         <a href="/articles/{{ $article->slug }}" class="m-article-row">
             <time class="m-article-row-date" datetime="{{ $article->created_at->toDateString() }}">
                 <span>{{ $article->created_at->format('m.d') }}</span>
@@ -30,8 +30,8 @@
                 <span class="m-article-category">{{ $article->articleCategory->name }}</span>
                 @endif
                 <h2 class="m-article-row-title">{{ $article->title }}</h2>
-                @if(filled($article->summary))
-                <p class="m-article-row-summary">{{ \Illuminate\Support\Str::limit(strip_tags($article->summary), 160) }}</p>
+                @if($summaryText !== '')
+                <p class="m-article-row-summary">{{ \Illuminate\Support\Str::limit($summaryText, 140) }}</p>
                 @endif
             </div>
             <span class="m-article-row-arrow" aria-hidden="true">↗</span>
@@ -40,7 +40,7 @@
         <div class="m-empty m-article-empty">
             <h2 class="m-section-title">这里还没有文章</h2>
             <p class="m-muted">{{ $currentCategory ? '这个分类下暂时没有内容，可以看看其他分类。' : '公告和使用指南发布后，会出现在这里。' }}</p>
-            <a href="/" class="m-button m-button-secondary">去挑选商品</a>
+            <a href="/" class="m-button m-button-secondary m-button-sm">返回商品目录</a>
         </div>
         @endforelse
 
@@ -51,7 +51,7 @@
 
     <aside class="m-article-sidebar">
         <section class="m-article-sidebar-section">
-            <h2 class="m-eyebrow">按分类阅读</h2>
+            <h2 class="m-eyebrow">文章分类</h2>
             <nav class="m-article-category-nav" aria-label="文章分类">
                 <a href="/articles" @class(['is-active' => ! $currentCategory]) @if(! $currentCategory) aria-current="page" @endif>
                     <span>全部文章</span><span aria-hidden="true">↗</span>
@@ -62,13 +62,6 @@
                 </a>
                 @endforeach
             </nav>
-        </section>
-
-        <section class="m-article-note m-panel m-panel-pad">
-            <span class="m-article-note-mark" aria-hidden="true">✳</span>
-            <h2 class="m-section-title">已经下过单？</h2>
-            <p class="m-muted">用下单邮箱和查询密码找回订单，在订单详情中查看付款状态和卡密。</p>
-            <a href="/order/query" class="m-button m-button-quiet">查询订单 <span aria-hidden="true">→</span></a>
         </section>
     </aside>
 </div>

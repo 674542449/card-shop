@@ -29,7 +29,7 @@ class BuyerReliabilityThemeTest extends TestCase
         return $app;
     }
 
-    public static function themes(): array { return [['default'], ['modern'], ['minimal']]; }
+    public static function themes(): array { return [['default'], ['mall'], ['modern'], ['minimal']]; }
 
     #[DataProvider('themes')]
     public function test_payment_controls_refund_balance_and_category_search_for_each_theme(string $theme): void

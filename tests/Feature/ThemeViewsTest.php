@@ -51,6 +51,7 @@ class ThemeViewsTest extends TestCase
     {
         return [
             'default' => ['default'],
+            'mall' => ['mall'],
             'modern' => ['modern'],
             'minimal' => ['minimal'],
         ];
@@ -58,12 +59,14 @@ class ThemeViewsTest extends TestCase
 
     public static function independentThemes(): array
     {
-        return ['modern' => ['modern'], 'minimal' => ['minimal']];
+        return ['mall' => ['mall'], 'modern' => ['modern'], 'minimal' => ['minimal']];
     }
 
     public static function independentDeadOrderStates(): array
     {
         return [
+            'mall expired' => ['mall', 'expired'],
+            'mall closed' => ['mall', 'closed'],
             'modern expired' => ['modern', 'expired'],
             'modern closed' => ['modern', 'closed'],
             'minimal expired' => ['minimal', 'expired'],

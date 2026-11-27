@@ -105,7 +105,7 @@ class StorefrontAdminParityTest extends TestCase
         Setting::set('contact_qr_image', '', 'general');
         Setting::set('contact_url', 'https://t.me/cardshop_support', 'general');
 
-        foreach (['default', 'minimal', 'modern'] as $theme) {
+        foreach (['default', 'mall', 'minimal', 'modern'] as $theme) {
             Setting::set('site_theme', $theme, 'general');
             $this->get('/')->assertOk()->assertSee('https://t.me/cardshop_support', false);
         }

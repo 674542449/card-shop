@@ -363,6 +363,102 @@ class SearchEngineCrawlTest extends TestCase
         $this->assertStringContainsString('查看全部公告与帮助指南', $allGuidesText);
     }
 
+    public function test_mall_theme_satisfies_google_seo_structured_data_breadcrumbs_and_cwv_guidelines(): void
+    {
+        Setting::set('site_theme', 'mall', 'general');
+        Setting::set('site_name', 'Flagship Mall 商城', 'general');
+        Setting::set('site_logo', '/storage/uploads/mall-logo.png', 'general');
+        Setting::set('popup_announcement', '<p>商城公告采用非遮挡流式通知，不触发插页降权。</p>', 'general');
+
+        $category = Category::create([
+            'name' => '数字会员',
+            'slug' => 'mall-memberships',
+            'image' => '/storage/uploads/cat-vip.png',
+            'description' => '精选官方正版数字会员与软件授权。',
+            'is_active' => true,
+        ]);
+        $product = Product::create([
+            'category_id' => $category->id,
+            'name' => '年度旗舰会员卡',
+            'slug' => 'mall-flagship-pass',
+            'description' => '<p>24小时自动发货，支持阶梯团购优惠。</p>',
+            'image' => '/storage/uploads/mall-pass.png',
+            'price' => '99.00',
+            'is_active' => true,
+        ]);
+        Card::create(['product_id' => $product->id, 'content' => 'MALL-KEY-001', 'status' => 'unsold']);
+        ProductWholesalePrice::create(['product_id' => $product->id, 'min_quantity' => 3, 'price' => '88.00']);
+
+        $artCategory = ArticleCategory::create(['name' => '选购指南', 'slug' => 'mall-guides']);
+        Article::create([
+            'article_category_id' => $artCategory->id,
+            'title' => '如何挑选适合的年度会员',
+            'slug' => 'choose-mall-pass',
+            'cover_image' => '/storage/uploads/mall-guide-cover.png',
+            'content' => "<p>正文指南内容。</p><p>[[product:{$product->id}]]</p>",
+            'is_published' => true,
+        ]);
+
+        // 1. Homepage: WebSite + SearchAction + Organization + ItemList, LCP fetchpriority="high" without loading="lazy"
+        $homeHtml = $this->get('/')->assertOk()->assertViewIs('templates.mall.home')->getContent();
+        $homeDom = $this->xpath($homeHtml);
+        $lcpImg = $homeDom->query('//article[contains(@class, "ml-product-card")][1]//img')->item(0);
+        $this->assertInstanceOf(DOMElement::class, $lcpImg);
+        $this->assertSame('high', $lcpImg->getAttribute('fetchpriority'));
+        $this->assertSame('', $lcpImg->getAttribute('loading'), 'LCP image must not combine fetchpriority="high" with loading="lazy".');
+        $homeGraph = $this->jsonLdGraph($homeHtml);
+        $this->assertNotNull(collect($homeGraph)->firstWhere('@type', 'Organization'));
+        $this->assertSame('SearchAction', collect($homeGraph)->firstWhere('@type', 'WebSite')['potentialAction']['@type'] ?? null);
+        $this->assertNotNull(collect($homeGraph)->firstWhere('@type', 'ItemList'));
+
+        // 2. Category & Article List: BreadcrumbList + CollectionPage + ItemList & semantic <ol> breadcrumb
+        foreach (['/category/mall-memberships', '/articles'] as $listPath) {
+            $html = $this->get($listPath)->assertOk()->getContent();
+            $dom = $this->xpath($html);
+            $this->assertGreaterThanOrEqual(2, $dom->query('//nav[contains(@class, "ml-breadcrumb")]/ol/li/a')->length);
+            $graph = $this->jsonLdGraph($html);
+            $this->assertNotNull(collect($graph)->firstWhere('@type', 'BreadcrumbList'));
+            $collection = collect($graph)->firstWhere('@type', 'CollectionPage');
+            $this->assertSame('ItemList', $collection['mainEntity']['@type'] ?? null);
+        }
+
+        // 3. Product detail: og:type=product, AggregateOffer + BreadcrumbList + semantic <ol> breadcrumb
+        $productHtml = $this->get('/product/mall-flagship-pass')->assertOk()->assertViewIs('templates.mall.product.show')->getContent();
+        $productDom = $this->xpath($productHtml);
+        $this->assertSame('product', $this->meta($productDom, 'property', 'og:type'));
+        $this->assertSame(3, $productDom->query('//nav[contains(@class, "ml-breadcrumb")]/ol/li/a')->length);
+        $productGraph = $this->jsonLdGraph($productHtml);
+        $productSchema = collect($productGraph)->firstWhere('@type', 'Product');
+        $this->assertSame('AggregateOffer', $productSchema['offers']['@type'] ?? null);
+        $this->assertSame('88.00', $productSchema['offers']['lowPrice'] ?? null);
+
+        // 4. Article detail: og:type=article, Article + BreadcrumbList
+        $articleHtml = $this->get('/articles/choose-mall-pass')->assertOk()->assertViewIs('templates.mall.article.show')->getContent();
+        $articleDom = $this->xpath($articleHtml);
+        $this->assertSame('article', $this->meta($articleDom, 'property', 'og:type'));
+        $articleGraph = $this->jsonLdGraph($articleHtml);
+        $this->assertNotNull(collect($articleGraph)->firstWhere('@type', 'Article'));
+        $this->assertNotNull(collect($articleGraph)->firstWhere('@type', 'BreadcrumbList'));
+
+        // 5. All mall routes satisfy CWV image sizing, crawlable links, single main/h1, and non-modal announcement
+        foreach (['/', '/category/mall-memberships', '/product/mall-flagship-pass', '/articles', '/articles/choose-mall-pass', '/order/query'] as $path) {
+            $html = $this->get($path)->assertOk()->getContent();
+            $dom = $this->xpath($html);
+            $this->assertSame(1, $dom->query('//main[@id="main-content"]')->length);
+            $this->assertSame(1, $dom->query('//h1')->length);
+            foreach ($dom->query('//a') as $link) {
+                $href = trim($link->getAttribute('href'));
+                $this->assertNotSame('', $href);
+                $this->assertStringNotContainsString('javascript:', strtolower($href));
+            }
+            foreach ($dom->query('//img') as $img) {
+                $this->assertMatchesRegularExpression('/^\d+$/', $img->getAttribute('width'), "Missing width on {$path}");
+                $this->assertMatchesRegularExpression('/^\d+$/', $img->getAttribute('height'), "Missing height on {$path}");
+            }
+            $this->assertSame(0, $dom->query('//*[@id="announcement-modal"]//*[@aria-modal="true"]')->length);
+        }
+    }
+
     private function xpath(string $html): DOMXPath
     {
         $doc = new DOMDocument();
