@@ -1,10 +1,10 @@
 # 自动化测试与回归验收
 
-适用正式版本：**v1.0.14**，核对日期：**2026-11-28**。
+适用正式版本：**v1.0.15**，核对日期：**2026-11-28**。
 
-最新双架构验收流水线：[Validate and build release #46032733526](https://github.com/674542449/card-shop/actions/runs/46032733526)（`linux/amd64` + `linux/arm64` 全部通过）：
-- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.14`（`sha256:cda986b6deae6f77acdc782fc6792fe89e850534d5891880dbff4a51d834fbdc`）
-- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.14`（`sha256:b05b48fbee21d46ad5445ea748e116cedee524b762a461604bfd8d0527936801`）
+最新双架构验收流水线：[Validate and build release #46050996455](https://github.com/674542449/card-shop/actions/runs/46050996455)（`linux/amd64` + `linux/arm64` 全部通过）：
+- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.15`（`sha256:254cb18c2042d3c963f8e1c9eeace606b0f5a0d35e5c40e1b3500be1c0626682`）
+- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.15`（`sha256:cbaecab1b4e4e130d9fb359729e62331279ca02739fb66123e06fa264d6ca0b1`）
 
 ## 验证覆盖范围
 
@@ -12,8 +12,8 @@
 
 | 验证维度 | 覆盖规模与内容 |
 | --- | --- |
-| PHP 特性与安全回归（PHPUnit） | **591 个测试**（含四套独立模板 `default`/`mall`/`modern`/`minimal` 视图、生产首次空库预置甲骨文云演示目录与幂等/老库跳过保护 `ProductionDemoSeedTest`、查单与支付回归、`mall` 模板专项 Google SEO / JSON-LD / `<ol>` 面包屑 / Core Web Vitals 校验、真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列与排他锁调度、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS、随机高强度后台路径、蜜罐 IP/CIDR 白名单、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归） |
-| 管理后台前端回归（Node + JSDOM） | **40 个测试**（覆盖单管理员导航、商品批量改介绍、异步防串单、系统设置显式手动保存与禁自动填充、多目标云端备份勾选与实时连接测试、运维备份页本地一键还原/上传包弹窗/云端拉取与密码二次确认禁自动填充、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
+| PHP 特性与安全回归（PHPUnit） | **592 个测试**（含四套独立模板 `default`/`mall`/`modern`/`minimal` 视图、商品批量改价与阶梯批发价联动原子回归、生产首次空库预置甲骨文云演示目录与幂等/老库跳过保护 `ProductionDemoSeedTest`、查单与支付回归、`mall` 模板专项 Google SEO / JSON-LD / `<ol>` 面包屑 / Core Web Vitals 校验、真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列与排他锁调度、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS、随机高强度后台路径、蜜罐 IP/CIDR 白名单、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归） |
+| 管理后台前端回归（Node + JSDOM） | **41 个测试**（覆盖单管理员导航、商品批量改介绍与批量调价实时预览、异步防串单、系统设置显式手动保存与禁自动填充、多目标云端备份勾选与实时连接测试、运维备份页本地一键还原/上传包弹窗/云端拉取与密码二次确认禁自动填充、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
 | 商城前台与多架构索引脚本（Node） | **14 个测试**（覆盖支付状态签名轮询 `data-poll-url`、`403` 停止轮询恢复、双架构镜像索引摘要与平台校验） |
 | 容器启动、恢复与守护脚本（Bash） | **7 类 Composer 启动指纹场景** + **3 项统一 `worker` 多子进程守护/故障自愈/优雅停机验证** + **5 项 `scripts/restore.sh` 一行命令换机恢复回归** + 全部 Shell 脚本语法检查 + 静态资源构建标记一致性校验 |
 | 依赖安全审计 | `composer audit --locked` 零漏洞（已同步升级 Symfony 核心组件至 `v7.4.24`）；`npm audit` 生产依赖零高危/严重漏洞、全量依赖零严重漏洞 |
