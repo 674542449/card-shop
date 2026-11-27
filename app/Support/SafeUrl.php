@@ -145,13 +145,10 @@ class SafeUrl
             throw new \InvalidArgumentException('网关目标地址不允许连接内网或云元数据地址。');
         }
 
-        $options = [];
-        if (defined('CURLOPT_PROTOCOLS') && defined('CURLPROTO_HTTP') && defined('CURLPROTO_HTTPS')) {
-            $options['curl'][CURLOPT_PROTOCOLS] = CURLPROTO_HTTP | CURLPROTO_HTTPS;
-            if (defined('CURLOPT_REDIR_PROTOCOLS')) {
-                $options['curl'][CURLOPT_REDIR_PROTOCOLS] = 0;
-            }
-        }
+        $options = [
+            'protocols' => ['http', 'https'],
+            'allow_redirects' => false,
+        ];
 
         $rawHost = strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]'));
         if ($allowLocal && $resolver === null) {
@@ -189,19 +186,25 @@ class SafeUrl
             throw new \InvalidArgumentException('无法解析网关域名。');
         }
 
-        $verifiedIp = null;
+        $ipv4s = [];
+        $ipv6s = [];
         foreach ($ips as $candidate) {
             if (! is_string($candidate) || ! self::isAllowedOutboundIp($candidate, $allowLocal)) {
                 throw new \InvalidArgumentException('网关域名解析到了不允许的内网或元数据地址。');
             }
-            $verifiedIp ??= IpAddress::normalize($candidate);
+            $normalized = IpAddress::normalize($candidate);
+            if (str_contains($normalized, ':')) {
+                $ipv6s[] = "[{$normalized}]";
+            } else {
+                $ipv4s[] = $normalized;
+            }
         }
 
-        if ($verifiedIp !== null && defined('CURLOPT_RESOLVE')) {
+        $ordered = array_values(array_unique(array_merge($ipv4s, $ipv6s)));
+        if ($ordered !== [] && defined('CURLOPT_RESOLVE')) {
             $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
             $port = (int) (parse_url($url, PHP_URL_PORT) ?: ($scheme === 'https' ? 443 : 80));
-            $formattedIp = str_contains($verifiedIp, ':') ? "[{$verifiedIp}]" : $verifiedIp;
-            $options['curl'][CURLOPT_RESOLVE] = [rtrim($rawHost, '.') . ":{$port}:{$formattedIp}"];
+            $options['curl'][CURLOPT_RESOLVE] = [rtrim($rawHost, '.') . ":{$port}:" . implode(',', $ordered)];
         }
 
         return $options;

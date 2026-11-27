@@ -155,9 +155,33 @@ class DefenseInDepthSecurityTest extends TestCase
             false,
             static fn (): array => ['203.0.113.25'],
         );
+        $this->assertSame(['http', 'https'], $pinned['protocols']);
+        $this->assertFalse($pinned['allow_redirects']);
         if (defined('CURLOPT_RESOLVE')) {
             $this->assertSame(['pay.example.com:443:203.0.113.25'], $pinned['curl'][CURLOPT_RESOLVE]);
         }
+
+        // Dual-stack domains (e.g. Cloudflare) must prioritize verified IPv4 ahead of IPv6
+        // and remain accepted by Guzzle's real CurlFactory without conflicting curl options.
+        $dualStack = SafeUrl::outboundHttpOptions(
+            'https://pay.example.com',
+            false,
+            static fn (): array => ['2606:4700:3030::1', '104.21.50.46', '172.67.1.2'],
+        );
+        if (defined('CURLOPT_RESOLVE')) {
+            $this->assertSame(
+                ['pay.example.com:443:104.21.50.46,172.67.1.2,[2606:4700:3030::1]'],
+                $dualStack['curl'][CURLOPT_RESOLVE]
+            );
+        }
+
+        $factory = new \GuzzleHttp\Handler\CurlFactory(1);
+        $easy = $factory->create(
+            new \GuzzleHttp\Psr7\Request('POST', 'https://pay.example.com/api/v1/order/create-transaction'),
+            $dualStack
+        );
+        $this->assertNotNull($easy->handle);
+        $factory->release($easy);
 
         $this->expectException(\InvalidArgumentException::class);
         SafeUrl::outboundHttpOptions(

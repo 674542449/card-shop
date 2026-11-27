@@ -139,6 +139,11 @@ class EpusdtService
         $data = $response->json();
 
         if (!is_array($data) || !array_key_exists('status_code', $data)) {
+            Log::error('EPUSDT API returned non-JSON or missing status_code', [
+                'status' => $response->status(),
+                'content_type' => $response->header('Content-Type'),
+                'order_no' => $order->order_no,
+            ]);
             throw new \App\Exceptions\PaymentUncertainException('USDT付款创建响应不完整，请勿重复付款。');
         }
         if (!is_int($data['status_code']) && !(is_string($data['status_code']) && preg_match('/^\d{1,6}$/D', $data['status_code']))) {
@@ -164,9 +169,15 @@ class EpusdtService
         $transaction = $data['data'] ?? null;
         $paymentUrl = SafeUrl::http(is_array($transaction) ? ($transaction['payment_url'] ?? null) : null);
         if ($paymentUrl === null) {
+            Log::error('EPUSDT API returned invalid payment_url', [
+                'order_no' => $order->order_no,
+                'has_data' => is_array($transaction),
+                'has_payment_url' => is_array($transaction) && array_key_exists('payment_url', $transaction),
+            ]);
             throw new \App\Exceptions\PaymentUncertainException('USDT支付接口返回的支付链接无效，请先核对原付款。');
         }
         if (!$this->validTradeId($transaction['trade_id'] ?? null)) {
+            Log::error('EPUSDT API returned invalid trade_id', ['order_no' => $order->order_no]);
             throw new \App\Exceptions\PaymentUncertainException('USDT支付接口未返回有效交易号，请先核对原付款。');
         }
         // Old EPUSDT releases omit some fields. If the gateway does return them,
@@ -176,6 +187,15 @@ class EpusdtService
             || (array_key_exists('trade_type', $transaction) && $transaction['trade_type'] !== self::TRADE_TYPES[$chain])
             || (array_key_exists('amount', $transaction) && !$this->matchingAmount($transaction['amount'], (string) $order->total_amount))
             || (array_key_exists('status', $transaction) && !in_array($transaction['status'], [1, 2, '1', '2'], true))) {
+            Log::error('EPUSDT API response fields contradicted order', [
+                'order_no' => $order->order_no,
+                'chain' => $chain,
+                'mismatch_order_id' => array_key_exists('order_id', $transaction) && $transaction['order_id'] !== $order->order_no,
+                'mismatch_fiat' => array_key_exists('fiat', $transaction) && $transaction['fiat'] !== 'CNY',
+                'mismatch_trade_type' => array_key_exists('trade_type', $transaction) && $transaction['trade_type'] !== self::TRADE_TYPES[$chain],
+                'mismatch_amount' => array_key_exists('amount', $transaction) && !$this->matchingAmount($transaction['amount'], (string) $order->total_amount),
+                'mismatch_status' => array_key_exists('status', $transaction) && !in_array($transaction['status'], [1, 2, '1', '2'], true),
+            ]);
             throw new \App\Exceptions\PaymentUncertainException('USDT支付接口返回的订单、金额或币种不匹配，请先核对原付款。');
         }
 

@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\PaymentAttempt;
 use App\Support\SafeUrl;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class PaymentInitiationService
@@ -83,6 +84,12 @@ class PaymentInitiationService
                 ->update(['status' => $uncertain ? 'uncertain' : 'failed', 'error_code' => $uncertain ? 'gateway_uncertain' : 'gateway_rejected',
                     'lease_token' => null, 'lease_expires_at' => null]);
             if ($uncertain) {
+                Log::error('Payment initiation marked uncertain', [
+                    'order_no' => $freshOrder->order_no,
+                    'method' => $method,
+                    'exception' => $e::class,
+                    'reason' => $e->getMessage(),
+                ]);
                 throw new PaymentUncertainException('付款创建结果待核对，请查询原订单或联系客服，请勿重复付款。', 0, $e);
             }
             throw $e;
