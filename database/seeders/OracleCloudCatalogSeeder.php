@@ -7,16 +7,116 @@ use App\Models\ArticleCategory;
 use App\Models\Card;
 use App\Models\Category;
 use App\Models\OperationLog;
+use App\Models\Order;
 use App\Models\Product;
 use App\Models\Setting;
+use Illuminate\Console\Command;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 
-/** Optional local catalog preset; never called by DatabaseSeeder or container boot. */
+/**
+ * Oracle Cloud 45-region storefront demo catalog.
+ *
+ * - seedIfEmpty(): non-destructive, idempotent initializer called by DatabaseSeeder on
+ *   fresh installs (including production containers with read-only rootfs). Never deletes
+ *   data and never re-populates after initial seeding or when any catalog/order data exists.
+ * - run(): explicit local-only destructive reset for development previews.
+ */
 class OracleCloudCatalogSeeder extends Seeder
 {
     public const UNIFIED_PRODUCT_IMAGE = '/oci-assets/oracle-cloud.webp';
+
+    public const SEEDED_MARKER_KEY = 'initial_catalog_seeded';
+
+    public const REQUIRED_ASSETS = [
+        'oracle-cloud.webp',
+        'cat-apac.svg',
+        'cat-na.svg',
+        'cat-eu.svg',
+        'cat-me.svg',
+        'cat-af.svg',
+        'cat-latam.svg',
+        'article-free-vs-payg.svg',
+        'article-login-2fa.svg',
+        'article-region-guide.svg',
+        'article-payg-budget.svg',
+    ];
+
+    /**
+     * Safely populate the default Oracle Cloud demo catalog once on a brand-new empty shop.
+     *
+     * Safe for production first-install (`read_only: true` containers) and repeated `db:seed` runs:
+     * never executes DELETE statements, skips if already seeded once or if any existing business
+     * records are present, and never overwrites operator-configured settings.
+     *
+     * @return array<string, int>|null Summary counts when seeded, or null when skipped.
+     */
+    public static function seedIfEmpty(?Command $command = null): ?array
+    {
+        if (Setting::where('key', self::SEEDED_MARKER_KEY)->value('value') === '1') {
+            return null;
+        }
+
+        if (! self::hasRequiredAssets()) {
+            self::generateAssets();
+        }
+
+        $summary = DB::transaction(function (): ?array {
+            if (DB::connection()->getDriverName() === 'pgsql') {
+                DB::select('select pg_advisory_xact_lock(20261127, 450090)');
+            }
+
+            if (Setting::where('key', self::SEEDED_MARKER_KEY)->value('value') === '1') {
+                return null;
+            }
+
+            if (
+                Category::exists()
+                || Product::exists()
+                || Card::exists()
+                || Order::exists()
+                || Article::exists()
+                || ArticleCategory::exists()
+            ) {
+                return null;
+            }
+
+            $result = self::populateCatalog(overwriteSettings: false, recordOperationLog: false);
+            Setting::set(self::SEEDED_MARKER_KEY, '1', 'system');
+
+            return $result;
+        });
+
+        if ($summary !== null) {
+            settings_forget();
+            $command?->info('Initial Oracle Cloud demo catalog seeded: ' . json_encode($summary, JSON_UNESCAPED_UNICODE));
+        }
+
+        return $summary;
+    }
+
+    public static function hasRequiredAssets(): bool
+    {
+        $assetDir = public_path('oci-assets');
+        foreach (self::REQUIRED_ASSETS as $file) {
+            if (! is_file($assetDir . DIRECTORY_SEPARATOR . $file)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    public static function expectedCardCount(): int
+    {
+        $total = 0;
+        foreach (self::regions() as $region) {
+            $total += (int) $region['free_stock'] + (int) $region['payg_stock'];
+        }
+
+        return $total;
+    }
 
     public function run(): void
     {
@@ -27,10 +127,9 @@ class OracleCloudCatalogSeeder extends Seeder
             throw new \RuntimeException('OracleCloudCatalogSeeder resets catalog and orders; run only in local development environments.');
         }
 
-        $regions = self::regions();
         self::generateAssets();
 
-        $summary = DB::transaction(function () use ($regions) {
+        $summary = DB::transaction(function (): array {
             // 1. Cleanly clear existing orders, cards, products, categories & old articles
             DB::table('order_card_replacement_items')->delete();
             DB::table('order_card_replacements')->delete();
@@ -52,6 +151,25 @@ class OracleCloudCatalogSeeder extends Seeder
             DB::table('articles')->delete();
             DB::table('article_categories')->delete();
             DB::table('seo_deliveries')->delete();
+
+            $result = self::populateCatalog(overwriteSettings: true, recordOperationLog: true);
+            Setting::set(self::SEEDED_MARKER_KEY, '1', 'system');
+
+            return $result;
+        });
+
+        settings_forget();
+        $this->command?->info(json_encode($summary, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+    }
+
+    /**
+     * Purely additive catalog insertion (never deletes existing rows).
+     *
+     * @return array<string, int>
+     */
+    private static function populateCatalog(bool $overwriteSettings, bool $recordOperationLog): array
+    {
+        $regions = self::regions();
 
             // 2. Create 6 independent regional categories (亚太 / 北美 / 欧洲 / 中东 / 非洲 / 拉美)
             $categoryDefs = [
@@ -342,28 +460,41 @@ class OracleCloudCatalogSeeder extends Seeder
             }
 
             // 6. Update storefront announcement & SEO settings to match the 6 regional categories & naming
-            Setting::set('seo_default_title', '甲骨文云账号商城 - 亚太/北美/欧洲/中东/非洲/拉美 升级号与普通号（高质量谷歌）自动发货 | CardShop', 'seo');
-            Setting::set('seo_default_description', '提供甲骨文云（Oracle Cloud / OCI）全球 45 个主区域独立账号，按亚太区、北美区、欧洲区、中东区、非洲区、拉美区六大板块分类，涵盖升级号（PAYG）与普通号（Always Free），高质量谷歌原邮 24/7 自动发货。', 'seo');
-            Setting::set('seo_default_keywords', '甲骨文云,Oracle Cloud,甲骨文升级号,甲骨文普通号,高质量谷歌,悉尼升级,东京升级,首尔升级,新加坡升级,4C24G ARM', 'seo');
-            Setting::set('site_description', '甲骨文云（Oracle Cloud）全球 45 区域自助发卡商城 · 亚太、北美、欧洲、中东、非洲、拉美六大独立分类，高质量谷歌原邮升级号与普通号现货秒发。', 'site');
-            Setting::set('site_announcement', '<p><strong>现货自动发货：</strong>全站按<strong>亚太区、北美区、欧洲区、中东区、非洲区、拉美区</strong>六大独立板块划分全球 45 个甲骨文区域，每区均提供<strong>升级号（PAYG）</strong>与<strong>普通号（Always Free）</strong>，统一配套<strong>高质量谷歌原邮</strong>交付。<a href="/articles/oci-free-vs-payg">查看升级号与普通号区别 &rarr;</a></p>', 'site');
-            Setting::set('contact_url', '/articles/oci-first-login-security', 'site');
-            Setting::set('contact_text', '甲骨文云自助商城 · 支持凭下单邮箱与查询密码 24 小时自助提卡与导出。', 'site');
-            Setting::set('checkout_require_key', '1', 'security');
-            Setting::set('order_max_pending_per_ip', '3', 'security');
-            Setting::set('order_max_pending_per_email', '3', 'security');
-            Setting::set('order_max_locked_percent', '80', 'security');
+            $defaultSettings = [
+                ['seo_default_title', '甲骨文云账号商城 - 亚太/北美/欧洲/中东/非洲/拉美 升级号与普通号（高质量谷歌）自动发货 | CardShop', 'seo'],
+                ['seo_default_description', '提供甲骨文云（Oracle Cloud / OCI）全球 45 个主区域独立账号，按亚太区、北美区、欧洲区、中东区、非洲区、拉美区六大板块分类，涵盖升级号（PAYG）与普通号（Always Free），高质量谷歌原邮 24/7 自动发货。', 'seo'],
+                ['seo_default_keywords', '甲骨文云,Oracle Cloud,甲骨文升级号,甲骨文普通号,高质量谷歌,悉尼升级,东京升级,首尔升级,新加坡升级,4C24G ARM', 'seo'],
+                ['site_description', '甲骨文云（Oracle Cloud）全球 45 区域自助发卡商城 · 亚太、北美、欧洲、中东、非洲、拉美六大独立分类，高质量谷歌原邮升级号与普通号现货秒发。', 'site'],
+                ['site_announcement', '<p><strong>现货自动发货：</strong>全站按<strong>亚太区、北美区、欧洲区、中东区、非洲区、拉美区</strong>六大独立板块划分全球 45 个甲骨文区域，每区均提供<strong>升级号（PAYG）</strong>与<strong>普通号（Always Free）</strong>，统一配套<strong>高质量谷歌原邮</strong>交付。<a href="/articles/oci-free-vs-payg">查看升级号与普通号区别 &rarr;</a></p>', 'site'],
+                ['contact_url', '/articles/oci-first-login-security', 'site'],
+                ['contact_text', '甲骨文云自助商城 · 支持凭下单邮箱与查询密码 24 小时自助提卡与导出。', 'site'],
+            ];
 
-            $adminId = DB::table('admins')->min('id');
-            if ($adminId) {
-                OperationLog::create([
-                    'admin_id' => $adminId,
-                    'action' => '更新六大区域分类与统一甲骨文介绍图',
-                    'target_type' => 'product',
-                    'target_id' => null,
-                    'detail' => "已拆分为 6 大独立分类（亚太/北美/欧洲/中东/非洲/拉美），更新 {$createdProducts} 款「升级/普通 - 高质量谷歌」商品并统一商品介绍图",
-                    'ip' => '127.0.0.1',
-                ]);
+            foreach ($defaultSettings as [$key, $value, $group]) {
+                if ($overwriteSettings || trim((string) Setting::where('key', $key)->value('value')) === '') {
+                    Setting::set($key, $value, $group);
+                }
+            }
+
+            if ($overwriteSettings) {
+                Setting::set('checkout_require_key', '1', 'security');
+                Setting::set('order_max_pending_per_ip', '3', 'security');
+                Setting::set('order_max_pending_per_email', '3', 'security');
+                Setting::set('order_max_locked_percent', '80', 'security');
+            }
+
+            if ($recordOperationLog) {
+                $adminId = DB::table('admins')->min('id');
+                if ($adminId) {
+                    OperationLog::create([
+                        'admin_id' => $adminId,
+                        'action' => '更新六大区域分类与统一甲骨文介绍图',
+                        'target_type' => 'product',
+                        'target_id' => null,
+                        'detail' => "已拆分为 6 大独立分类（亚太/北美/欧洲/中东/非洲/拉美），更新 {$createdProducts} 款「升级/普通 - 高质量谷歌」商品并统一商品介绍图",
+                        'ip' => '127.0.0.1',
+                    ]);
+                }
             }
 
             return [
@@ -373,9 +504,6 @@ class OracleCloudCatalogSeeder extends Seeder
                 'cards' => $createdCards,
                 'articles' => count($articles),
             ];
-        });
-
-        $this->command?->info(json_encode($summary, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 
     public static function generateAssets(): void

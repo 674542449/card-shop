@@ -124,7 +124,10 @@ http_acceptance() {
     curl --fail --silent --show-error --max-time 20 --dump-header "$SMOKE_DIRECTORY/home.headers" \
         --output "$SMOKE_DIRECTORY/home.html" http://127.0.0.1/
     grep -q 'csrf-token' "$SMOKE_DIRECTORY/home.html"
+    grep -q '东京升级' "$SMOKE_DIRECTORY/home.html"
     grep -iq '^X-Request-ID:' "$SMOKE_DIRECTORY/home.headers"
+    curl --fail --silent --show-error --max-time 20 --output "$SMOKE_DIRECTORY/oci-hero.webp" http://127.0.0.1/oci-assets/oracle-cloud.webp
+    [ -s "$SMOKE_DIRECTORY/oci-hero.webp" ]
     curl --fail --silent --show-error --max-time 20 --header "X-Shop-Probe-Token: $SMOKE_PROBE_TOKEN" \
         --output "$SMOKE_DIRECTORY/probe.json" http://127.0.0.1/health/ready
     grep -Eq '"ready"[[:space:]]*:[[:space:]]*true' "$SMOKE_DIRECTORY/probe.json"
@@ -179,7 +182,17 @@ SMOKE_WORKER_CID="$("${DC[@]}" ps -q worker)"
 SMOKE_MIGRATIONS_BEFORE="$(sql "SELECT count(*)::text || ':' || md5(string_agg(migration || ':' || batch::text, ',' ORDER BY migration)) FROM migrations")"
 [ "$(sql 'SELECT count(*) FROM admins')" = 1 ]
 [ "$(sql 'SELECT count(*) FROM orders')" = 0 ]
-[ "$(sql 'SELECT count(*) FROM cards')" = 0 ]
+[ "$(sql 'SELECT count(*) FROM categories')" = 6 ]
+[ "$(sql 'SELECT count(*) FROM products')" = 90 ]
+[ "$(sql 'SELECT count(*) FROM articles')" = 4 ]
+[ "$(sql "SELECT count(*) FROM cards WHERE status = 'unsold'")" = 1329 ]
+[ "$(sql "SELECT value FROM settings WHERE key = 'initial_catalog_seeded'")" = 1 ]
+# Re-running production migrate/seed must stay strictly idempotent and never duplicate seeded rows.
+"${DC[@]}" run --rm --no-deps migrate
+[ "$(sql 'SELECT count(*) FROM categories')" = 6 ]
+[ "$(sql 'SELECT count(*) FROM products')" = 90 ]
+[ "$(sql 'SELECT count(*) FROM articles')" = 4 ]
+[ "$(sql "SELECT count(*) FROM cards WHERE status = 'unsold'")" = 1329 ]
 SMOKE_DEPENDENCIES_BEFORE="$(dependency_snapshot)"
 "${DC[@]}" logs --no-color postgres > "$SMOKE_DIRECTORY/postgres-before.log"
 SMOKE_INITDB_BEFORE="$(grep -c 'initdb' "$SMOKE_DIRECTORY/postgres-before.log" || true)"

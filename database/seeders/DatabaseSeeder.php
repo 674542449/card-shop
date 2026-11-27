@@ -14,6 +14,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->seedAdmin();
         $this->seedSettings();
+        OracleCloudCatalogSeeder::seedIfEmpty($this->command);
     }
 
     /**
