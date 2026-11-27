@@ -1,12 +1,12 @@
 # 架构与运行边界
 
-适用正式版本：**v1.0.9**，核对日期：2026-11-25。部署操作见 [首次安装](../DEPLOY.md)，实际测试范围见 [测试说明](../tests/README.md)。
+适用正式版本：**v1.0.10**，核对日期：2026-11-27。部署操作见 [首次安装](../DEPLOY.md)，实际测试范围见 [测试说明](../tests/README.md)。
 
-CardShop 使用 Laravel 模块化单体，PostgreSQL 是订单、库存、付款回执与任务状态的事实来源，Redis 提供会话、限流和短期锁。React 管理后台与三个 Blade 商城模板共用服务端业务服务。
+CardShop 使用 Laravel 模块化单体，PostgreSQL 是订单、库存、付款回执与任务状态的事实来源，Redis 提供会话、限流和短期锁。React 管理后台与四个 Blade 商城模板共用服务端业务服务。
 
 ```mermaid
 flowchart LR
-  Buyer[三个商城模板 / 客户 API] --> Checkout[统一下单服务]
+  Buyer[四个商城模板 / 客户 API] --> Checkout[统一下单服务]
   Admin[React 管理后台] --> Guard[显式能力授权 / 字段白名单]
   Guard --> Checkout
   Checkout --> DB[(PostgreSQL)]

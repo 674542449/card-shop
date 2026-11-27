@@ -1,10 +1,10 @@
 # 自动化测试与回归验收
 
-适用正式版本：**v1.0.9**，核对日期：**2026-11-25**。
+适用正式版本：**v1.0.10**，核对日期：**2026-11-27**。
 
-最新双架构验收流水线：[Validate and build release #45508648329](https://github.com/674542449/card-shop/actions/runs/45508648329)（`linux/amd64` + `linux/arm64` 全部通过）：
-- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.9`（`sha256:37b0150a815859ed9a2fe09085da8cbd17efd05a0f8e7e991cdda320a3d54938`）
-- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.9`（`sha256:54a1be972017f05f76f5e7954a6e250e8ad9e5e1a6d082b08e90696c163a636a`）
+最新双架构验收流水线：[Validate and build release #45932703907](https://github.com/674542449/card-shop/actions/runs/45932703907)（`linux/amd64` + `linux/arm64` 全部通过）：
+- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.10`（`sha256:11cffc1941521dfd3b89b8f110da28ce316400a6657caec3f5011bd4a943227a`）
+- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.10`（`sha256:a411ae4a7d85b8b62093f5996d28f07845af8455a430800cb2a30bb0055c24fb`）
 
 ## 验证覆盖范围
 
@@ -12,17 +12,17 @@
 
 | 验证维度 | 覆盖规模与内容 |
 | --- | --- |
-| PHP 特性与安全回归（PHPUnit） | **573 个测试 / 6,689 项断言**（含真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列 `RestoreQueue` 与 `shop:backup-work --once` 排他锁调度、上传归档与云端 `ListObjectsV2`/`GetObject` 拉取还原、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS 签名与故障隔离、`private/admin-path` 归档校验、Telegram 多目标播报、随机高强度后台路径、蜜罐 IP/CIDR 白名单与安全防护开关、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归测试） |
+| PHP 特性与安全回归（PHPUnit） | **588 个测试**（含四套独立模板 `default`/`mall`/`modern`/`minimal` 视图、查单与支付回归、`mall` 模板专项 Google SEO / JSON-LD / `<ol>` 面包屑 / Core Web Vitals 校验、真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列与排他锁调度、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS、随机高强度后台路径、蜜罐 IP/CIDR 白名单、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归） |
 | 管理后台前端回归（Node + JSDOM） | **40 个测试**（覆盖单管理员导航、商品批量改介绍、异步防串单、系统设置显式手动保存与禁自动填充、多目标云端备份勾选与实时连接测试、运维备份页本地一键还原/上传包弹窗/云端拉取与密码二次确认禁自动填充、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
 | 商城前台与多架构索引脚本（Node） | **14 个测试**（覆盖支付状态签名轮询 `data-poll-url`、`403` 停止轮询恢复、双架构镜像索引摘要与平台校验） |
 | 容器启动、恢复与守护脚本（Bash） | **7 类 Composer 启动指纹场景** + **3 项统一 `worker` 多子进程守护/故障自愈/优雅停机验证** + **5 项 `scripts/restore.sh` 一行命令换机恢复回归** + 全部 Shell 脚本语法检查 + 静态资源构建标记一致性校验 |
-| 依赖安全审计 | `composer audit --locked` 零漏洞；`npm audit` 生产依赖零高危/严重漏洞、全量依赖零严重漏洞 |
+| 依赖安全审计 | `composer audit --locked` 零漏洞（已同步升级 Symfony 核心组件至 `v7.4.24`）；`npm audit` 生产依赖零高危/严重漏洞、全量依赖零严重漏洞 |
 | 生产容器首次安装与重启验收 | 多阶段构建 `app` 与 `nginx` 镜像，拉起全部 **5 个生产服务**（`app`、`worker`、`nginx`、`postgres`、`redis`，由 `ci-production-smoke.sh` 验收），核验 64 位运行时、无构建期固化 `admin-path`、随机高强度后台路径（`/admin` 返回 404）、`/storage/uploads/` 上传图片 Nginx 200 访问、统一 `worker` 内 5 路后台子进程健康与心跳、数据库迁移、外部 keyring、HTTP 响应头及容器重启不变量 |
 
 ### 核心安全与业务测试矩阵
 
 - **统一下单与防刷风控**（`AntiAbuseHardeningTest`、`CheckoutAndPaymentHardeningTest`、`BuyerAdversarialFlowTest`）：验证网页会话绑定签名 `checkout_key`、快捷抽屉与 bfcache `/order/intent` 自动刷新、`Sec-Fetch-Site: cross-site` 拦截、隐藏蜜罐字段、单 IP（含 IPv6 `/64` 聚合）与单邮箱待付单上限、单商品 80% 未付锁库熔断、Turnstile 二次验证，以及 API `Idempotency-Key` 并发争用保护。
-- **搜索引擎收录与页面体验**（`SearchEngineCrawlTest`、`ThemeViewsTest`）：验证三套模板 TDK、Canonical 规范化分页、Google 图片 Sitemap、Schema.org JSON-LD（`Product` / `AggregateOffer` / `ItemList` / `Article` / `BreadcrumbList`）、FCrDNS 搜索引擎爬虫扫描陷阱豁免、独立 `404` `noindex` 页及敏感页 `X-Robots-Tag`。
+- **搜索引擎收录与页面体验**（`SearchEngineCrawlTest`、`ThemeViewsTest`）：验证四套模板 TDK、Canonical 规范化分页、Google 图片 Sitemap、Schema.org JSON-LD（`Product` / `AggregateOffer` / `ItemList` / `Article` / `BreadcrumbList`）、FCrDNS 搜索引擎爬虫扫描陷阱豁免、独立 `404` `noindex` 页及敏感页 `X-Robots-Tag`。
 - **支付验签、发货与退款边界**（`CardTheftPaymentSecurityTest`、`CardSecretAccessSecurityTest`）：验证易支付与两种 USDT 网关（传统 EPUSDT MD5、BEpusdt）签名核验、最低实付 `¥0.01`、不足额/错币种拦截、迟到与重复收款对账、退款预占防重发卡、售后换卡退役隔离及 30 分钟查单会话绑定。
 - **外部密钥加密与完整备份恢复**（`RuntimeArchitectureTest`、`AdminSecretBoundarySecurityTest`）：验证 AES-256-GCM 外部 keyring 加解密、HMAC 卡密查重、Redis 敏感配置密文缓存、Phar 完整备份校验，以及 PostgreSQL `pg_dump` / `pg_restore` 排他锁与失败回滚。
 - **纵深安全边界**（`DefenseInDepthSecurityTest`、`SensitiveResponseSecurityTest`）：验证商品/分类/文章图片写入协议白名单、全站 `ILIKE` 通配符字面转义、HTTPS `HSTS` 与 `Permissions-Policy` 响应头，以及出站支付网关防云元数据/内网 SSRF 与 DNS Rebinding 锁定。
