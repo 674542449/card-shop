@@ -43,7 +43,10 @@
 
     @if($siteAnnouncement)
     <section class="ml-announcement" aria-label="站点公告">
-        <span class="ml-announcement-tag">店铺公告</span>
+        <span class="ml-announcement-tag">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span>店铺公告</span>
+        </span>
         <div class="ml-rich">{!! \App\Support\ContentRenderer::toHtml($siteAnnouncement) !!}</div>
     </section>
     @endif
@@ -51,7 +54,10 @@
     @if($categories->isNotEmpty() && !request()->filled('q'))
     <section class="ml-cat-shelf" aria-labelledby="ml-cat-shelf-title">
         <div class="ml-section-head">
-            <h2 id="ml-cat-shelf-title">精选分类</h2>
+            <h2 id="ml-cat-shelf-title" class="ml-heading-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+                <span>精选分类</span>
+            </h2>
             <span class="ml-muted">共 {{ $categories->count() }} 个品类 · {{ $catalogTotal }} 款商品</span>
         </div>
         <div class="ml-cat-grid">
@@ -60,7 +66,7 @@
             <a href="/category/{{ $category->slug }}" class="ml-cat-tile">
                 <span class="ml-cat-tile-icon" aria-hidden="true">
                     @if($catImg)
-                    <img src="{{ $catImg }}" alt="" width="40" height="40" loading="lazy" decoding="async">
+                    <img src="{{ $catImg }}" alt="" width="40" height="40" decoding="async">
                     @else
                     <span>{{ mb_substr($category->name, 0, 1) }}</span>
                     @endif
@@ -77,14 +83,17 @@
 
     <section class="ml-catalog-section" id="catalog" aria-labelledby="ml-catalog-title">
         <div class="ml-section-head">
-            <h2 id="ml-catalog-title">{{ request()->filled('q') ? '匹配商品' : '全部在售商品' }}</h2>
+            <h2 id="ml-catalog-title" class="ml-heading-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                <span>{{ request()->filled('q') ? '匹配商品' : '全部在售商品' }}</span>
+            </h2>
             <span class="ml-muted">共 {{ $products->total() }} 款 · 支持在线提取与邮件送达</span>
         </div>
 
         @if($products->isNotEmpty())
         <div class="ml-product-grid" id="catalog-grid">
             @foreach($products as $product)
-                @themeInclude('partials.product-card', ['product' => $product, 'lcp' => $loop->index < 2])
+                @themeInclude('partials.product-card', ['product' => $product, 'lcp' => $loop->index < 2, 'eager' => $loop->index < 4])
             @endforeach
         </div>
         {{ $products->links() }}
@@ -103,13 +112,18 @@
     @if($latestArticles->isNotEmpty())
     <section class="ml-guides-section ml-deferred-section" aria-labelledby="ml-guides-title">
         <div class="ml-section-head">
-            <h2 id="ml-guides-title">公告与使用指南</h2>
+            <h2 id="ml-guides-title" class="ml-heading-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                <span>公告与使用指南</span>
+            </h2>
             <a href="/articles" class="ml-link">查看全部帮助文档 →</a>
         </div>
         <div class="ml-guide-grid">
             @foreach($latestArticles->take(3) as $article)
             @php
-                $guideExcerpt = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) preg_replace('/\[\[product:\d+\]\]/', '', (string) ($article->summary ?: $article->content)))));
+                $guideRaw = (string) preg_replace('/\[\[product:\d+\]\]/', ' ', (string) ($article->summary ?: $article->content));
+                $guideRaw = (string) preg_replace('/<\/(?:h[1-6]|p|div|li|tr|blockquote)>|<br\s*\/?>/i', ' ', $guideRaw);
+                $guideExcerpt = trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($guideRaw), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
             @endphp
             <article class="ml-guide-card">
                 <div class="ml-guide-meta">
@@ -131,6 +145,10 @@
         <div class="ml-support-left">
             @if(\App\Support\SafeUrl::asset(setting('contact_qr_image')))
             <img src="{{ \App\Support\SafeUrl::asset(setting('contact_qr_image')) }}" alt="客服联系二维码" width="76" height="76" loading="lazy" decoding="async" class="ml-support-qr">
+            @else
+            <span class="ml-support-badge" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>
+            </span>
             @endif
             <div>
                 <h2>需要购物协助或售后支持？</h2>

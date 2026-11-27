@@ -11,7 +11,7 @@
     --ws-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
     /* Airy Pearl-Snow Canvas with Subtle Luminous Top Aura */
-    --fb-brand-ink: #1668eb;
+    --fb-brand-ink: #135fd9;
     --ws-bg: #f6f8fc;
     --ws-bg-aura:
         radial-gradient(1100px 420px at 15% -5%, rgba(37, 111, 240, 0.075), transparent 65%),
@@ -35,24 +35,24 @@
     --ws-ink: #18202f;
     --ws-ink-2: #2d3748;
     --ws-muted: #556074;
-    --ws-faint: #717d91;
+    --ws-faint: #5c687c;
 
     /* Warm Oracle Coral-Vermilion Price Accent (4.96:1 on White) */
     --ws-price-ink: #d13426;
 
-    /* Luminous Crystal Sapphire Primary Accent (4.98:1 on White) */
-    --ws-accent: #1668eb;
-    --ws-accent-hover: #1258cc;
-    --ws-accent-ink: #1668eb;
-    --ws-accent-grad: linear-gradient(180deg, #2979ff 0%, #1668eb 100%);
-    --ws-accent-grad-hover: linear-gradient(180deg, #1e6ef5 0%, #1258cc 100%);
-    --ws-accent-shadow: 0 2px 8px rgba(22, 104, 235, 0.24);
+    /* Luminous Crystal Sapphire Primary Accent (5.02:1 on Soft Blue, 5.58:1 on White) */
+    --ws-accent: #135fd9;
+    --ws-accent-hover: #0f4ec2;
+    --ws-accent-ink: #135fd9;
+    --ws-accent-grad: linear-gradient(180deg, #1b6ce8 0%, #135fd9 100%);
+    --ws-accent-grad-hover: linear-gradient(180deg, #135fd9 0%, #0f4ec2 100%);
+    --ws-accent-shadow: 0 2px 8px rgba(19, 95, 217, 0.24);
     --ws-accent-fg: #ffffff;
     --ws-accent-soft: #ecf3ff;
-    --ws-accent-badge: rgba(22, 104, 235, 0.12);
+    --ws-accent-badge: rgba(19, 95, 217, 0.12);
     --ws-accent-border: #bfd6ff;
-    --ws-accent-ring: rgba(22, 104, 235, 0.22);
-    --ws-selection-bg: rgba(22, 104, 235, 0.16);
+    --ws-accent-ring: rgba(19, 95, 217, 0.22);
+    --ws-selection-bg: rgba(19, 95, 217, 0.16);
 
     /* Warm Amber-Cream & Frosted Media Overlay Badges */
     --ws-media-dark-bg: rgba(24, 32, 47, 0.72);
@@ -61,12 +61,12 @@
     --ws-media-pill-border: rgba(251, 146, 60, 0.42);
 
     /* Secondary Accent */
-    --ws-pop: #1668eb;
+    --ws-pop: #135fd9;
     --ws-pop-soft: #ecf3ff;
     --ws-pop-border: #bfd6ff;
 
-    /* Fresh Spring Emerald Status (4.82:1 on Soft Mint) */
-    --ws-live: #0e834f;
+    /* Fresh Spring Emerald Status (5.21:1 on Soft Mint) */
+    --ws-live: #0b7546;
     --ws-live-dot: #10b981;
     --ws-live-soft: #e8f8f0;
     --ws-live-border: #b8e8d0;
@@ -76,8 +76,8 @@
     --ws-warn-soft: #fff7ed;
     --ws-warn-border: #fed7aa;
 
-    /* Crisp Coral-Crimson Error */
-    --ws-danger: #d92d44;
+    /* Crisp Coral-Crimson Error (5.17:1 on Soft Rose) */
+    --ws-danger: #c6243a;
     --ws-danger-soft: #fff0f2;
     --ws-danger-border: #fecdd3;
 
@@ -140,15 +140,15 @@ html[data-ui-theme="dark"] {
     --ws-ink: #ecf0f8;
     --ws-ink-2: #d4dceb;
     --ws-muted: #9ca8bd;
-    --ws-faint: #8492a8;
+    --ws-faint: #91a0b8;
 
     --ws-price-ink: #ff7a6b;
 
     --ws-accent: #2563eb;
-    --ws-accent-hover: #3b82f6;
+    --ws-accent-hover: #1d4ed8;
     --ws-accent-ink: #74a8ff;
-    --ws-accent-grad: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-    --ws-accent-grad-hover: linear-gradient(180deg, #4f8ff7 0%, #2d6df0 100%);
+    --ws-accent-grad: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+    --ws-accent-grad-hover: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%);
     --ws-accent-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
     --ws-accent-fg: #ffffff;
     --ws-accent-soft: rgba(59, 130, 246, 0.18);
@@ -221,15 +221,15 @@ html[data-ui-theme="dark"] {
         --ws-ink: #ecf0f8;
         --ws-ink-2: #d4dceb;
         --ws-muted: #9ca8bd;
-        --ws-faint: #8492a8;
+        --ws-faint: #91a0b8;
 
         --ws-price-ink: #ff7a6b;
 
         --ws-accent: #2563eb;
-        --ws-accent-hover: #3b82f6;
+        --ws-accent-hover: #1d4ed8;
         --ws-accent-ink: #74a8ff;
-        --ws-accent-grad: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
-        --ws-accent-grad-hover: linear-gradient(180deg, #4f8ff7 0%, #2d6df0 100%);
+        --ws-accent-grad: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+        --ws-accent-grad-hover: linear-gradient(180deg, #1d4ed8 0%, #1e40af 100%);
         --ws-accent-shadow: 0 2px 10px rgba(37, 99, 235, 0.35);
         --ws-accent-fg: #ffffff;
         --ws-accent-soft: rgba(59, 130, 246, 0.18);

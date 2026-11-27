@@ -91,7 +91,10 @@
                 </div>
 
                 <div class="ml-countdown" id="countdown-timer" data-expires="{{ $order->expires_at->toIso8601String() }}">
-                    <span>剩余支付时间</span>
+                    <span class="ml-inline-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                        <span>剩余支付时间</span>
+                    </span>
                     <strong class="time">--:--</strong>
                 </div>
 

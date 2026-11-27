@@ -7,7 +7,10 @@
         <div class="ws-console-card">
             <div class="ws-panel-head">
                 <div>
-                    <h1 style="margin:0;font-size:17px;font-weight:800;">订单查询与卡密提取</h1>
+                    <h1 class="ws-inline-icon" style="margin:0;font-size:17px;font-weight:800;">
+                        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="var(--ws-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                        <span>订单查询与卡密提取</span>
+                    </h1>
                     <span style="display:block;margin-top:2px;">请输入下单时填写的接收邮箱与查询密码以验证订单归属</span>
                 </div>
             </div>

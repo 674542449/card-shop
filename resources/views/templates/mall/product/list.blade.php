@@ -66,7 +66,7 @@
     @if($products->isNotEmpty())
     <div class="ml-product-grid" id="catalog-grid">
         @foreach($products as $product)
-            @themeInclude('partials.product-card', ['product' => $product, 'lcp' => $loop->index < 2])
+            @themeInclude('partials.product-card', ['product' => $product, 'lcp' => $loop->index < 2, 'eager' => $loop->index < 4])
         @endforeach
     </div>
     {{ $products->links() }}

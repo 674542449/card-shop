@@ -74,9 +74,18 @@
                     </div>
 
                     <dl class="ml-spec-grid">
-                        <div><dt>可用库存</dt><dd>{{ $stockCount }} 件</dd></div>
-                        <div><dt>起购 / 限购</dt><dd>{{ $min }}–{{ $maxLimit }} 件</dd></div>
-                        <div><dt>交付方式</dt><dd>在线提取 + 邮件</dd></div>
+                        <div>
+                            <dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg><span>可用库存</span></dt>
+                            <dd>{{ $stockCount }} 件</dd>
+                        </div>
+                        <div>
+                            <dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 7l10 5 10-5-10-5ZM2 17l10 5 10-5M2 12l10 5 10-5"/></svg><span>起购 / 限购</span></dt>
+                            <dd>{{ $min }}–{{ $maxLimit }} 件</dd>
+                        </div>
+                        <div>
+                            <dt><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l0-8Z"/></svg><span>交付方式</span></dt>
+                            <dd>自动发卡</dd>
+                        </div>
                     </dl>
                 </div>
             </section>
@@ -84,7 +93,10 @@
             @if($product->wholesalePrices->isNotEmpty())
             <section class="ml-card ml-pdp-section" aria-labelledby="ml-wholesale-title">
                 <div class="ml-pdp-section-head">
-                    <h2 id="ml-wholesale-title">阶梯批发价格</h2>
+                    <h2 id="ml-wholesale-title" class="ml-heading-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+                        <span>阶梯批发价格</span>
+                    </h2>
                     <span class="ml-muted">系统按购买数量自动核算最优单价</span>
                 </div>
                 <table class="ml-tier-table wholesale-table">
@@ -102,7 +114,10 @@
             @if(trim($descriptionHtml) !== '')
             <section class="ml-card ml-pdp-section" aria-labelledby="ml-desc-title">
                 <div class="ml-pdp-section-head">
-                    <h2 id="ml-desc-title">商品详情与使用说明</h2>
+                    <h2 id="ml-desc-title" class="ml-heading-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>
+                        <span>商品详情与使用说明</span>
+                    </h2>
                 </div>
                 <div class="ml-rich">{!! $descriptionHtml !!}</div>
             </section>

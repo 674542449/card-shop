@@ -6,13 +6,14 @@
     $lowestPrice = $hasWholesale
         ? min((float) $product->price, (float) $product->wholesalePrices->min('price'))
         : (float) $product->price;
-    $excerpt = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) $product->description)));
+    $descRaw = (string) preg_replace('/<\/(?:h[1-6]|p|div|li|tr|blockquote)>|<br\s*\/?>/i', ' ', (string) $product->description);
+    $excerpt = trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($descRaw), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
     $img = \App\Support\SafeUrl::asset($product->image);
 @endphp
 <article @class(['ml-product-card', 'is-unavailable' => !$buyable])>
     <div class="ml-product-media">
         @if($img)
-        <img src="{{ $img }}" alt="{{ $product->name }}" width="400" height="300" @if(!empty($lcp)) fetchpriority="high" @else loading="lazy" @endif decoding="async">
+        <img src="{{ $img }}" alt="{{ $product->name }}" width="400" height="300" @if(!empty($lcp)) fetchpriority="high" @elseif(empty($eager)) loading="lazy" @endif decoding="async">
         @else
         @themeInclude('partials.image-placeholder')
         @endif

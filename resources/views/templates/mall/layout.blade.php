@@ -73,9 +73,18 @@
             </search>
 
             <nav class="ml-header-nav" aria-label="主导航">
-                <a href="/" @class(['ml-nav-link', 'is-active' => $isStoreActive]) @if($isStoreActive) aria-current="page" @endif>商城首页</a>
-                <a href="/order/query" @class(['ml-nav-link', 'is-active' => $isOrderActive]) @if($isOrderActive) aria-current="page" @endif>订单查询</a>
-                <a href="/articles" @class(['ml-nav-link', 'is-active' => $isArticleActive]) @if($isArticleActive) aria-current="page" @endif>帮助中心</a>
+                <a href="/" @class(['ml-nav-link', 'is-active' => $isStoreActive]) @if($isStoreActive) aria-current="page" @endif>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/></svg>
+                    <span>商城首页</span>
+                </a>
+                <a href="/order/query" @class(['ml-nav-link', 'is-active' => $isOrderActive]) @if($isOrderActive) aria-current="page" @endif>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12a2 2 0 0 1 2 2v17l-4-2.5L12 21l-4-2.5L4 21V4a2 2 0 0 1 2-2z"/><path d="M9 8h6M9 12h6"/></svg>
+                    <span>订单查询</span>
+                </a>
+                <a href="/articles" @class(['ml-nav-link', 'is-active' => $isArticleActive]) @if($isArticleActive) aria-current="page" @endif>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+                    <span>帮助中心</span>
+                </a>
             </nav>
 
             <div class="ml-header-tools">
@@ -102,6 +111,7 @@
         <div class="ml-cat-strip">
             <nav class="ml-container ml-cat-strip-inner" aria-label="商城频道分类">
                 <a href="/" @class(['ml-cat-pill', 'is-active' => request()->is('/') && !request()->filled('q')]) @if(request()->is('/') && !request()->filled('q')) aria-current="page" @endif>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
                     <span>全部商品</span>
                     <small>{{ $headerTotalProducts }}</small>
                 </a>
@@ -117,11 +127,23 @@
         @endif
 
         <nav class="ml-mobile-nav" id="mobile-nav" aria-label="移动导航">
-            <a href="/" @class(['is-active' => $isStoreActive]) @if($isStoreActive) aria-current="page" @endif>商城首页 <span aria-hidden="true">→</span></a>
-            <a href="/order/query" @class(['is-active' => $isOrderActive]) @if($isOrderActive) aria-current="page" @endif>订单查询 <span aria-hidden="true">→</span></a>
-            <a href="/articles" @class(['is-active' => $isArticleActive]) @if($isArticleActive) aria-current="page" @endif>帮助中心 <span aria-hidden="true">→</span></a>
+            <a href="/" @class(['is-active' => $isStoreActive]) @if($isStoreActive) aria-current="page" @endif>
+                <span class="ml-nav-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/></svg>商城首页</span>
+                <span aria-hidden="true">→</span>
+            </a>
+            <a href="/order/query" @class(['is-active' => $isOrderActive]) @if($isOrderActive) aria-current="page" @endif>
+                <span class="ml-nav-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12a2 2 0 0 1 2 2v17l-4-2.5L12 21l-4-2.5L4 21V4a2 2 0 0 1 2-2z"/><path d="M9 8h6M9 12h6"/></svg>订单查询</span>
+                <span aria-hidden="true">→</span>
+            </a>
+            <a href="/articles" @class(['is-active' => $isArticleActive]) @if($isArticleActive) aria-current="page" @endif>
+                <span class="ml-nav-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>帮助中心</span>
+                <span aria-hidden="true">→</span>
+            </a>
             @if($contactUrl)
-            <a href="{{ $contactUrl }}" target="_blank" rel="noopener">联系在线客服 <span aria-hidden="true">↗</span></a>
+            <a href="{{ $contactUrl }}" target="_blank" rel="noopener">
+                <span class="ml-nav-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/></svg>联系在线客服</span>
+                <span aria-hidden="true">↗</span>
+            </a>
             @endif
         </nav>
     </header>

@@ -9,8 +9,8 @@
     --m-muted: #706b61;
     --m-line: #e7e2d7;
     --m-line-strong: #c4bcae;
-    --m-clay: #ac5033;
-    --m-clay-hover: #914128;
+    --m-clay: #9e462a;
+    --m-clay-hover: #833820;
     --m-clay-soft: #f4e8df;
     --m-green: #3f5d3e;
     --m-green-soft: #eaf1e6;
@@ -333,6 +333,8 @@ button, a, input, select, textarea, [tabindex] { -webkit-tap-highlight-color: tr
 .m-pay-svg, .pay-svg { width: 20px; height: 20px; }
 .m-pay-svg { color: var(--m-muted); }
 .m-pay-alipay { color: #2b6cb0; }
+:root[data-ui-theme="dark"] .m-pay-alipay { color: #7ab8f5; }
+@media (prefers-color-scheme: dark) { :root:not([data-ui-theme="light"]) .m-pay-alipay { color: #7ab8f5; } }
 .m-pay-wechat, .m-pay-usdt { color: var(--m-green); }
 
 /* Announcement Modal */
@@ -614,6 +616,8 @@ button, a, input, select, textarea, [tabindex] { -webkit-tap-highlight-color: tr
     .m-container { width: calc(100% - 32px); }
     .m-main { padding-block: 18px 48px; }
     .m-header-inner { min-block-size: 56px; gap: 12px; }
+    .m-icon-button { min-inline-size: 44px; min-block-size: 44px; }
+    .m-pagination a, .m-pagination span { min-inline-size: 44px; min-block-size: 44px; }
     .m-contact-link, .m-desktop-nav { display: none; }
     .m-menu-toggle { display: grid; }
     .m-mobile-nav.open { display: grid; padding: 6px 16px 14px; border-top: 1px solid var(--m-line); background: var(--m-surface); }
@@ -663,3 +667,13 @@ button, a, input, select, textarea, [tabindex] { -webkit-tap-highlight-color: tr
     html { scroll-behavior: auto; }
     *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+@media (min-width: 761px) {
+    .m-mobile-nav.open { display: none; }
+}
+
+/* Inline SVG Icon Helpers */
+.m-desktop-nav .m-nav-link { display: inline-flex; align-items: center; gap: 6px; }
+.m-desktop-nav .m-nav-link svg { width: 15px; height: 15px; flex-shrink: 0; }
+.m-meta-item { display: inline-flex; align-items: center; gap: 5px; }
+.m-meta-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.m-pay-svg { width: 22px; height: 22px; flex-shrink: 0; }

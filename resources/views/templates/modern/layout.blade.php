@@ -24,9 +24,9 @@
         $contactText = trim((string) setting('contact_text', ''));
         $contactQr = \App\Support\SafeUrl::asset(setting('contact_qr_image'));
         $navItems = [
-            ['url' => '/', 'label' => '商品目录', 'active' => request()->is('/') || request()->is('category/*') || request()->is('product/*')],
-            ['url' => '/order/query', 'label' => '订单查询', 'active' => request()->is('order/*')],
-            ['url' => '/articles', 'label' => '帮助中心', 'active' => request()->is('articles*')],
+            ['url' => '/', 'label' => '商品目录', 'icon' => 'store', 'active' => request()->is('/') || request()->is('category/*') || request()->is('product/*')],
+            ['url' => '/order/query', 'label' => '订单查询', 'icon' => 'order', 'active' => request()->is('order/*')],
+            ['url' => '/articles', 'label' => '帮助中心', 'icon' => 'guide', 'active' => request()->is('articles*')],
         ];
     @endphp
     <a href="#main-content" class="m-skip-link">跳到主要内容</a>
@@ -46,7 +46,12 @@
             </a>
             <nav class="m-desktop-nav" aria-label="主导航">
                 @foreach($navItems as $item)
-                <a href="{{ $item['url'] }}" @class(['m-nav-link', 'is-active' => $item['active']]) @if($item['active']) aria-current="page" @endif>{{ $item['label'] }}</a>
+                <a href="{{ $item['url'] }}" @class(['m-nav-link', 'is-active' => $item['active']]) @if($item['active']) aria-current="page" @endif>
+                    @if($item['icon'] === 'store')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9"/><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0"/><path d="M5 12v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8"/></svg>
+                    @elseif($item['icon'] === 'order')<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h12a2 2 0 0 1 2 2v17l-4-2.5L12 21l-4-2.5L4 21V4a2 2 0 0 1 2-2z"/><path d="M9 8h6M9 12h6"/></svg>
+                    @else<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>@endif
+                    <span>{{ $item['label'] }}</span>
+                </a>
                 @endforeach
             </nav>
             <div class="m-header-actions">

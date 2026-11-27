@@ -51,12 +51,19 @@
             <section class="ml-card ml-delivery-card" aria-labelledby="ml-delivery-title">
                 <div class="ml-delivery-head">
                     <div>
-                        <h2 id="ml-delivery-title">已发放卡密 <span class="ml-badge ml-badge-brand">{{ $cards->count() }} 条</span></h2>
+                        <h2 id="ml-delivery-title" class="ml-heading-icon">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5 19 11"/></svg>
+                            <span>已发放卡密</span>
+                            <span class="ml-badge ml-badge-brand">{{ $cards->count() }} 条</span>
+                        </h2>
                         <p class="ml-muted">支持单条一键复制或打包导出 TXT 文本备份</p>
                     </div>
                     <div class="ml-order-actions">
                         <button type="button" class="ml-btn ml-btn-secondary ml-btn-sm btn-copy" data-target="card-content-text">复制全部</button>
-                        <a href="/order/cards/{{ $order->order_no }}/download" class="ml-btn ml-btn-primary ml-btn-sm">下载 TXT ↓</a>
+                        <a href="/order/cards/{{ $order->order_no }}/download" class="ml-btn ml-btn-primary ml-btn-sm">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>
+                            <span>下载 TXT</span>
+                        </a>
                     </div>
                 </div>
 

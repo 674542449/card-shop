@@ -45,7 +45,10 @@
     @php $announcement = setting('site_announcement', ''); @endphp
     @if($announcement)
     <section class="ws-notice" aria-label="站点公告">
-        <span class="ws-notice-badge">公告</span>
+        <span class="ws-notice-badge ws-inline-icon">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span>公告</span>
+        </span>
         <div class="ws-notice-body rich-text">{!! \App\Support\ContentRenderer::toHtml($announcement) !!}</div>
     </section>
     @endif
@@ -81,15 +84,15 @@
 
                     <div class="ws-spec-grid">
                         <div class="ws-spec-box">
-                            <span>可用库存</span>
+                            <span class="ws-inline-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>可用库存</span>
                             <strong>{{ $stockCount }} 件</strong>
                         </div>
                         <div class="ws-spec-box">
-                            <span>单笔限购</span>
+                            <span class="ws-inline-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 7l10 5 10-5-10-5ZM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>单笔限购</span>
                             <strong>{{ $minQty }}–{{ $maxLimit }} 件</strong>
                         </div>
                         <div class="ws-spec-box">
-                            <span>交付方式</span>
+                            <span class="ws-inline-icon"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m13 2-8 12h6l-1 8 9-12h-6l0-8Z"/></svg>交付方式</span>
                             <strong>在线提取 / 邮件</strong>
                         </div>
                     </div>

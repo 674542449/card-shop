@@ -10,7 +10,7 @@
         </div>
 
         <div class="ws-steps" aria-label="订单进度">
-            <div class="ws-step is-done"><span class="ws-step-num">01</span><span>提交订单</span></div>
+            <div class="ws-step is-done"><span class="ws-step-num" aria-hidden="true"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 5 5L20 7"/></svg></span><span>提交订单</span></div>
             <div class="ws-step {{ !$expired ? 'is-current' : '' }}"><span class="ws-step-num">02</span><span>在线支付</span></div>
             <div class="ws-step"><span class="ws-step-num">03</span><span>自动交付</span></div>
         </div>
@@ -19,7 +19,10 @@
         <div class="ws-console-card">
             <div class="ws-cashier-hero">
                 <div id="countdown-timer" data-expires="{{ $order->expires_at->toIso8601String() }}">
-                    <span class="ws-cashier-caption">请在支付有效期内完成付款</span>
+                    <span class="ws-cashier-caption ws-inline-icon">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                        <span>请在支付有效期内完成付款</span>
+                    </span>
                     <span class="time">--:--</span>
                     <span class="ws-cashier-subcaption">超时未支付将自动关闭订单并释放预留库存</span>
                 </div>

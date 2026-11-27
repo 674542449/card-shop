@@ -86,7 +86,9 @@
     <div class="n-resource-grid">
         @foreach($latestArticles->take(3) as $article)
         @php
-            $guideExcerpt = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) preg_replace('/\[\[product:\d+\]\]/', '', (string) ($article->summary ?: $article->content)))));
+            $guideRaw = (string) preg_replace('/\[\[product:\d+\]\]/', ' ', (string) ($article->summary ?: $article->content));
+            $guideRaw = (string) preg_replace('/<\/(?:h[1-6]|p|div|li|tr|blockquote)>|<br\s*\/?>/i', ' ', $guideRaw);
+            $guideExcerpt = trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($guideRaw), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
         @endphp
         <a href="/articles/{{ $article->slug }}" class="n-resource-card">
             <time datetime="{{ $article->created_at?->toDateString() }}">{{ $article->created_at?->format('Y.m.d') }}</time>

@@ -81,4 +81,6 @@
          .ico and .png and the browser sniffs it correctly either way. --}}
     <link rel="icon" href="{{ $siteFavicon }}">
     <link rel="apple-touch-icon" href="{{ $siteFavicon }}">
+    @else
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     @endif

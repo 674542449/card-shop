@@ -58,11 +58,15 @@
         @if(($verified ?? false) && $order->isPaid() && $cards->count() > 0)
         <section class="ws-vault" aria-label="卡密交付信息">
             <div class="ws-vault-head">
-                <div class="ws-vault-title">
+                <div class="ws-vault-title ws-inline-icon">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--ws-accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5 19 11"/></svg>
                     <span>已交付卡密凭据（共 {{ $cards->count() }} 组）</span>
                 </div>
                 <div class="ws-vault-actions">
-                    <a href="/order/cards/{{ $order->order_no }}/download" class="ws-btn ws-btn-secondary ws-btn-sm">导出 TXT</a>
+                    <a href="/order/cards/{{ $order->order_no }}/download" class="ws-btn ws-btn-secondary ws-btn-sm">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></svg>
+                        <span>导出 TXT</span>
+                    </a>
                     <button type="button" class="ws-btn ws-btn-primary ws-btn-sm btn-copy" data-target="card-content-text">复制全部卡密</button>
                 </div>
             </div>

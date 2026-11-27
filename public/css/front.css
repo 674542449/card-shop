@@ -3844,3 +3844,20 @@ body.ws-drawer-lock .ws-mobile-buybar {
         outline-offset: -2px;
     }
 }
+
+/* Inline SVG Icon Helpers */
+.ws-inline-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.ws-inline-icon svg,
+.ws-btn svg,
+.order-status svg {
+    flex-shrink: 0;
+}
+.order-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}

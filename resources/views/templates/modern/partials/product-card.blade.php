@@ -2,13 +2,14 @@
     $stock = $product->stockCount();
     $minQty = max(1, (int) $product->min_quantity);
     $buyable = $stock >= $minQty;
-    $excerpt = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) $product->description)));
+    $descRaw = (string) preg_replace('/<\/(?:h[1-6]|p|div|li|tr|blockquote)>|<br\s*\/?>/i', ' ', (string) $product->description);
+    $excerpt = trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($descRaw), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
     $img = \App\Support\SafeUrl::asset($product->image);
 @endphp
 <article @class(['m-shop-card', 'is-unavailable' => !$buyable])>
     <div class="m-shop-card-visual">
         @if($img)
-        <img src="{{ $img }}" alt="" loading="{{ !empty($lcp) ? 'eager' : 'lazy' }}" @if(!empty($lcp)) fetchpriority="high" @endif decoding="async">
+        <img src="{{ $img }}" alt="" width="400" height="250" @if(!empty($lcp)) fetchpriority="high" @else loading="lazy" @endif decoding="async">
         @else
         @themeInclude('partials.image-placeholder')
         @endif

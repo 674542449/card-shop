@@ -545,6 +545,8 @@ input, textarea { min-width: 0; }
     .n-shell { width: calc(100% - 32px); }
     .n-main { padding-block: 18px 48px; }
     .n-header-inner { min-block-size: 56px; gap: 12px; }
+    .n-icon-button { min-inline-size: 44px; min-block-size: 44px; }
+    .n-pagination a, .n-pagination > span { min-inline-size: 44px; min-block-size: 44px; }
     .n-desktop-nav, .n-contact-link { display: none; }
     .n-menu-toggle { display: grid; }
     .n-header-tools { margin-inline-start: auto; }
@@ -573,3 +575,13 @@ input, textarea { min-width: 0; }
 @media (min-width: 681px) {
     .n-mobile-nav.open { display: none; }
 }
+
+/* Inline SVG Icon Helpers */
+.n-desktop-nav a { display: inline-flex; align-items: center; gap: 6px; }
+.n-desktop-nav a svg { width: 15px; height: 15px; flex-shrink: 0; }
+.n-heading-icon,
+.n-meta-item { display: inline-flex; align-items: center; gap: 6px; }
+.n-meta-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.n-pay-svg { width: 22px; height: 22px; flex-shrink: 0; }
+.n-button svg { width: 15px; height: 15px; flex-shrink: 0; }
+.n-status svg { width: 12px; height: 12px; flex-shrink: 0; }

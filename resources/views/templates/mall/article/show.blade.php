@@ -30,9 +30,14 @@
                     @if($article->articleCategory)
                     <a href="/articles/category/{{ $article->articleCategory->slug }}" class="ml-badge ml-badge-brand">{{ $article->articleCategory->name }}</a>
                     @endif
-                    <time datetime="{{ $article->created_at->toDateString() }}">发布于 {{ $article->created_at->format('Y-m-d') }}</time>
-                    <span aria-hidden="true">·</span>
-                    <span>{{ $article->views }} 次阅读</span>
+                    <span class="ml-meta-chip">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                        <time datetime="{{ $article->created_at->toDateString() }}">发布于 {{ $article->created_at->format('Y-m-d') }}</time>
+                    </span>
+                    <span class="ml-meta-chip">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+                        <span>{{ $article->views }} 次阅读</span>
+                    </span>
                 </div>
                 <h1>{{ $article->title }}</h1>
             </header>

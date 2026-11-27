@@ -12,7 +12,10 @@
 
     <div class="ml-query-shell">
         <header class="ml-query-head">
-            <span class="ml-badge ml-badge-brand">自助查单与提取</span>
+            <span class="ml-badge ml-badge-brand">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                <span>自助查单与提取</span>
+            </span>
             <h1>订单查询与卡密提取</h1>
             <p class="ml-hero-desc">输入下单邮箱与查询密码，即可随时查看进度、继续支付或提取卡密。</p>
         </header>
@@ -66,7 +69,7 @@
         <div class="ml-query-foot">
             <a href="/" class="ml-link">← 返回商品目录</a>
             @if(\App\Support\SafeUrl::contact(setting('contact_url')))
-            <a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" class="ml-link" target="_blank" rel="noopener">忘记密码或需要帮助？ ↗</a>
+            <a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" class="ml-link" target="_blank" rel="noopener"><span>忘记密码或需要帮助？</span><span aria-hidden="true">↗</span></a>
             @endif
         </div>
     </div>

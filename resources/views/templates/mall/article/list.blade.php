@@ -57,13 +57,15 @@
         <section class="ml-article-feed" aria-label="文章列表">
             @forelse($articles as $article)
             @php
-                $summaryText = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) preg_replace('/\[\[product:\d+\]\]/', '', (string) $article->summary))));
+                $summaryRaw = (string) preg_replace('/\[\[product:\d+\]\]/', ' ', (string) $article->summary);
+                $summaryRaw = (string) preg_replace('/<\/(?:h[1-6]|p|div|li|tr|blockquote)>|<br\s*\/?>/i', ' ', $summaryRaw);
+                $summaryText = trim((string) preg_replace('/\s+/u', ' ', html_entity_decode(strip_tags($summaryRaw), ENT_QUOTES | ENT_HTML5, 'UTF-8')));
                 $coverThumb = \App\Support\SafeUrl::asset($article->cover_image);
             @endphp
             <article class="ml-article-card">
                 @if($coverThumb)
                 <div class="ml-article-thumb">
-                    <img src="{{ $coverThumb }}" alt="" width="240" height="150" @if($loop->first) fetchpriority="high" @else loading="lazy" @endif decoding="async">
+                    <img src="{{ $coverThumb }}" alt="" width="240" height="150" @if($loop->first) fetchpriority="high" @elseif($loop->index >= 4) loading="lazy" @endif decoding="async">
                 </div>
                 @endif
                 <div class="ml-article-card-body">
@@ -71,7 +73,10 @@
                         @if($article->articleCategory)
                         <span class="ml-badge ml-badge-brand">{{ $article->articleCategory->name }}</span>
                         @endif
-                        <time datetime="{{ $article->created_at->toDateString() }}">{{ $article->created_at->format('Y-m-d') }}</time>
+                        <span class="ml-meta-chip">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                            <time datetime="{{ $article->created_at->toDateString() }}">{{ $article->created_at->format('Y-m-d') }}</time>
+                        </span>
                     </div>
                     <h2><a class="ml-card-link" href="/articles/{{ $article->slug }}">{{ $article->title }}</a></h2>
                     @if($summaryText !== '')

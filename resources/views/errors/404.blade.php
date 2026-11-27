@@ -98,6 +98,9 @@
 </head>
 <body>
     <main>
+        <div style="width:56px;height:56px;margin:0 auto 14px;border-radius:14px;background:rgba(47,95,208,0.12);color:var(--accent);display:grid;place-items:center;" aria-hidden="true">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M8.8 8.8l4.4 4.4m0-4.4-4.4 4.4"/></svg>
+        </div>
         <span class="code">HTTP 404</span>
         <h1>您访问的页面不存在或已下架</h1>
         <p>该链接可能已变更或对应商品已调整，请返回商品商城浏览最新在售区域与教程指南。</p>
