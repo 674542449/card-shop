@@ -6,9 +6,9 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 正式 Docker 镜像支持 **Linux AMD64（Intel / AMD）与 ARM64**，同一版本标签自动选择服务器架构。两种架构分别执行原生测试、镜像构建和生产容器首次安装 / 重启验收；不支持 32 位 ARM。
 
-**当前正式版本：[v1.0.15](https://github.com/674542449/card-shop/releases/tag/v1.0.15)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
+**当前正式版本：[v1.0.16](https://github.com/674542449/card-shop/releases/tag/v1.0.16)** · [下载正式版](https://github.com/674542449/card-shop/releases/latest) · [首次安装](DEPLOY.md) · [架构说明](docs/ARCHITECTURE.md) · [API 文档](docs/API.md) · [模板开发](docs/THEMES.md) · [测试说明](tests/README.md) · [MIT 许可证](LICENSE)
 
-文档核对日期：**2026-11-28**。正式版本 `v1.0.15` 通过 AMD64 与 ARM64 原生自动化回归（**592 个 PHP 测试、41 个后台 Node 测试、14 个前台与多架构索引测试、15 项启动、恢复与进程守护脚本测试**）、依赖安全审计、多阶段镜像构建及五服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
+文档核对日期：**2026-11-28**。正式版本 `v1.0.16` 通过 AMD64 与 ARM64 原生自动化回归（**592 个 PHP 测试、41 个后台 Node 测试、14 个前台与多架构索引测试、15 项启动、恢复与进程守护脚本测试**）、依赖安全审计、多阶段镜像构建及五服务首次安装 / 重启验收，详见 [测试说明](tests/README.md)。
 
 ## 功能介绍
 
