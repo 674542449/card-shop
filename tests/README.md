@@ -1,10 +1,10 @@
 # 自动化测试与回归验收
 
-适用正式版本：**v1.0.11**，核对日期：**2026-11-27**。
+适用正式版本：**v1.0.12**，核对日期：**2026-11-27**。
 
-最新双架构验收流水线：[Validate and build release #46011083621](https://github.com/674542449/card-shop/actions/runs/46011083621)（`linux/amd64` + `linux/arm64` 全部通过）：
-- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.11`（`sha256:786063f4eb59a43f8c9c144a0e88f5e4103a23b69166ad7b8661948878bdcb58`）
-- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.11`（`sha256:aa857e966c4a159b43f7d54ed76884a6db2c0c342ecff42b7c5942929c9591ba`）
+最新双架构验收流水线：[Validate and build release #46018557798](https://github.com/674542449/card-shop/actions/runs/46018557798)（`linux/amd64` + `linux/arm64` 全部通过）：
+- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.12`（`sha256:69b213286c42cf8f140d6b81eddc9861625eba1961c64237a60a14aab52f3044`）
+- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.12`（`sha256:aa857e966c4a159b43f7d54ed76884a6db2c0c342ecff42b7c5942929c9591ba`）
 
 ## 验证覆盖范围
 
@@ -12,7 +12,7 @@
 
 | 验证维度 | 覆盖规模与内容 |
 | --- | --- |
-| PHP 特性与安全回归（PHPUnit） | **588 个测试**（含四套独立模板 `default`/`mall`/`modern`/`minimal` 视图、查单与支付回归、`mall` 模板专项 Google SEO / JSON-LD / `<ol>` 面包屑 / Core Web Vitals 校验、真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列与排他锁调度、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS、随机高强度后台路径、蜜罐 IP/CIDR 白名单、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归） |
+| PHP 特性与安全回归（PHPUnit） | **591 个测试**（含四套独立模板 `default`/`mall`/`modern`/`minimal` 视图、生产首次空库预置甲骨文云演示目录与幂等/老库跳过保护 `ProductionDemoSeedTest`、查单与支付回归、`mall` 模板专项 Google SEO / JSON-LD / `<ol>` 面包屑 / Core Web Vitals 校验、真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列与排他锁调度、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS、随机高强度后台路径、蜜罐 IP/CIDR 白名单、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归） |
 | 管理后台前端回归（Node + JSDOM） | **40 个测试**（覆盖单管理员导航、商品批量改介绍、异步防串单、系统设置显式手动保存与禁自动填充、多目标云端备份勾选与实时连接测试、运维备份页本地一键还原/上传包弹窗/云端拉取与密码二次确认禁自动填充、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
 | 商城前台与多架构索引脚本（Node） | **14 个测试**（覆盖支付状态签名轮询 `data-poll-url`、`403` 停止轮询恢复、双架构镜像索引摘要与平台校验） |
 | 容器启动、恢复与守护脚本（Bash） | **7 类 Composer 启动指纹场景** + **3 项统一 `worker` 多子进程守护/故障自愈/优雅停机验证** + **5 项 `scripts/restore.sh` 一行命令换机恢复回归** + 全部 Shell 脚本语法检查 + 静态资源构建标记一致性校验 |
