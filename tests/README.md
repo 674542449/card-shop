@@ -29,7 +29,7 @@
 
 ## 本地复现命令
 
-在已配置 PHP 8.3、Node.js 24、PostgreSQL 17、Redis 7 及隔离测试环境（`cardshop_testing` 数据库、Redis 10/11 与测试 keyring）的开发机执行：
+在已配置 PHP 8.5、Node.js 24、PostgreSQL 17、Redis 7 及隔离测试环境（`cardshop_testing` 数据库、Redis 10/11 与测试 keyring）的开发机执行：
 
 ```bash
 php scripts/validate-admin-assets.php

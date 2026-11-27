@@ -176,7 +176,7 @@ CardShop 是面向个人店铺的自托管发卡商城，覆盖商品展示、�
 
 | 组件 | 锁定版本或配置 |
 | --- | --- |
-| PHP / Laravel | PHP ^8.3；Docker 使用 8.3；Laravel 13.43.0 |
+| PHP / Laravel | PHP ^8.5；Docker 使用 8.5（Debian 13 Trixie）；Laravel 13.43.0 |
 | PostgreSQL / Redis | 17 / 7 |
 | React / Ant Design | 18.3.1 / 5.29.3 |
 | React Router / Vite | 7.18.4 / 7.3.6 |

@@ -1,6 +1,6 @@
-ARG PHP_IMAGE=php:8.3-fpm-bookworm
-ARG COMPOSER_IMAGE=composer:2.8
-ARG NODE_IMAGE=node:24-bookworm-slim
+ARG PHP_IMAGE=php:8.5-fpm-trixie
+ARG COMPOSER_IMAGE=composer:2.11
+ARG NODE_IMAGE=node:24-trixie-slim
 ARG NGINX_IMAGE=nginx:stable
 
 FROM ${NODE_IMAGE} AS frontend
@@ -17,10 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev libzip-dev libicu-dev ca-certificates curl \
     && install -d /usr/share/postgresql-common/pgdg \
     && curl --fail -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-    && echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+    && echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-17 \
-    && docker-php-ext-install pdo_pgsql pgsql zip intl bcmath opcache \
-    && pecl install redis-6.2.0 && docker-php-ext-enable redis \
+    && docker-php-ext-install pdo_pgsql pgsql zip intl bcmath \
+    && pecl install redis-6.3.0 && docker-php-ext-enable redis \
     && rm -rf /var/lib/apt/lists/*
 RUN { echo 'opcache.enable=1'; echo 'opcache.validate_timestamps=0'; \
     echo 'opcache.memory_consumption=128'; echo 'opcache.max_accelerated_files=20000'; \

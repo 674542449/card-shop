@@ -1,4 +1,4 @@
-FROM php:8.3-fpm-bookworm
+FROM php:8.5-fpm-trixie
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -14,24 +14,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # PostgreSQL 17 matches the database image; Debian's default client is older.
 RUN install -d /usr/share/postgresql-common/pgdg \
     && curl --fail -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
-    && echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+    && echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt trixie-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
     && apt-get update && apt-get install -y --no-install-recommends postgresql-client-17 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
+# Install PHP extensions (OPcache is compiled into PHP 8.5 core)
 RUN docker-php-ext-install \
     pdo_pgsql \
     pgsql \
     zip \
     intl \
-    bcmath \
-    opcache
+    bcmath
 
 # Install Redis extension via PECL
-RUN pecl install redis && docker-php-ext-enable redis
+RUN pecl install redis-6.3.0 && docker-php-ext-enable redis
 
 # Copy Composer from official image
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+COPY --from=composer:2.11 /usr/bin/composer /usr/bin/composer
 
 # Install supported Node.js 24 LTS for admin builds and DOM-based checks.
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
@@ -40,11 +39,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 
 # Configure OPcache
 RUN { \
+    echo 'opcache.enable=1'; \
     echo 'opcache.memory_consumption=128'; \
     echo 'opcache.interned_strings_buffer=8'; \
     echo 'opcache.max_accelerated_files=10000'; \
     echo 'opcache.revalidate_freq=2'; \
-    echo 'opcache.fast_shutdown=1'; \
     echo 'opcache.enable_cli=1'; \
 } > /usr/local/etc/php/conf.d/opcache-recommended.ini
 

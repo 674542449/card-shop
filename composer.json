@@ -4,7 +4,7 @@
     "description": "Card selling platform built with Laravel 13",
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.5",
         "laravel/framework": "^13.0",
         "ext-pdo_pgsql": "*",
         "ext-redis": "*",
