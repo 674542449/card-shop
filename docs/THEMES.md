@@ -1,6 +1,6 @@
 # 前台模板开发
 
-适用正式版本：**v1.0.16**，核对日期：2026-11-28。
+适用正式版本：**v1.0.17**，核对日期：2026-11-28。
 
 CardShop 提供 `default`、`mall`、`modern`、`minimal` 四套模板。前台使用 Blade，资源位于 `public/themes/` 和 `public/js/`，无需单独启动前台 Node 服务。
 

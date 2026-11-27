@@ -1,10 +1,10 @@
 # 自动化测试与回归验收
 
-适用正式版本：**v1.0.16**，核对日期：**2026-11-28**。
+适用正式版本：**v1.0.17**，核对日期：**2026-11-28**。
 
-最新双架构验收流水线：[Validate and build release #46057071860](https://github.com/674542449/card-shop/actions/runs/46057071860)（`linux/amd64` + `linux/arm64` 全部通过）：
-- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.16`（`sha256:d26c761db13b983fbed7e5307fc47d097c196a3541d2198510a65244b8e9e9f2`）
-- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.16`（`sha256:cbaecab1b4e4e130d9fb359729e62331279ca02739fb66123e06fa264d6ca0b1`）
+最新双架构验收流水线：[Validate and build release #46065603305](https://github.com/674542449/card-shop/actions/runs/46065603305)（`linux/amd64` + `linux/arm64` 全部通过）：
+- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.17`（`sha256:61e74bcdf1465b6e1f991914e2d9f53f93244fed51f2b75fb085aa8da0704782`）
+- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.17`（`sha256:b56372bc5dcf8f41447c4e0737dfee470d9636b1f8bacdf817a0adc67bb20966`）
 
 ## 验证覆盖范围
 
@@ -12,9 +12,9 @@
 
 | 验证维度 | 覆盖规模与内容 |
 | --- | --- |
-| PHP 特性与安全回归（PHPUnit） | **592 个测试**（含四套独立模板 `default`/`mall`/`modern`/`minimal` 视图、商品批量改价与阶梯批发价联动原子回归、生产首次空库预置甲骨文云演示目录与幂等/老库跳过保护 `ProductionDemoSeedTest`、查单与支付回归、`mall` 模板专项 Google SEO / JSON-LD / `<ol>` 面包屑 / Core Web Vitals 校验、真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列与排他锁调度、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS、随机高强度后台路径、蜜罐 IP/CIDR 白名单、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归） |
-| 管理后台前端回归（Node + JSDOM） | **41 个测试**（覆盖单管理员导航、商品批量改介绍与批量调价实时预览、异步防串单、系统设置显式手动保存与禁自动填充、多目标云端备份勾选与实时连接测试、运维备份页本地一键还原/上传包弹窗/云端拉取与密码二次确认禁自动填充、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
-| 商城前台与多架构索引脚本（Node） | **14 个测试**（覆盖支付状态签名轮询 `data-poll-url`、`403` 停止轮询恢复、双架构镜像索引摘要与平台校验） |
+| PHP 特性与安全回归（PHPUnit） | **600 个测试**（含四套独立模板 `default`/`mall`/`modern`/`minimal` 视图与原生客服二维码点击放大弹窗回归、SMTP 邮件投递启停全链路门控、全站卡密检索/一键暂停恢复清空与防公式注入流式导出、商品批量改价与阶梯批发价联动原子回归、生产首次空库预置甲骨文云演示目录与幂等/老库跳过保护 `ProductionDemoSeedTest`、查单与支付回归、`mall` 模板专项 Google SEO / JSON-LD / `<ol>` 面包屑 / Core Web Vitals 校验、真实 PostgreSQL 备份与单事务恢复集成测试、后台 Web 一键还原队列与排他锁调度、多目标云端异地备份 AWS S3 / Cloudflare R2 / 阿里云 OSS / 腾讯云 COS、随机高强度后台路径、蜜罐 IP/CIDR 白名单、`/order/pay` 签名令牌与全订单路由零存在性分叉/429 限流回归） |
+| 管理后台前端回归（Node + JSDOM） | **43 个测试**（覆盖单管理员导航、全站「全部卡密」一键批量运维与商品列表批量管理卡密、SMTP 邮件投递服务启停开关、商品批量改介绍与批量调价实时预览、异步防串单、系统设置显式手动保存与禁自动填充、多目标云端备份勾选与实时连接测试、运维备份页本地一键还原/上传包弹窗/云端拉取与密码二次确认禁自动填充、蜜罐白名单一键添加、安全开关、Telegram 播报连通性测试、卡密与任务操作） |
+| 商城前台与多架构索引脚本（Node） | **17 个测试**（覆盖原生 `<dialog>` 客服二维码放大弹窗的 Invoker Commands 与 `closedby="any"` 渐进增强回退、支付状态签名轮询 `data-poll-url`、`403` 停止轮询恢复、双架构镜像索引摘要与平台校验） |
 | 容器启动、恢复与守护脚本（Bash） | **7 类 Composer 启动指纹场景** + **3 项统一 `worker` 多子进程守护/故障自愈/优雅停机验证** + **5 项 `scripts/restore.sh` 一行命令换机恢复回归** + 全部 Shell 脚本语法检查 + 静态资源构建标记一致性校验 |
 | 依赖安全审计 | `composer audit --locked` 零漏洞（已同步升级 Symfony 核心组件至 `v7.4.24`）；`npm audit` 生产依赖零高危/严重漏洞、全量依赖零严重漏洞 |
 | 生产容器首次安装与重启验收 | 多阶段构建 `app` 与 `nginx` 镜像，拉起全部 **5 个生产服务**（`app`、`worker`、`nginx`、`postgres`、`redis`，由 `ci-production-smoke.sh` 验收），核验 64 位运行时、无构建期固化 `admin-path`、随机高强度后台路径（`/admin` 返回 404）、`/storage/uploads/` 上传图片 Nginx 200 访问、统一 `worker` 内 5 路后台子进程健康与心跳、数据库迁移、外部 keyring、HTTP 响应头及容器重启不变量 |
