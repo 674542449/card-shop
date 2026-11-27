@@ -2,7 +2,7 @@
 
 从一台空的 Linux 服务器和一个正式域名开始，完成 HTTPS、商城初始化、后台配置和首次下单验收。功能介绍见 [README](README.md)，对接接口见 [API 文档](docs/API.md)。
 
-适用正式版本：**v1.0.12**，核对日期：2026-11-27。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
+适用正式版本：**v1.0.13**，核对日期：2026-11-27。应用和 Nginx 使用同一正式版本的多架构镜像，自动化测试与容器验收范围见 [测试说明](tests/README.md)。
 
 本文使用 **Docker Compose + Cloudflare 橙云代理**，示例域名为 **`shop.example.com`**。所有域名、服务器 IP 和账号都应替换成自己的值。服务器命令在受控的 root 管理终端执行：SSH 登录后先运行 `sudo -i`；标注「外部电脑」的验证在你自己的电脑执行。这样 Compose 能读取仅 root 与容器组可读的外部环境文件，商城不提供员工账户。
 
@@ -48,7 +48,7 @@ docker compose version
 ```bash
 git clone --branch main https://github.com/674542449/card-shop.git ~/card-shop
 cd ~/card-shop
-git checkout v1.0.12
+git checkout v1.0.13
 sudo install -d -m 750 -o 33 -g 33 /etc/cardshop /etc/cardshop/secrets
 sudo cp .env.example /etc/cardshop/runtime.env
 sudo chown root:33 /etc/cardshop/runtime.env
@@ -76,8 +76,8 @@ TLS_CERT_DIR=/opt/cf
 SHOP_ENV_FILE=/etc/cardshop/runtime.env
 SHOP_SECRETS_DIR=/etc/cardshop/secrets
 SHOP_KEYRING_FILE=/run/secrets/shop-keyring.json
-SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.12
-SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.12
+SHOP_APP_IMAGE=ghcr.io/674542449/card-shop:v1.0.13
+SHOP_WEB_IMAGE=ghcr.io/674542449/card-shop-nginx:v1.0.13
 ```
 
 发布镜像在对应标签的 CI 验证与构建成功后可用。建议将镜像值固定为该运行输出的 `@sha256:...` 摘要；部署不会跟随 `main` 自动变化。若 GHCR 要求登录，使用具备读取包权限的账户；也可在构建机从本标签分别构建 `docker/php/Dockerfile.production` 的 `runtime`、`web` 目标后上传自己的镜像仓库。
