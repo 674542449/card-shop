@@ -84,14 +84,14 @@ class OneClickRestoreTest extends TestCase
                 }
             }
 
-            public function restore(string $file, string $database, bool $includeConfig = false, bool $safetyBackup = false): void
+            public function restore(string $file, string $database, bool $includeConfig = false, bool $safetyBackup = false, ?array $validatedManifest = null): void
             {
                 if ($this->restoreHook !== null) {
                     ($this->restoreHook)($file, $database, $includeConfig, $safetyBackup);
                     return;
                 }
 
-                parent::restore($file, $database, $includeConfig, $safetyBackup);
+                parent::restore($file, $database, $includeConfig, $safetyBackup, $validatedManifest);
             }
         };
     }
@@ -170,7 +170,7 @@ XML;
         $this->assertCount(2, $items);
         $this->assertSame('shop-20261125-030000-bbbb2222.tar.gz', $items[0]['name']);
         $this->assertSame('shop-20261124-030000-aaaa1111.tar.gz', $items[1]['name']);
-        $this->assertSame('https://acct12345.r2.cloudflarestorage.com/shop-r2?list-type=2&max-keys=100&prefix=prod%2F', $captured[0]['url']);
+        $this->assertSame('https://acct12345.r2.cloudflarestorage.com/shop-r2?list-type=2&max-keys=1000&prefix=prod%2F', $captured[0]['url']);
         $this->assertStringContainsString('AWS4-HMAC-SHA256 Credential=r2-ak/', $captured[0]['headers']['Authorization'][0]);
 
         // Also verify Alibaba Cloud OSS native OSS4-HMAC-SHA256 list signing
@@ -184,7 +184,7 @@ XML;
         ];
         $ossItems = $service->listBackups('oss', $ossCfg);
         $this->assertCount(2, $ossItems);
-        $this->assertSame('https://shop-oss.oss-cn-hangzhou.aliyuncs.com/?list-type=2&max-keys=100&prefix=prod%2F', $captured[1]['url']);
+        $this->assertSame('https://shop-oss.oss-cn-hangzhou.aliyuncs.com/?list-type=2&max-keys=1000&prefix=prod%2F', $captured[1]['url']);
         $this->assertStringContainsString('OSS4-HMAC-SHA256 Credential=oss-ak/', $captured[1]['headers']['Authorization'][0]);
 
         // Download verifies no double prefixing and writes exact bytes

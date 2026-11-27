@@ -24,7 +24,8 @@ RUN docker-php-ext-install \
     pgsql \
     zip \
     intl \
-    bcmath
+    bcmath \
+    pcntl
 
 # Install Redis extension via PECL
 RUN pecl install redis-6.3.0 && docker-php-ext-enable redis

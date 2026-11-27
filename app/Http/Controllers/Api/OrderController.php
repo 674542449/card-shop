@@ -101,8 +101,49 @@ class OrderController extends Controller
             return [['message' => '订单凭据已变化，请重新验证原订单。'], 409];
         }
         try {
+            if (! $order->isPending()) {
+                $hasUncertain = \App\Models\PaymentAttempt::where('order_id', $order->id)
+                    ->where('status', 'uncertain')
+                    ->exists();
+                if ($hasUncertain || (! $order->isPaid() && $order->requiresPaymentReview())) {
+                    return [[
+                        'message' => '原订单付款状态待核对，请查询原订单或联系客服，切勿重复支付。',
+                        'data' => [
+                            'order_no' => $order->order_no,
+                            'status' => $order->status,
+                            'payment_initialization' => 'uncertain',
+                        ],
+                    ], 202];
+                }
+                if ($order->isPaid()) {
+                    app(\App\Services\ApiOrderCredentialProof::class)->remember($order, $request->attributes->get('api_token')->id, $validated['email'], $validated['query_password']);
+                    return [[
+                        'message' => '订单已完成支付',
+                        'data' => [
+                            'order_no' => $order->order_no,
+                            'status' => 'paid',
+                            'total_amount' => $order->total_amount,
+                            'discount_amount' => $order->discount_amount,
+                            'payment_method' => $order->payment_method,
+                            'expires_at' => $order->expires_at->toIso8601String(),
+                            'payment_url' => null,
+                            'trade_id' => $order->gateway_trade_no ?: $order->payment_no,
+                        ],
+                    ], 200];
+                }
+                return [[
+                    'message' => $order->status === 'closed'
+                        ? '原订单已关闭，请使用新的 Idempotency-Key 重新下单。'
+                        : '原订单已过期，请使用新的 Idempotency-Key 重新下单。',
+                    'data' => [
+                        'order_no' => $order->order_no,
+                        'status' => $order->status,
+                    ],
+                ], 409];
+            }
+
             // A retry after process interruption resumes this order rather than reserving again.
-            $paymentData = $order->isPending() ? $this->orderService->processPayment($order, $order->payment_method) : [];
+            $paymentData = $this->orderService->processPayment($order, $order->payment_method);
             app(\App\Services\ApiOrderCredentialProof::class)->remember($order, $request->attributes->get('api_token')->id, $validated['email'], $validated['query_password']);
             return [[
                 'message' => '订单创建成功',

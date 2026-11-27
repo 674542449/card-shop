@@ -123,27 +123,22 @@ class OrderService
             $cards = $this->cardService->lockCards($product->id, $quantity);
             $rawExpire = (int) setting('order_expire_minutes', 30);
             $expireMinutes = $rawExpire > 0 ? min(10080, $rawExpire) : 30;
-            try {
-                $order = Order::create([
-                    'order_no' => generate_order_no(), 'api_token_id' => $tokenId, 'product_id' => $product->id,
-                    'email' => $data['email'], 'query_password' => $passwordHash,
-                    'query_password_key' => Order::passwordKey($data['email'], $data['query_password']),
-                    'quantity' => $quantity, 'unit_price' => $quote['unit_price'], 'total_amount' => $quote['total_amount'],
-                    'coupon_id' => $quote['coupon']?->id, 'discount_amount' => $quote['discount_amount'],
-                    'payment_method' => $data['payment_method'], 'status' => 'pending', 'ip' => $ip,
-                    'expires_at' => now()->addMinutes($expireMinutes),
-                ]);
-                Card::whereIn('id', $cards->pluck('id'))->update(['order_id' => $order->id]);
-                if ($quote['coupon'] && bccomp($quote['discount_amount'], '0', 2) > 0) {
-                    $claimed = Coupon::whereKey($quote['coupon']->id)->where(fn ($q) => $q->where('max_uses', '<=', 0)
-                        ->orWhereColumn('used_count', '<', 'max_uses'))->increment('used_count');
-                    if ($claimed === 0) throw new CheckoutException('优惠券已达使用上限');
-                }
-                return $order;
-            } catch (\Throwable $e) {
-                $this->cardService->releaseCards($cards);
-                throw $e;
+            $order = Order::create([
+                'order_no' => generate_order_no(), 'api_token_id' => $tokenId, 'product_id' => $product->id,
+                'email' => $data['email'], 'query_password' => $passwordHash,
+                'query_password_key' => Order::passwordKey($data['email'], $data['query_password']),
+                'quantity' => $quantity, 'unit_price' => $quote['unit_price'], 'total_amount' => $quote['total_amount'],
+                'coupon_id' => $quote['coupon']?->id, 'discount_amount' => $quote['discount_amount'],
+                'payment_method' => $data['payment_method'], 'status' => 'pending', 'ip' => $ip,
+                'expires_at' => now()->addMinutes($expireMinutes),
+            ]);
+            Card::whereIn('id', $cards->pluck('id'))->update(['order_id' => $order->id]);
+            if ($quote['coupon'] && bccomp($quote['discount_amount'], '0', 2) > 0) {
+                $claimed = Coupon::whereKey($quote['coupon']->id)->where(fn ($q) => $q->where('max_uses', '<=', 0)
+                    ->orWhereColumn('used_count', '<', 'max_uses'))->increment('used_count');
+                if ($claimed === 0) throw new CheckoutException('优惠券已达使用上限');
             }
+            return $order;
         }, 3);
     }
 

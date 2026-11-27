@@ -221,6 +221,7 @@
             const minQ = Math.max(1, Number(payload.minQty) || 1);
             const maxQ = Math.max(minQ, Number(payload.maxQty) || 1);
             drProductId.value = String(payload.id);
+            drCheckoutKey.setAttribute('data-intent-product', String(payload.id));
             drCheckoutKey.value = String(payload.checkoutKey || '');
             const hpInput = drForm?.querySelector('input[name="website"]');
             if (hpInput) hpInput.value = '';

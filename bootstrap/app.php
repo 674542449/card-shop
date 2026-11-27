@@ -81,6 +81,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'payment/epusdt/notify',
         ]);
 
+        // Preserve exact signed parameter values (including any whitespace) on gateway callbacks.
+        $middleware->trimStrings(except: [
+            fn ($request) => $request->is('payment/epay/notify', 'payment/epay/return', 'payment/epusdt/notify'),
+        ]);
+
         // 扫描器蜜罐。放在全局中间件最前面（prepend）：它要在进路由之前就拦下探测，
         // 而扫描器打的大多是没有对应路由的路径（会走到 404）——只有全局中间件才跑得到
         // 那些请求。命中即封禁来源 IP 并返回 404，之后由 CheckBlacklist 挡成 403。

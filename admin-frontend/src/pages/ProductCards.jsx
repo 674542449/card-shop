@@ -54,6 +54,7 @@ function ProductCardsPage({ productId }) {
     try {
       const res = await setCardStatus(record.id, next);
       message.success(res.data?.message || '卡密库存状态已更新');
+      clearSelection();
       actionRef.current?.reload();
     } catch (err) {
       message.error(err.response?.data?.message || '状态变更失败', 6);
@@ -65,12 +66,13 @@ function ProductCardsPage({ productId }) {
       message.warning('请先勾选需要删除的未售或停用卡密');
       return;
     }
+    let deleted = 0;
     try {
       if (selectedDisabledIds.length === 0) {
         const res = await batchDeleteCards(selectedRowKeys);
+        deleted += Number(res.data?.count || selectedRowKeys.length);
         message.success(res.data?.message || '已批量清理所选卡密');
       } else {
-        let deleted = 0;
         if (selectedUnsoldIds.length > 0) {
           const r1 = await bulkCardAction({ action: 'delete_unsold', scope: 'cards', card_ids: selectedUnsoldIds });
           deleted += Number(r1.data?.count || 0);
@@ -79,10 +81,13 @@ function ProductCardsPage({ productId }) {
         deleted += Number(r2.data?.count || 0);
         message.success(`成功删除 ${deleted} 张卡密。`);
       }
-      clearSelection();
-      actionRef.current?.reload();
     } catch (err) {
       message.error(err.response?.data?.message || '批量删除失败');
+    } finally {
+      if (deleted > 0) {
+        clearSelection();
+        actionRef.current?.reload();
+      }
     }
   };
 
@@ -314,6 +319,7 @@ function ProductCardsPage({ productId }) {
                 try {
                   await deleteCard(record.id);
                   message.success('卡密已删除');
+                  clearSelection();
                   actionRef.current?.reload();
                 } catch (err) {
                   message.error(err.response?.data?.message || '删除失败');
@@ -388,6 +394,7 @@ function ProductCardsPage({ productId }) {
             : false
         }
         request={async (params) => {
+          clearSelection();
           const controller = new AbortController();
           requests.current.add(controller);
           let res;

@@ -12,6 +12,7 @@ use RuntimeException;
 class BackupQueue
 {
     public const LEASE_SECONDS = 7200;
+    private const LOCK_SECONDS = 600;
 
     public function __construct(
         private readonly ShopBackupService $backups,
@@ -89,7 +90,9 @@ class BackupQueue
     public function process(): bool
     {
         app(HeartbeatService::class)->beat('backups');
-        $lock = Cache::lock('shop:backup', self::LEASE_SECONDS);
+        // Keep the Redis fast-mutex TTL bounded (10m) so a hard SIGKILL/OOM never blocks backups
+        // for 2 hours; PostgreSQL BackupRun status + pg_advisory_xact_lock enforce true mutual exclusion.
+        $lock = Cache::lock('shop:backup', self::LOCK_SECONDS);
         if (! $lock->get()) {
             return false;
         }

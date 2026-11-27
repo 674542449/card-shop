@@ -227,7 +227,7 @@ class ShopBackupService
             return;
         }
         $files = glob($root.'/shop-*.tar.gz') ?: [];
-        rsort($files);
+        usort($files, static fn (string $a, string $b): int => ((int) @filemtime($b) <=> (int) @filemtime($a)) ?: strcmp($b, $a));
         $keep = max(1, min(365, (int) setting('backup_retention_count', 14)));
         $before = now()->subDays(max(1, min(3650, (int) setting('backup_retention_days', 30))))->timestamp;
         foreach ($files as $index => $file) {
@@ -241,6 +241,13 @@ class ShopBackupService
                 if (! unlink($resolved)) {
                     throw new RuntimeException('旧备份清理失败。');
                 }
+            }
+        }
+        // Clean up orphaned temporary pull/import staging files left behind by interrupted requests (> 2h old).
+        $staleBefore = now()->subHours(2)->timestamp;
+        foreach (array_merge(glob($root.'/.pull-*.tar.gz') ?: [], glob($root.'/.import-*.tar.gz') ?: []) as $orphan) {
+            if (! is_link($orphan) && is_file($orphan) && (int) @filemtime($orphan) < $staleBefore) {
+                @unlink($orphan);
             }
         }
     }
@@ -362,13 +369,17 @@ class ShopBackupService
         ];
     }
 
-    public function restore(string $file, string $database, bool $includeConfig = false, bool $safetyBackup = false): void
+    public function restore(string $file, string $database, bool $includeConfig = false, bool $safetyBackup = false, ?array $validatedManifest = null): void
     {
         if (! preg_match('/^[A-Za-z0-9_]{1,63}$/D', $database)) {
             throw new RuntimeException('目标数据库名称不允许。');
         }
-        $manifest = $this->validate($file);
-        $this->verifyKeyringCompatibility($manifest);
+        if ($validatedManifest !== null) {
+            $manifest = $validatedManifest;
+        } else {
+            $manifest = $this->validate($file);
+            $this->verifyKeyringCompatibility($manifest);
+        }
         $live = $database === config('database.connections.pgsql.database');
         if ($live && $includeConfig && (string) env('SHOP_RUNTIME_ENV_FILE', '') !== '') {
             throw new RuntimeException('生产运行配置为外部只读挂载；须停服务后由运维离线恢复配置，不能通过应用覆盖。');

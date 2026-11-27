@@ -253,6 +253,10 @@ export default function Products() {
     setSelectedRowsMap({});
   }, []);
 
+  useEffect(() => {
+    clearSelection();
+  }, [initialActive, lowStockOnly, clearSelection]);
+
   const confirmProductsCardAction = useCallback(
     (actionKey, title, detail, danger = false) => {
       if (selectedRowKeys.length === 0) return;
@@ -517,6 +521,11 @@ export default function Products() {
                     await deleteProduct(record.id);
                     message.success('商品已删除');
                     setSelectedRowKeys((prev) => prev.filter((k) => k !== record.id));
+                    setSelectedRowsMap((prev) => {
+                      const next = { ...prev };
+                      delete next[record.id];
+                      return next;
+                    });
                     actionRef.current?.reload();
                   } catch (err) {
                     message.error(err.response?.data?.message || '删除失败');

@@ -169,7 +169,7 @@ for SMOKE_SERVICE in app nginx worker postgres redis; do
 done
 test "$("${DC[@]}" exec -T app php -r 'echo PHP_INT_SIZE;' | tr -d '\r\n')" = 8
 test "$("${DC[@]}" exec -T app php -r 'echo PHP_MAJOR_VERSION, ".", PHP_MINOR_VERSION;' | tr -d '\r\n')" = 8.5
-"${DC[@]}" exec -T app php -r 'exit(extension_loaded("redis") && function_exists("opcache_get_status") ? 0 : 1);'
+"${DC[@]}" exec -T app php -r 'exit(extension_loaded("redis") && extension_loaded("pcntl") && function_exists("opcache_get_status") ? 0 : 1);'
 SMOKE_APP_CID="$("${DC[@]}" ps -q app)"
 [ "$(docker inspect -f '{{.HostConfig.ReadonlyRootfs}}' "$SMOKE_APP_CID")" = true ]
 [ "$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/run/secrets"}}{{.RW}}{{end}}{{end}}' "$SMOKE_APP_CID")" = false ]

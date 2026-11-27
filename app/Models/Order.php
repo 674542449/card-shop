@@ -69,6 +69,7 @@ class Order extends Model
                 WHERE primary_payment.order_id = orders.id AND primary_payment.trade_no = orders.payment_no)
             OR EXISTS (SELECT 1 FROM payment_receipts primary_payment
                 WHERE primary_payment.order_id = orders.id
+                AND primary_payment.review_resolved_at IS NULL
                 AND CASE WHEN primary_payment.amount ~ '^[0-9]+([.][0-9]+)?$'
                     THEN CAST(primary_payment.amount AS numeric) <= 0
                         OR CAST(primary_payment.amount AS numeric) > COALESCE((SELECT SUM(order_refunds.amount)

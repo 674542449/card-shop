@@ -104,9 +104,9 @@ class OperationsController extends Controller
     public function acknowledgeHealth(Request $request, HeartbeatService $service)
     {
         $data = $request->validate(['type' => 'required|in:notifications,seo,reconciliation',
-            'through_id' => 'required_unless:type,reconciliation|integer|min:1',
-            'observed_at' => 'required_unless:type,reconciliation|date',
-            'failure_version' => 'required_if:type,reconciliation|integer|min:0']);
+            'through_id' => 'nullable|required_unless:type,reconciliation|integer|min:1',
+            'observed_at' => 'nullable|required_unless:type,reconciliation|date',
+            'failure_version' => 'nullable|required_if:type,reconciliation|integer|min:0']);
         $area = ['notifications' => 'notifications', 'seo' => 'content', 'reconciliation' => 'maintenance'][$data['type']];
         abort_unless($request->attributes->get('admin')->allows($area, 'write'), 403);
         if ($data['type'] === 'reconciliation') {

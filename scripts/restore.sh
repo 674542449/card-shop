@@ -116,7 +116,9 @@ ok "备份归档结构完整：$BASENAME"
 
 if [ -n "$KEYRING_SRC" ]; then
     [ -f "$KEYRING_SRC" ] && [ -r "$KEYRING_SRC" ] || die "指定的密钥文件不存在或不可读：$KEYRING_SRC"
-    grep -q '"keyring_id"' "$KEYRING_SRC" 2>/dev/null || die "密钥文件内容格式无效（缺少 keyring_id）：$KEYRING_SRC"
+    if ! (grep -q '"versions"' "$KEYRING_SRC" 2>/dev/null && grep -q '"fingerprint"' "$KEYRING_SRC" 2>/dev/null && grep -q '"active"' "$KEYRING_SRC" 2>/dev/null); then
+        die "密钥文件内容格式无效（缺少 active/versions/fingerprint 字段）：$KEYRING_SRC"
+    fi
 fi
 
 ENV_DIR="$(dirname "$ENV_FILE")"
@@ -208,6 +210,9 @@ fi
 DB_NAME="$(read_env_value "$ENV_FILE" DB_DATABASE)"
 [ -n "$DB_NAME" ] || DB_NAME="cardshop"
 
+export SHOP_ENV_FILE="$ENV_FILE"
+export SHOP_SECRETS_DIR="$SECRETS_DIR"
+
 shop() {
     "$DOCKER_BIN" compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
@@ -215,8 +220,9 @@ shop() {
 step "2/6 拉取镜像、启动基础服务并暂停写入进程"
 shop pull || warn "镜像拉取提示异常，尝试使用本机已有镜像继续..."
 shop stop worker nginx >/dev/null 2>&1 || true
-shop up -d --wait postgres redis app || die "启动 postgres / redis / app 失败，请检查 $ENV_FILE 与 Docker 日志。"
-ok "基础服务（postgres / redis / app）已就绪，worker 与 nginx 已暂停"
+shop up -d --wait postgres redis || die "启动 postgres / redis 失败，请检查 $ENV_FILE 与 Docker 日志。"
+shop up -d --no-deps app || die "启动 app 容器失败，请检查 $ENV_FILE 与 Docker 日志。"
+ok "基础服务（postgres / redis）已就绪，app 已启动等待恢复，worker 与 nginx 已暂停"
 
 step "3/6 进入维护模式并导入备份归档到容器存储卷"
 shop exec -T --user www-data app php artisan down --retry=15 >/dev/null || die "进入维护模式（artisan down）失败。"
@@ -245,7 +251,7 @@ shop exec -T --user www-data app php artisan up >/dev/null || die "解除维护�
 shop up -d --wait || die "拉起全部 5 个容器失败，请运行 docker compose logs 排查。"
 ok "全部服务已恢复在线"
 
-ADMIN_PATH_OUT="$(shop exec -T --user www-data app php artisan shop:admin-path 2>/dev/null | tr -d '\r' || true)"
+ADMIN_PATH_OUT="$(shop exec -T --user www-data app php artisan admin:path 2>/dev/null | tr -d '\r' || true)"
 echo ""
 echo "${GRN}${BLD}全量恢复完成！${RST}"
 [ -n "$ADMIN_PATH_OUT" ] && echo "  后台入口信息：$ADMIN_PATH_OUT"

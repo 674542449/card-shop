@@ -12,6 +12,8 @@
         ? $product->wholesalePrices->sortBy('min_quantity')->values()
         : collect();
     $hasWholesale = $tiers->isNotEmpty();
+    $lowestPrice = $hasWholesale ? min((float) $product->price, (float) $tiers->min('price')) : (float) $product->price;
+    $showFromUnit = $hasWholesale && $lowestPrice < (float) $product->price;
 
     $plainDesc = trim((string) preg_replace('/\s+/u', ' ', strip_tags((string) $product->description)));
     $shortDesc = $plainDesc !== ''
@@ -75,8 +77,8 @@
         <div class="fb-listing-price-row">
             <div class="ws-price-box">
                 <span class="ws-price-sym">&yen;</span>
-                <span class="ws-price-val">{{ number_format($product->price, 2) }}</span>
-                @if($hasWholesale)
+                <span class="ws-price-val">{{ number_format($lowestPrice, 2) }}</span>
+                @if($showFromUnit)
                 <span class="ws-price-unit">起</span>
                 @endif
             </div>

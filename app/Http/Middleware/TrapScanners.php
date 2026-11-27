@@ -46,6 +46,7 @@ class TrapScanners
         '#/\.aws(/|$)#i',
         '#/\.ssh(/|$)#i',
         '#/\.DS_Store$#i',
+        '#/composer\.(json|lock)(/|$)#i',
         '#/(wp-config|configuration|config|settings|database|secrets?)\.(php|inc|bak|old|save|txt|ya?ml|json)(/|$)#i',
 
         // WordPress（本站不是 WP，任何 wp-* 都是探测）

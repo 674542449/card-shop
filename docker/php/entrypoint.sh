@@ -54,7 +54,16 @@ rm -f bootstrap/cache/config.php \
 rm -rf storage/framework/views/*
 
 chown -R www-data:www-data storage bootstrap/cache
-chmod -R 775 storage bootstrap/cache
+chmod 755 storage storage/app storage/app/public storage/app/public/uploads 2>/dev/null || true
+chmod -R 775 bootstrap/cache storage/framework storage/logs 2>/dev/null || true
+if [ -d storage/app/private ]; then
+    find storage/app/private -type d -exec chmod 700 {} + 2>/dev/null || true
+    find storage/app/private -type f -exec chmod 600 {} + 2>/dev/null || true
+    chmod 750 storage/app/private 2>/dev/null || true
+fi
+if [ -f storage/app/initial-admin-password.txt ]; then
+    chmod 600 storage/app/initial-admin-password.txt 2>/dev/null || true
+fi
 
 echo "==> [2/8] Composer dependencies"
 # vendor/ lives on the host bind mount and survives rebuilds — but so does an *outdated*
@@ -236,6 +245,7 @@ if php artisan migrate --force --no-interaction; then
     if php artisan db:seed --force --no-interaction; then
         chown -R www-data:www-data storage/app/private 2>/dev/null || true
         chmod 750 storage/app/private 2>/dev/null || true
+        [ -f storage/app/initial-admin-password.txt ] && chmod 600 storage/app/initial-admin-password.txt 2>/dev/null || true
         echo "    Seed OK."
     else
         echo "    !! Seeding failed. The admin account may not exist."

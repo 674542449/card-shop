@@ -75,6 +75,7 @@ const ACTION_COPY = {
 export default function AllCardsPanel({ canWrite, categoryOptions = [], onInventoryChanged }) {
   const actionRef = useRef();
   const requests = useRef(new Set());
+  const listRequestRef = useRef(null);
   const [productOptions, setProductOptions] = useState([]);
   const [stats, setStats] = useState(null);
   const [globalStats, setGlobalStats] = useState(null);
@@ -204,8 +205,8 @@ export default function AllCardsPanel({ canWrite, categoryOptions = [], onInvent
   const handleSelectedDelete = async () => {
     if (selectedUnsoldIds.length === 0 && selectedDisabledIds.length === 0) return;
     setBusyAction('delete_selected');
+    let totalDeleted = 0;
     try {
-      let totalDeleted = 0;
       if (selectedUnsoldIds.length > 0) {
         const r1 = await bulkCardAction({ action: 'delete_unsold', scope: 'cards', card_ids: selectedUnsoldIds });
         totalDeleted += Number(r1.data?.count || 0);
@@ -215,10 +216,12 @@ export default function AllCardsPanel({ canWrite, categoryOptions = [], onInvent
         totalDeleted += Number(r2.data?.count || 0);
       }
       message.success(`已成功删除 ${totalDeleted} 张所选卡密。`);
-      reloadAll();
     } catch (err) {
       message.error(err.response?.data?.message || '批量删除卡密失败', 6);
     } finally {
+      if (totalDeleted > 0) {
+        reloadAll();
+      }
       setBusyAction('');
     }
   };
@@ -571,8 +574,12 @@ export default function AllCardsPanel({ canWrite, categoryOptions = [], onInvent
             : false
         }
         request={async (params) => {
+          listRequestRef.current?.abort();
           const controller = new AbortController();
+          listRequestRef.current = controller;
           requests.current.add(controller);
+          setSelectedRowKeys([]);
+          setSelectedRowsMap({});
           const query = {
             page: params.current,
             per_page: params.pageSize,
@@ -581,12 +588,12 @@ export default function AllCardsPanel({ canWrite, categoryOptions = [], onInvent
             ...(params.status ? { status: params.status } : {}),
             ...(params.content ? { content: params.content } : {}),
           };
-          setActiveFilters({
+          const nextFilters = {
             category_id: params.category_id || undefined,
             product_id: params.product_id || undefined,
             status: params.status || undefined,
             content: params.content || undefined,
-          });
+          };
           let res;
           try {
             res = await getAllCards(query, { signal: controller.signal });
@@ -598,9 +605,12 @@ export default function AllCardsPanel({ canWrite, categoryOptions = [], onInvent
           } finally {
             requests.current.delete(controller);
           }
-          if (controller.signal.aborted) return { data: [], total: 0, success: false };
+          if (controller.signal.aborted || listRequestRef.current !== controller) {
+            return { data: [], total: 0, success: false };
+          }
           const body = res.data ?? {};
           const list = Array.isArray(body) ? body : (body.data ?? []);
+          setActiveFilters(nextFilters);
           setStats(body.stats ?? null);
           setGlobalStats(body.global_stats ?? null);
           return {

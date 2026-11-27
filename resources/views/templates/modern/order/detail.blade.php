@@ -8,7 +8,7 @@
     $canReadCards = ($verified ?? false) && $order->isPaid() && $cards->isNotEmpty();
     $stateTitles = ['paid' => $canReadCards ? '购买完成，卡密已就绪。' : '支付完成，查看这份购买。', 'pending' => '订单已创建，等待付款。', 'expired' => '这笔订单已过期。', 'closed' => '这笔订单已关闭。'];
     $stateNotes = ['paid' => $canReadCards ? '在这里保存卡密，也可以随时通过订单查询再次取回。' : '支付已经完成，订单信息见下方。', 'pending' => '请在支付有效期内完成付款，卡密将在支付成功后发放。', 'expired' => '已超过支付有效期。若已付款，请先查询订单或联系客服核对，请勿重复支付；尚未付款可重新下单。', 'closed' => '此订单已关闭。你可以重新挑选商品并下单。'];
-    $paymentReview = !$order->isPaid() && !empty($order->payment_no);
+    $paymentReview = !$order->isPaid() && $order->requiresPaymentReview();
     if ($paymentReview) {
         $stateTitles[$stateKey] = '付款待核对';
         $stateNotes[$stateKey] = '收到付款回执，订单暂未发货，请联系客服核对，请勿重复支付。';

@@ -13,6 +13,18 @@ class WorkBackups extends Command
 
     public function handle(BackupQueue $queue, RestoreQueue $restoreQueue, \App\Services\MaintenanceWriteBarrier $barrier): int
     {
+        $shouldQuit = false;
+        if (extension_loaded('pcntl') && defined('SIGTERM') && defined('SIGINT')) {
+            $this->trap([SIGTERM, SIGINT], function () use (&$shouldQuit): void {
+                $shouldQuit = true;
+            });
+        }
+        $pause = static function (int $seconds) use (&$shouldQuit): void {
+            for ($i = 0; $i < $seconds && ! $shouldQuit; $i++) {
+                sleep(1);
+            }
+        };
+
         do {
             settings_memo(clear: true);
             try {
@@ -29,15 +41,17 @@ class WorkBackups extends Command
                 if ($this->option('once')) {
                     return self::FAILURE;
                 }
-                sleep(5);
+                $pause(5);
                 continue;
             }
-            if ($this->option('once')) {
+            if ($this->option('once') || $shouldQuit) {
                 return self::SUCCESS;
             }
             if (! $processed) {
-                sleep(5);
+                $pause(5);
             }
-        } while (true);
+        } while (! $shouldQuit);
+
+        return self::SUCCESS;
     }
 }

@@ -37,7 +37,7 @@ class EpayService
             'out_trade_no' => $order->order_no,
             'notify_url' => url('/payment/epay/notify'),
             'return_url' => url('/payment/epay/return'),
-            'name' => mb_substr($order->displayName(), 0, 50),
+            'name' => trim(mb_substr($order->displayName(), 0, 50)) ?: '商品',
             'money' => bcadd((string) $order->total_amount, '0', 2),
         ];
 

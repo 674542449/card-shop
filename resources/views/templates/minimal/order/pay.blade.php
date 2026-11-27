@@ -33,7 +33,7 @@
         <div class="n-timer" id="countdown-timer" data-expires="{{ $order->expires_at->toIso8601String() }}"><span>剩余支付时间</span><strong class="time">--:--</strong></div>
         <div class="n-payment-actions">
             @if($paymentUrl)
-            <a href="{{ $paymentUrl }}" class="n-button n-button-primary n-button-wide" target="_blank" rel="noopener noreferrer">前往支付 <span aria-hidden="true">↗</span></a>
+            <a href="{{ $paymentUrl }}" class="n-button n-button-primary n-button-wide" data-payment-action target="_blank" rel="noopener noreferrer">前往支付 <span aria-hidden="true">↗</span></a>
             <p class="n-hint">收银台在新标签页打开，付款后回到本页自动展示卡密。</p>
             @elseif($paymentUnavailable ?? false)
             <div class="n-message n-message-error" role="alert"><strong>支付渠道暂时不可用</strong><p>无法生成支付链接，请刷新重试。若持续如此，请联系客服并提供订单编号。</p></div>

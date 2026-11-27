@@ -22,8 +22,10 @@ class PaymentReconciliationQueue
             ->update(['status' => 'uncertain', 'error_code' => 'worker_interrupted', 'lease_token' => null, 'lease_expires_at' => null]);
         if (! $this->enabled()) { return 0; }
         $orders = Order::whereIn('status', ['pending', 'expired'])->where(fn ($q) => $q
-            ->where('created_at', '>', now()->subDays(2))->orWhereExists(fn ($a) => $a->selectRaw('1')
-                ->from('payment_attempts')->whereColumn('order_id', 'orders.id')->where('status', 'uncertain')))
+            ->where('created_at', '>', now()->subDays(2))->orWhere(fn ($u) => $u
+                ->where('created_at', '>', now()->subDays(14))
+                ->whereExists(fn ($a) => $a->selectRaw('1')
+                    ->from('payment_attempts')->whereColumn('order_id', 'orders.id')->where('status', 'uncertain'))))
             ->where('created_at', '<', now()->subMinutes(2))->where('payment_method', '!=', 'manual')
             ->where(fn ($q) => $q->whereNull('reconciled_at')->orWhere('reconciled_at', '<', now()->subMinutes(10)))
             ->whereNotExists(fn ($q) => $q->selectRaw('1')->from('payment_reconciliation_jobs')

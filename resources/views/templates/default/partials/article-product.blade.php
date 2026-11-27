@@ -5,6 +5,8 @@
         $embedMinQty = max(1, (int) $product->min_quantity);
         $embedBuyable = $embedStock >= $embedMinQty;
         $embedHasWholesale = $product->relationLoaded('wholesalePrices') && $product->wholesalePrices->isNotEmpty();
+        $embedLowestPrice = $embedHasWholesale ? min((float) $product->price, (float) $product->wholesalePrices->min('price')) : (float) $product->price;
+        $embedShowFrom = $embedHasWholesale && $embedLowestPrice < (float) $product->price;
         $embedImg = \App\Support\SafeUrl::asset($product->image);
     @endphp
     <div class="embed-product-left">
@@ -19,7 +21,7 @@
             @endif
             <strong>{{ $product->name }}</strong>
             <p>
-                <span class="embed-product-price">&yen;{{ number_format($product->price, 2) }}{{ $embedHasWholesale ? ' 起' : '' }}</span>
+                <span class="embed-product-price">&yen;{{ number_format($embedLowestPrice, 2) }}{{ $embedShowFrom ? ' 起' : '' }}</span>
                 &middot;
                 @if($embedBuyable)
                 <span>库存 {{ $embedStock }} 件</span>

@@ -4,6 +4,7 @@
 @section('meta_keywords', $seoKeywords)
 @section('canonical', \App\Support\Seo::url('/product/' . $product->slug))
 @section('og_image', (string) $product->image)
+@section('og_type', 'product')
 @php
     $min = max(1, (int) $product->min_quantity);
     $max = min((int) $product->max_quantity, $stockCount);
@@ -13,11 +14,7 @@
     $safeProductImg = \App\Support\SafeUrl::asset($product->image);
 @endphp
 @section('structured_data')
-@php
-    $productData = ['@context' => 'https://schema.org', '@type' => 'Product', 'name' => $product->name, 'description' => $seoDescription, 'sku' => (string) $product->id, 'offers' => ['@type' => 'Offer', 'price' => number_format($product->price, 2, '.', ''), 'priceCurrency' => 'CNY', 'availability' => $buyable ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock', 'url' => \App\Support\Seo::url('/product/' . $product->slug)]];
-    if ($productImgUrl = \App\Support\Seo::assetUrl($product->image)) { $productData['image'] = $productImgUrl; }
-@endphp
-<script type="application/ld+json">{!! json_encode($productData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) !!}</script>
+{{ \App\Support\Seo::jsonLdScript(\App\Support\Seo::productSchema($product, (string) $seoDescription, $buyable)) }}
 @endsection
 @section('content')
 <nav class="n-breadcrumb" aria-label="面包屑">

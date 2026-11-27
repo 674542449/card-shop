@@ -101,7 +101,7 @@
             <div class="fb-stage-toolbar">
                 <div class="fb-stage-head">
                     <div class="fb-stage-title">
-                        <h2>{{ request()->filled('q') ? '「' . e(request('q')) . '」的检索结果' : '在售数字商品' }}</h2>
+                        <h2>{{ request()->filled('q') ? '「' . request('q') . '」的检索结果' : '在售数字商品' }}</h2>
                         <span class="ws-pill ws-pill-neutral"><span id="ws-visible-count">{{ $products->count() }}</span> / {{ $products->total() }} 件</span>
                     </div>
 

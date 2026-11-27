@@ -57,6 +57,8 @@
             <div class="m-header-actions">
                 @if($contactUrl)
                 <a class="m-contact-link" href="{{ $contactUrl }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
+                @elseif($contactQr)
+                <button type="button" class="m-contact-link cs-qr-link-btn" command="show-modal" commandfor="contact-qr-dialog">联系客服</button>
                 @endif
                 <button type="button" class="m-icon-button" id="ui-theme-toggle" aria-label="切换深色模式" title="切换深色模式" aria-pressed="false">
                     <svg class="m-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M20.8 13a8.8 8.8 0 1 1-9.8-9.8A7.2 7.2 0 0 0 20.8 13z"/></svg>
@@ -73,6 +75,8 @@
             @endforeach
             @if($contactUrl)
             <a class="m-nav-link" href="{{ $contactUrl }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
+            @elseif($contactQr)
+            <button type="button" class="m-nav-link cs-qr-link-btn" command="show-modal" commandfor="contact-qr-dialog">客服二维码</button>
             @endif
         </nav>
     </header>

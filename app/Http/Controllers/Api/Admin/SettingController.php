@@ -284,8 +284,16 @@ class SettingController extends Controller
                     $value = $request->input($key);
 
                     // Posting the displayed mask must preserve the saved credential.
-                    if (in_array($key, self::SECRET_KEYS, true) && $value === self::MASK) {
-                        continue;
+                    // Cloud backup secret inputs also instruct operators to leave blank to keep existing keys.
+                    if (in_array($key, self::SECRET_KEYS, true)) {
+                        if ($value === self::MASK) {
+                            continue;
+                        }
+                        if (preg_match('/^backup_(s3|r2|oss|cos)_secret_key$/', $key) === 1
+                            && ($value === null || trim((string) $value) === '')
+                            && trim((string) setting($key, '')) !== '') {
+                            continue;
+                        }
                     }
 
                     if (is_bool($value)) {

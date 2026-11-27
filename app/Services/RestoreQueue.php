@@ -147,18 +147,26 @@ class RestoreQueue
             }
 
             $database = (string) config('database.connections.pgsql.database');
+            // Validate archive integrity and keyring compatibility once before waiting on LOCK_EX,
+            // so transient write-barrier contention never re-hashes multi-GB archives in a 250ms loop.
+            $job['progress'] = 30;
+            $job['phase'] = '校验归档完整性与密钥指纹';
+            $this->writeState($job);
+            $manifest = $this->backups->validate($archive);
+            $this->backups->verifyKeyringCompatibility($manifest);
+
+            $job['progress'] = 45;
+            $job['phase'] = '创建恢复前安全快照并执行单事务恢复';
+            $this->writeState($job);
+
             $deadline = microtime(true) + max(1, $lockWaitSeconds);
 
             while (true) {
                 try {
-                    $job['progress'] = 45;
-                    $job['phase'] = '创建恢复前安全快照并执行单事务恢复';
-                    $this->writeState($job);
-
                     // ShopBackupService::restore() acquires MaintenanceWriteBarrier::restore()
                     // (LOCK_EX) internally, creates a safety snapshot, and runs pg_restore in one
                     // transaction with atomic file rollback on failure.
-                    $this->backups->restore($archive, $database, false, true);
+                    $this->backups->restore($archive, $database, false, true, $manifest);
                     break;
                 } catch (\App\Exceptions\MaintenanceWriteBlockedException) {
                     if (microtime(true) >= $deadline) {

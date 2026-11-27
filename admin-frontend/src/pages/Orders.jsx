@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Link from '../components/PermissionLink';
 import { ProTable } from '@ant-design/pro-components';
@@ -19,6 +19,7 @@ import {
 export default function Orders() {
   const actionRef = useRef();
   const filtersRef = useRef({});
+  const [exporting, setExporting] = useState(false);
   const [searchParams] = useSearchParams();
   const requestedStatus = searchParams.get('status');
   const initialStatus = Object.prototype.hasOwnProperty.call(ORDER_STATUS_MAP, requestedStatus)
@@ -33,11 +34,15 @@ export default function Orders() {
       : undefined;
 
   const handleExport = async () => {
+    if (exporting) return;
+    setExporting(true);
     try {
       const res = await exportOrders(filtersRef.current);
       downloadBlob(res.data, 'orders.csv', 'text/csv;charset=utf-8');
-    } catch {
-      message.error('订单导出失败，请稍后重试');
+    } catch (err) {
+      message.error(err.response?.data?.message || '订单导出失败，请稍后重试');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -169,7 +174,7 @@ export default function Orders() {
         return toTablePage(res);
       }}
       toolBarRender={() => [
-        <Button key="export" icon={<ExportOutlined />} onClick={handleExport}>
+        <Button key="export" icon={<ExportOutlined />} loading={exporting} onClick={handleExport}>
           导出 CSV
         </Button>,
       ]}

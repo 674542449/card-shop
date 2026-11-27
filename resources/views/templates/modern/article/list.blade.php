@@ -5,6 +5,31 @@
 @section('meta_keywords', $seoKeywords)
 @section('canonical', $seoCanonical)
 
+@section('structured_data')
+@php
+    $articleBreadcrumbs = [
+        ['name' => '首页', 'url' => \App\Support\Seo::url('/')],
+        ['name' => '公告与指南', 'url' => \App\Support\Seo::url('/articles')],
+    ];
+    if ($currentCategory) {
+        $articleBreadcrumbs[] = [
+            'name' => (string) $currentCategory->name,
+            'url' => \App\Support\Seo::url('/articles/category/' . $currentCategory->slug),
+        ];
+    }
+    $articleSchemaItems = $articles->getCollection()
+        ->map(fn ($a) => ['name' => (string) $a->title, 'url' => \App\Support\Seo::url('/articles/' . $a->slug)])
+        ->all();
+@endphp
+{{ \App\Support\Seo::jsonLdScript(\App\Support\Seo::collectionSchema(
+    $currentCategory ? (string) $currentCategory->name : '公告与指南',
+    $seoCanonical,
+    (string) $seoDescription,
+    $articleBreadcrumbs,
+    $articleSchemaItems,
+)) }}
+@endsection
+
 @section('content')
 <header class="m-article-index-heading">
     <div class="m-store-strip-title">

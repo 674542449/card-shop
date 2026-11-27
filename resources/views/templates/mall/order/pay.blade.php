@@ -99,7 +99,7 @@
                 </div>
 
                 @if($paymentUrl)
-                <a href="{{ $paymentUrl }}" class="ml-btn ml-btn-primary ml-btn-wide ml-btn-lg" target="_blank" rel="noopener noreferrer">前往收银台支付 ↗</a>
+                <a href="{{ $paymentUrl }}" class="ml-btn ml-btn-primary ml-btn-wide ml-btn-lg" data-payment-action target="_blank" rel="noopener noreferrer">前往收银台支付 ↗</a>
                 <p class="ml-hint">收银台将在新窗口打开，付款成功后返回本页自动跳转展示卡密。</p>
                 @elseif($paymentUnavailable ?? false)
                 <div class="ml-alert ml-alert-warn" role="alert">

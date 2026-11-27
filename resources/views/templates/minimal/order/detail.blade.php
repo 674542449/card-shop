@@ -6,7 +6,7 @@
     $canReadCards = ($verified ?? false) && $order->isPaid() && $cards->isNotEmpty();
     $stateTitles = ['paid' => '购买已完成', 'pending' => '等待付款', 'expired' => '订单已过期', 'closed' => '订单已关闭'];
     $stateNotes = ['paid' => '复制或下载卡密，随时通过订单查询再次取回。', 'pending' => '请在有效期内完成付款，支付成功后自动发放卡密。', 'expired' => '已经超过支付有效期。若已付款，请先查询订单或联系客服核对，请勿重复支付；尚未付款可重新下单。', 'closed' => '这笔订单已关闭，可以重新选择商品下单。'];
-    $paymentReview = !$order->isPaid() && !empty($order->payment_no);
+    $paymentReview = !$order->isPaid() && $order->requiresPaymentReview();
     if ($paymentReview) {
         $stateTitles[$stateKey] = '付款待核对';
         $stateNotes[$stateKey] = '收到付款回执，订单暂未发货，请联系客服核对，请勿重复支付。';
@@ -27,7 +27,7 @@
         <div class="n-empty n-delivery-empty">@themeInclude('partials.image-placeholder')<h2>{{ $stateKey === 'pending' ? '完成支付后，卡密会出现在这里' : ($stateKey === 'paid' ? '暂无可展示的卡密' : '这笔订单没有发放卡密') }}</h2><p>{{ $paymentReview ? $stateNotes[$stateKey] : ($stateKey === 'pending' ? '这笔购买还在等待付款。' : ($stateKey === 'paid' ? '请稍后重新查看。若仍未显示，请联系客服并提供订单编号。' : '返回商品目录，创建一份新的订单。')) }}</p><div class="n-actions">@if($stateKey === 'pending' && empty($order->payment_no))<a href="{{ \App\Support\OrderPayAccess::path($order) }}" class="n-button n-button-primary">继续支付 →</a>@else<a href="/" class="n-button n-button-primary">浏览商品 →</a>@endif<a href="/order/query" class="n-button n-button-secondary">返回订单查询</a></div></div>
         @endif
     </section>
-    <aside class="n-delivery-receipt">@themeInclude('partials.order-summary', ['showDeadline' => $stateKey === 'pending'])</aside>
+    <aside class="n-delivery-receipt">@themeInclude('partials.order-summary', ['showDeadline' => $stateKey === 'pending' && !$paymentReview])</aside>
 </div>
 <div class="n-order-links"><a href="/" class="n-button n-button-text">← 继续浏览商品</a><a href="/order/query" class="n-button n-button-text">查询其他订单 →</a></div>
 @include('shared.refund-panel', ['panelClass' => 'n-refund-panel', 'buttonClass' => 'n-button n-button-primary'])

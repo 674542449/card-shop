@@ -109,6 +109,11 @@ class PaymentReconciliationService
                         throw new \DomainException('网关付款金额或渠道不匹配，未确认支付。');
                     }
                 }
+                if (! $paid && $order->status === 'expired' && $order->expires_at && $order->expires_at->lt(now()->subHours(2))) {
+                    \App\Models\PaymentAttempt::where('order_id', $order->id)
+                        ->where('status', 'uncertain')
+                        ->update(['status' => 'failed', 'error_code' => 'reconciled_unpaid']);
+                }
                 $order->update(['reconciled_at' => now(), 'reconciliation_error' => null]);
 
                 $fresh = $order->fresh();

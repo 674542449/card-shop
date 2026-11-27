@@ -52,17 +52,17 @@
             </article>
             @endforeach
         </div>
-        @themeInclude('partials.order-search-next')
         @else
         <div class="ml-card ml-empty ml-order-empty">
             @themeInclude('partials.image-placeholder')
-            <h2>未找到匹配的订单</h2>
-            <p>请确认下单邮箱与查询密码准确无误，或填写订单编号精确查找。</p>
+            <h2>{{ !empty($hasMore) ? '当前批次暂无匹配订单' : '未找到匹配的订单' }}</h2>
+            <p>{{ !empty($hasMore) ? '该邮箱下较新的记录未匹配当前密码，点击下方按钮可继续查找更早的订单。' : '请确认下单邮箱与查询密码准确无误，或填写订单编号精确查找。' }}</p>
             <div class="ml-order-actions">
                 <a href="/order/query" class="ml-btn ml-btn-secondary ml-btn-sm">重新查询</a>
                 <a href="/" class="ml-btn ml-btn-primary ml-btn-sm">浏览全部商品</a>
             </div>
         </div>
         @endif
+        @themeInclude('partials.order-search-next')
     </section>
 @endsection

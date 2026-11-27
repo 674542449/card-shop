@@ -321,9 +321,14 @@ fi
 
 if [ "$NEED_BACKUP" = "1" ]; then
     mkdir -p storage/backups
+    chmod 700 storage/backups 2>/dev/null || true
     BK="storage/backups/backup-$(date +%F-%H%M%S).sql"
-    if $DC exec -T postgres pg_dump -U "$(grep -E '^DB_USERNAME=' .env | cut -d= -f2)" --clean --if-exists \
-        "$(grep -E '^DB_DATABASE=' .env | cut -d= -f2)" > "$BK" 2>/dev/null && [ -s "$BK" ]; then
+    DB_USER="$(getenv DB_USERNAME)"
+    DB_NAME="$(getenv DB_DATABASE)"
+    [ -n "$DB_USER" ] || DB_USER="cardshop"
+    [ -n "$DB_NAME" ] || DB_NAME="cardshop"
+    if ( umask 077; $DC exec -T postgres pg_dump -U "$DB_USER" --clean --if-exists "$DB_NAME" > "$BK" 2>/dev/null ) && [ -s "$BK" ]; then
+        chmod 600 "$BK" 2>/dev/null || true
         ok "数据库已备份到 ${BK}（$(du -h "$BK" | cut -f1)）"
     else
         rm -f "$BK"

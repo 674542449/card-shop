@@ -39,16 +39,16 @@
     </article>
     @endforeach
 </div>
-@themeInclude('partials.order-search-next')
 @else
 <div class="n-panel n-empty">
     @themeInclude('partials.image-placeholder')
-    <h2>没有找到购买记录</h2>
-    <p>请确认下单邮箱与查询密码是否正确，或填写订单号精确查找。</p>
+    <h2>{{ !empty($hasMore) ? '当前批次暂无匹配订单' : '没有找到购买记录' }}</h2>
+    <p>{{ !empty($hasMore) ? '该邮箱下较新的记录未匹配当前密码，点击下方按钮可继续查找更早的订单。' : '请确认下单邮箱与查询密码是否正确，或填写订单号精确查找。' }}</p>
     <div class="n-actions">
         <a href="/order/query" class="n-button n-button-secondary">重新查询</a>
         <a href="/" class="n-button n-button-primary">浏览商品</a>
     </div>
 </div>
 @endif
+@themeInclude('partials.order-search-next')
 @endsection

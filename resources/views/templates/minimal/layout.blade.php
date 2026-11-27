@@ -42,6 +42,8 @@
             <div class="n-header-tools">
                 @if($contactUrl)
                 <a class="n-contact-link" href="{{ $contactUrl }}" target="_blank" rel="noopener">客服 ↗</a>
+                @elseif($contactQr)
+                <button type="button" class="n-contact-link cs-qr-link-btn" command="show-modal" commandfor="contact-qr-dialog">联系客服</button>
                 @endif
                 <button type="button" class="n-icon-button" id="ui-theme-toggle" aria-label="切换深色模式" title="切换深色模式" aria-pressed="false">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="7"/><path d="M12 5a7 7 0 0 1 0 14Z" fill="currentColor" stroke="none"/></svg>
@@ -57,6 +59,8 @@
             @endforeach
             @if($contactUrl)
             <a href="{{ $contactUrl }}" target="_blank" rel="noopener">联系客服 <span aria-hidden="true">↗</span></a>
+            @elseif($contactQr)
+            <button type="button" class="cs-qr-link-btn" command="show-modal" commandfor="contact-qr-dialog">客服二维码</button>
             @endif
         </nav>
     </header>

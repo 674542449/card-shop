@@ -297,7 +297,10 @@ class PaymentController extends Controller
                 return false;
             }
             if (is_scalar($v) && $v !== '' && $v !== null) {
-                $encoded = $bepusdt ? \App\Support\UsdtSignatureValue::canonical($v) : \App\Support\UsdtSignatureValue::decimal($v);
+                $valueForSign = ($bepusdt && is_int($v) && in_array((string) $k, ['amount', 'actual_amount'], true))
+                    ? (float) $v
+                    : $v;
+                $encoded = $bepusdt ? \App\Support\UsdtSignatureValue::canonical($valueForSign) : \App\Support\UsdtSignatureValue::decimal($v);
                 $signStr .= $k . '=' . $encoded . '&';
             }
         }

@@ -164,7 +164,11 @@ class OrderController extends Controller
         } catch (CheckoutException $exception) {
             return response()->json(['message' => $exception->getMessage()], 422);
         }
-        return response()->json(['message' => '已完成换卡，旧卡保留售后历史且不会再次售出；当前卡密邮件已加入发送队列。', 'data' => (new AdminRecordResource($replacement))->resolve($request)], 201);
+        $message = $this->notifications->emailEnabled()
+            ? '已完成换卡，旧卡保留售后历史且不会再次售出；当前卡密邮件已加入发送队列。'
+            : '已完成换卡，旧卡保留售后历史且不会再次售出（SMTP 邮件投递已关闭，未发送邮件）。';
+
+        return response()->json(['message' => $message, 'data' => (new AdminRecordResource($replacement))->resolve($request)], 201);
     }
 
     public function close(Order $order, \App\Services\OrderService $service)

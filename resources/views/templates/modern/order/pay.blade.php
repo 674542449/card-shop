@@ -61,7 +61,7 @@
             <div class="m-order-payment-amount"><span>应付金额</span><strong><small>¥</small>{{ number_format($order->total_amount, 2) }}</strong></div>
             <div class="m-order-timer" id="countdown-timer" data-expires="{{ $order->expires_at->toIso8601String() }}"><span>剩余支付时间</span><strong class="time">--:--</strong></div>
             @if($paymentUrl)
-            <a href="{{ $paymentUrl }}" class="m-button m-button-primary m-button-wide" target="_blank" rel="noopener noreferrer">前往支付 <span aria-hidden="true">↗</span></a>
+            <a href="{{ $paymentUrl }}" class="m-button m-button-primary m-button-wide" data-payment-action target="_blank" rel="noopener noreferrer">前往支付 <span aria-hidden="true">↗</span></a>
             <p class="m-hint m-order-payment-hint">收银台将在新标签页打开，付款完成后回到本页自动展示卡密。</p>
             @elseif($paymentUnavailable ?? false)
             <div class="m-order-message m-order-message-warning" role="alert"><strong>支付渠道暂时不可用</strong><p>无法生成支付链接，请稍后刷新重试。若持续如此，请联系站点客服并提供订单编号。</p></div>

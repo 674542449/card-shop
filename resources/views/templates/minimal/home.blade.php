@@ -104,7 +104,7 @@
 <section class="n-contact" aria-label="客户服务支持">
     <div>
         <h2>客户服务</h2>
-        @if(setting('contact_text'))<p>{{ setting('contact_text') }}</p>@endif
+        <p>{{ setting('contact_text') ?: '如遇下单、查单或售后问题，点击右侧二维码放大扫码联系客服。' }}</p>
         @if(\App\Support\SafeUrl::contact(setting('contact_url')))
         <a href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" class="n-button n-button-secondary n-button-sm" target="_blank" rel="noopener">联系在线客服 ↗</a>
         @endif

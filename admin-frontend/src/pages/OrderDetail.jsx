@@ -38,6 +38,24 @@ import {
 
 const { Paragraph } = Typography;
 
+function createRequestUuid() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof globalThis.crypto?.getRandomValues === 'function') {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < 16; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
 export default function OrderDetail() {
   const { id } = useParams();
   return <OrderDetailPage key={id} id={id} />;
@@ -58,8 +76,10 @@ function OrderDetailPage({ id }) {
   const [refundAmount, setRefundAmount] = useState(null);
   const [refundReason, setRefundReason] = useState('');
   const [refundReceipt, setRefundReceipt] = useState('primary');
+  const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [resolveReceipt, setResolveReceipt] = useState(null);
   const [resolveNote, setResolveNote] = useState('');
+  const [resolveSubmitting, setResolveSubmitting] = useState(false);
   const [replacementOpen, setReplacementOpen] = useState(false);
   const [replacementIds, setReplacementIds] = useState([]);
   const [replacementReason, setReplacementReason] = useState('');
@@ -107,8 +127,8 @@ function OrderDetailPage({ id }) {
   const handleMarkPaid = async () => {
     setActionLoading(true);
     try {
-      await markPaid(id);
-      message.success('订单已标记为已支付并发货');
+      const res = await markPaid(id);
+      message.success(res.data?.message || '订单已标记为已支付并发货');
       fetchOrder();
     } catch (err) {
       message.error(err.response?.data?.message || '操作失败');
@@ -408,7 +428,7 @@ function OrderDetailPage({ id }) {
               onClick={() => {
                 setReplacementIds([]);
                 setReplacementReason('');
-                setReplacementToken(globalThis.crypto?.randomUUID?.() || `repl-${Date.now()}`);
+                setReplacementToken(createRequestUuid());
                 setReplacementOpen(true);
               }}
             >
@@ -507,8 +527,11 @@ function OrderDetailPage({ id }) {
       <Modal
         title="登记退款申请"
         open={refundOpen}
-        onCancel={() => setRefundOpen(false)}
+        confirmLoading={refundSubmitting}
+        onCancel={() => !refundSubmitting && setRefundOpen(false)}
         onOk={async () => {
+          if (refundSubmitting) return;
+          setRefundSubmitting(true);
           try {
             await api.post(`/orders/${id}/refunds`, {
               amount: refundAmount,
@@ -520,6 +543,8 @@ function OrderDetailPage({ id }) {
             fetchOrder();
           } catch (e) {
             message.error(e.response?.data?.message || '登记退款申请失败');
+          } finally {
+            setRefundSubmitting(false);
           }
         }}
       >
@@ -573,8 +598,11 @@ function OrderDetailPage({ id }) {
       <Modal
         title="记录付款核对结果"
         open={!!resolveReceipt}
-        onCancel={() => setResolveReceipt(null)}
+        confirmLoading={resolveSubmitting}
+        onCancel={() => !resolveSubmitting && setResolveReceipt(null)}
         onOk={async () => {
+          if (resolveSubmitting || !resolveReceipt) return;
+          setResolveSubmitting(true);
           try {
             await api.post(`/orders/${id}/receipts/${resolveReceipt.id}/resolve`, { note: resolveNote });
             message.success('核对结果已保存');
@@ -582,6 +610,8 @@ function OrderDetailPage({ id }) {
             fetchOrder();
           } catch (e) {
             message.error(e.response?.data?.message || '保存失败');
+          } finally {
+            setResolveSubmitting(false);
           }
         }}
       >

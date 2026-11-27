@@ -66,7 +66,7 @@
         <div class="m-catalog-main">
             <div class="m-catalog-toolbar">
                 <div>
-                    <h2 class="m-section-title">{{ request()->filled('q') ? '「' . e(request('q')) . '」的检索结果' : '在售商品' }}</h2>
+                    <h2 class="m-section-title">{{ request()->filled('q') ? '「' . request('q') . '」的检索结果' : '在售商品' }}</h2>
                 </div>
                 <span class="m-muted">共 {{ $products->total() }} 件 · 付款后自动发货</span>
             </div>
@@ -119,7 +119,7 @@
     <section class="m-home-contact" aria-label="客户服务支持">
         <div>
             <h2 class="m-section-title">需要协助？</h2>
-            @if(setting('contact_text'))<p>{{ setting('contact_text') }}</p>@endif
+            <p>{{ setting('contact_text') ?: '如遇下单、查单或售后问题，点击右侧二维码放大扫码联系客服。' }}</p>
             @if(\App\Support\SafeUrl::contact(setting('contact_url')))
             <a class="m-text-link" href="{{ \App\Support\SafeUrl::contact(setting('contact_url')) }}" target="_blank" rel="noopener">联系在线客服 <span aria-hidden="true">↗</span></a>
             @endif

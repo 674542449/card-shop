@@ -135,12 +135,14 @@ export default function Operations() {
   const backupRef = useRef();
   const backupRunsRef = useRef();
   const uploadInputRef = useRef();
+  const cloudRequestRef = useRef(null);
   const mounted = useRef(true);
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      cloudRequestRef.current?.abort();
     };
   }, []);
 
@@ -209,23 +211,28 @@ export default function Operations() {
   }, [backupsAllowed, restoreActive, refreshBackups]);
 
   const loadCloudBackups = useCallback(async (provider) => {
+    cloudRequestRef.current?.abort();
     if (!provider) {
+      cloudRequestRef.current = null;
       setCloudBackups([]);
       setCloudError('');
+      setCloudLoading(false);
       return;
     }
+    const controller = new AbortController();
+    cloudRequestRef.current = controller;
     setCloudLoading(true);
     setCloudError('');
     try {
-      const r = await api.get('/maintenance/cloud-backups', { params: { provider } });
-      if (!mounted.current) return;
+      const r = await api.get('/maintenance/cloud-backups', { params: { provider }, signal: controller.signal });
+      if (!mounted.current || controller.signal.aborted || cloudRequestRef.current !== controller) return;
       setCloudBackups(Array.isArray(r.data?.data) ? r.data.data : []);
     } catch (e) {
-      if (!mounted.current) return;
+      if (!mounted.current || controller.signal.aborted || cloudRequestRef.current !== controller) return;
       setCloudBackups([]);
       setCloudError(failure(e));
     } finally {
-      if (mounted.current) setCloudLoading(false);
+      if (mounted.current && cloudRequestRef.current === controller) setCloudLoading(false);
     }
   }, []);
 
@@ -372,13 +379,21 @@ export default function Operations() {
 
   const ack = (type) =>
     run(async () => {
-      await api.post('/maintenance/health/acknowledge', {
-        type,
-        observed_at: health.observed_at,
-        through_id:
-          type === 'notifications' ? health.notification_failure_through_id : health.seo_failure_through_id,
-        failure_version: health.reconciliation?.failure_version,
-      });
+      const payload =
+        type === 'reconciliation'
+          ? {
+              type,
+              failure_version: health.reconciliation?.failure_version ?? 0,
+            }
+          : {
+              type,
+              observed_at: health.observed_at,
+              through_id:
+                type === 'notifications'
+                  ? health.notification_failure_through_id
+                  : health.seo_failure_through_id,
+            };
+      await api.post('/maintenance/health/acknowledge', payload);
       await load();
     }, '当前历史失败告警已确认；后续新产生的失败仍会正常告警。');
 
@@ -785,7 +800,7 @@ export default function Operations() {
                 width: 170,
                 render: (_, r) => (
                   <Space>
-                    {(r.status === 'failed' || r.last_error) && (
+                    {backupsWrite && (r.status === 'failed' || r.last_error) && (
                       <Button
                         size="small"
                         htmlType="button"
@@ -799,7 +814,7 @@ export default function Operations() {
                         {r.status === 'completed' ? '重新备份并同步' : '重试'}
                       </Button>
                     )}
-                    {!r.health_acknowledged_at && (r.status === 'failed' || r.last_error) && (
+                    {backupsWrite && !r.health_acknowledged_at && (r.status === 'failed' || r.last_error) && (
                       <Popconfirm
                         title="确认消除本次失败告警？任务记录保留，后续新失败仍会触发告警。"
                         onConfirm={() =>
@@ -859,16 +874,18 @@ export default function Operations() {
                   上传备份包
                 </Button>
               ),
-              <Button
-                key="create"
-                htmlType="button"
-                type="primary"
-                loading={busy}
-                disabled={active || restoreActive}
-                onClick={submit}
-              >
-                {active ? '备份任务排队或执行中' : '创建完整备份'}
-              </Button>,
+              backupsWrite && (
+                <Button
+                  key="create"
+                  htmlType="button"
+                  type="primary"
+                  loading={busy}
+                  disabled={active || restoreActive}
+                  onClick={submit}
+                >
+                  {active ? '备份任务排队或执行中' : '创建完整备份'}
+                </Button>
+              ),
             ].filter(Boolean)}
             columns={[
               { title: '归档文件名', dataIndex: 'name', render: (v) => <span className="admin-mono">{v}</span> },
@@ -876,21 +893,23 @@ export default function Operations() {
               { title: '生成时间', dataIndex: 'created_at', width: 180 },
               {
                 title: '操作',
-                width: backupsWrite ? 240 : 150,
+                width: backupsWrite ? 240 : 100,
                 render: (_, r) => (
                   <Space>
-                    <Button
-                      size="small"
-                      htmlType="button"
-                      onClick={() =>
-                        run(async () => {
-                          const x = await api.post(`/maintenance/backups/${r.name}/validate`);
-                          message.info(x.data.message);
-                        }, '')
-                      }
-                    >
-                      校验完整性
-                    </Button>
+                    {backupsWrite && (
+                      <Button
+                        size="small"
+                        htmlType="button"
+                        onClick={() =>
+                          run(async () => {
+                            const x = await api.post(`/maintenance/backups/${r.name}/validate`);
+                            message.info(x.data.message);
+                          }, '')
+                        }
+                      >
+                        校验完整性
+                      </Button>
+                    )}
                     <Button
                       size="small"
                       htmlType="button"

@@ -42,17 +42,17 @@
         </article>
         @endforeach
     </div>
-    @themeInclude('partials.order-search-next')
     @else
     <div class="m-panel m-empty m-order-empty">
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M13 7h22v34l-11-6-11 6V7Z"/><path d="M19 17h10m-10 7h6"/></svg>
-        <h2 class="m-section-title">暂时没有找到订单</h2>
-        <p class="m-muted">请确认下单邮箱与查询密码是否准确，或填写订单号精确查找。</p>
+        <h2 class="m-section-title">{{ !empty($hasMore) ? '当前批次暂无匹配订单' : '暂时没有找到订单' }}</h2>
+        <p class="m-muted">{{ !empty($hasMore) ? '该邮箱下较新的记录未匹配当前密码，点击下方按钮可继续查找更早的订单。' : '请确认下单邮箱与查询密码是否准确，或填写订单号精确查找。' }}</p>
         <div class="m-order-actions">
             <a href="/order/query" class="m-button m-button-secondary">重新查询</a>
             <a href="/" class="m-button m-button-primary">浏览商品</a>
         </div>
     </div>
     @endif
+    @themeInclude('partials.order-search-next')
 </section>
 @endsection

@@ -624,67 +624,82 @@ class CloudBackupStorageService
         $httpOptions = SafeUrl::outboundHttpOptions($target['url']);
 
         $prefix = self::normalizePrefix((string) ($cfg['prefix'] ?? ''));
-        $queryParams = [
-            'list-type' => '2',
-            'max-keys' => '100',
-        ];
-        if ($prefix !== '') {
-            $queryParams['prefix'] = $prefix . '/';
-        }
-
-        $canonicalQuery = self::buildCanonicalQuery($queryParams);
-        $requestUrl = $target['url'] . '?' . $canonicalQuery;
-        $headers = $this->signHeaders('GET', $target, $cfg, hash('sha256', ''), null, null, null, $queryParams);
-
-        try {
-            $response = Http::timeout(20)
-                ->connectTimeout(10)
-                ->withoutRedirecting()
-                ->withOptions($httpOptions)
-                ->withHeaders($headers)
-                ->get($requestUrl);
-        } catch (\Throwable) {
-            throw new RuntimeException("{$label} 获取备份列表失败：网络连接中断或超时。");
-        }
-
-        if (! $response->successful()) {
-            throw new RuntimeException($this->describeHttpFailure($label, $response->status(), (string) $response->body()));
-        }
-
-        $body = (string) $response->body();
-        $previous = libxml_use_internal_errors(true);
-        try {
-            $xml = simplexml_load_string($body, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA);
-        } finally {
-            libxml_clear_errors();
-            libxml_use_internal_errors($previous);
-        }
-
-        if ($xml === false) {
-            throw new RuntimeException("{$label} 返回的列表 XML 无法解析。");
-        }
-
         $items = [];
-        foreach ($xml->Contents ?? [] as $node) {
-            $key = trim((string) ($node->Key ?? ''));
-            if ($key === '' || str_contains($key, '..') || preg_match('/[\x00-\x1f]/', $key) === 1) {
-                continue;
-            }
-            $name = basename($key);
-            if (! preg_match('/^shop-[A-Za-z0-9-]+\.tar\.gz$/D', $name)) {
-                continue;
-            }
-            $items[] = [
-                'key' => $key,
-                'name' => $name,
-                'size' => max(0, (int) ($node->Size ?? 0)),
-                'last_modified' => ($lm = trim((string) ($node->LastModified ?? ''))) !== '' ? $lm : null,
+        $continuationToken = null;
+        $maxPages = 20;
+
+        for ($page = 0; $page < $maxPages; $page++) {
+            $queryParams = [
+                'list-type' => '2',
+                'max-keys' => '1000',
             ];
+            if ($prefix !== '') {
+                $queryParams['prefix'] = $prefix . '/';
+            }
+            if ($continuationToken !== null && $continuationToken !== '') {
+                $queryParams['continuation-token'] = $continuationToken;
+            }
+
+            $canonicalQuery = self::buildCanonicalQuery($queryParams);
+            $requestUrl = $target['url'] . '?' . $canonicalQuery;
+            $headers = $this->signHeaders('GET', $target, $cfg, hash('sha256', ''), null, null, null, $queryParams);
+
+            try {
+                $response = Http::timeout(20)
+                    ->connectTimeout(10)
+                    ->withoutRedirecting()
+                    ->withOptions($httpOptions)
+                    ->withHeaders($headers)
+                    ->get($requestUrl);
+            } catch (\Throwable) {
+                throw new RuntimeException("{$label} 获取备份列表失败：网络连接中断或超时。");
+            }
+
+            if (! $response->successful()) {
+                throw new RuntimeException($this->describeHttpFailure($label, $response->status(), (string) $response->body()));
+            }
+
+            $body = (string) $response->body();
+            $previous = libxml_use_internal_errors(true);
+            try {
+                $xml = simplexml_load_string($body, \SimpleXMLElement::class, LIBXML_NONET | LIBXML_NOCDATA);
+            } finally {
+                libxml_clear_errors();
+                libxml_use_internal_errors($previous);
+            }
+
+            if ($xml === false) {
+                throw new RuntimeException("{$label} 返回的列表 XML 无法解析。");
+            }
+
+            foreach ($xml->Contents ?? [] as $node) {
+                $key = trim((string) ($node->Key ?? ''));
+                if ($key === '' || str_contains($key, '..') || preg_match('/[\x00-\x1f]/', $key) === 1) {
+                    continue;
+                }
+                $name = basename($key);
+                if (! preg_match('/^shop-[A-Za-z0-9-]+\.tar\.gz$/D', $name)) {
+                    continue;
+                }
+                $items[] = [
+                    'key' => $key,
+                    'name' => $name,
+                    'size' => max(0, (int) ($node->Size ?? 0)),
+                    'last_modified' => ($lm = trim((string) ($node->LastModified ?? ''))) !== '' ? $lm : null,
+                ];
+            }
+
+            $isTruncated = strtolower(trim((string) ($xml->IsTruncated ?? ''))) === 'true';
+            $nextToken = trim((string) ($xml->NextContinuationToken ?? ''));
+            if (! $isTruncated || $nextToken === '' || $nextToken === $continuationToken) {
+                break;
+            }
+            $continuationToken = $nextToken;
         }
 
         usort($items, static fn (array $a, array $b): int => strcmp((string) ($b['last_modified'] ?? $b['name']), (string) ($a['last_modified'] ?? $a['name'])));
 
-        return $items;
+        return array_slice($items, 0, 200);
     }
 
     /**

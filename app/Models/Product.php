@@ -112,7 +112,7 @@ class Product extends Model
     {
         $wholesalePrice = $this->wholesalePrices()
             ->where('min_quantity', '<=', $quantity)
-            ->orderByDesc('min_quantity')
+            ->reorder('min_quantity', 'desc')
             ->first();
 
         return $wholesalePrice ? $wholesalePrice->price : $this->price;

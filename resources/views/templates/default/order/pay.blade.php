@@ -29,7 +29,7 @@
 
                 <div class="ws-cashier-cta-wrap">
                     @if($paymentUrl)
-                    <a href="{{ $paymentUrl }}" class="ws-btn ws-btn-primary ws-btn-lg ws-cashier-cta" target="_blank" rel="noopener noreferrer">前往支付平台付款 &nearr;</a>
+                    <a href="{{ $paymentUrl }}" class="ws-btn ws-btn-primary ws-btn-lg ws-cashier-cta" data-payment-action target="_blank" rel="noopener noreferrer">前往支付平台付款 &nearr;</a>
                     <span class="ws-cashier-hint">支付完成后请保持当前页面开启，系统确认回执后将自动跳转至交付页面</span>
                     @elseif($paymentUnavailable ?? false)
                     <div class="ws-alert ws-alert-danger" role="alert" style="margin:0;max-width:520px;text-align:left;">

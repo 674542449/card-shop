@@ -18,7 +18,7 @@
     <section class="ml-hero-bar">
         <div class="ml-hero-copy">
             <div class="ml-hero-title-row">
-                <h1>{{ request()->filled('q') ? '搜索「' . e(request('q')) . '」' : $siteName }}</h1>
+                <h1>{{ request()->filled('q') ? '搜索「' . request('q') . '」' : $siteName }}</h1>
                 <span class="ml-badge ml-badge-live"><i aria-hidden="true"></i>24/7 自动发货</span>
             </div>
             @if($siteDescription)

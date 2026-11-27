@@ -147,8 +147,19 @@ class OrderController extends Controller
             $order->refresh();
 
             if ($order->isPaid()) {
-                return redirect('/order/query')
-                    ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
+                if (!$verified) {
+                    return redirect('/order/query')
+                        ->withErrors(['error' => '订单已支付，请验证邮箱和查询密码后查看卡密']);
+                }
+
+                $order->loadMissing(['refunds', 'coupon']);
+
+                return theme_view('order.detail', [
+                    'order' => $order,
+                    'cards' => $order->deliveryCards()->get(),
+                    'message' => '订单已支付成功',
+                    'verified' => true,
+                ]);
             }
         }
 

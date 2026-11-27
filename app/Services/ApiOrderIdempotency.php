@@ -24,19 +24,22 @@ class ApiOrderIdempotency
 
         return DB::transaction(function () use ($tokenId, $keyHash, $digest, $create) {
             // The unique index serializes simultaneous first use of the same key.
-            DB::table('api_order_requests')->insertOrIgnore([
+            $inserted = DB::table('api_order_requests')->insertOrIgnore([
                 'api_token_id' => $tokenId, 'key_hash' => $keyHash, 'request_hash' => $digest,
                 'created_at' => now(), 'updated_at' => now(),
-            ]);
+            ]) > 0;
             $record = ApiOrderRequest::where('api_token_id', $tokenId)->where('key_hash', $keyHash)->lockForUpdate()->firstOrFail();
             if (! hash_equals($record->request_hash, $digest)) {
                 throw new IdempotencyConflictException('此 Idempotency-Key 已用于不同的下单参数，请使用新键。');
             }
             if ($record->response_payload === null && $record->order_id === null) {
+                if (! $inserted) {
+                    throw new IdempotencyConflictException('原订单已归档，请联系店主；新的购买请使用新的 Idempotency-Key。');
+                }
                 $record->update(['order_id' => $create()->id]);
             }
             return $record;
-        });
+        }, 3);
     }
 
     /** Claim a short lease, then perform gateway I/O without holding row locks. */

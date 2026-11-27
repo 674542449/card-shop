@@ -18,7 +18,7 @@
         'expired' => '此订单已超时未付款。若已完成扣款请联系客服核对，切勿重复支付；尚未付款可重新下单。',
         'closed' => '此订单已关闭，如需购买请返回商城重新选购下单。',
     ];
-    $paymentReview = !$order->isPaid() && !empty($order->payment_no);
+    $paymentReview = !$order->isPaid() && $order->requiresPaymentReview();
     if ($paymentReview) {
         $stateTitles[$stateKey] = '付款待核对';
         $stateNotes[$stateKey] = '已收到付款回执但暂未完成发货，请联系客服提供订单号核对，请勿重复支付。';

@@ -8,7 +8,7 @@ import { JSDOM } from 'jsdom';
 // Mount the real pages and Ant Design components. Only network I/O and the rich
 // editor/upload integrations are replaced; routing, effects and dialogs are real.
 const dom = new JSDOM('<html><body><div id="root"></div></body></html>', { url: 'http://localhost/admin' });
-for (const key of ['window', 'document', 'HTMLElement', 'Element', 'SVGElement', 'Node', 'ShadowRoot', 'MutationObserver']) globalThis[key] = dom.window[key];
+for (const key of ['window', 'document', 'HTMLElement', 'HTMLBodyElement', 'HTMLHtmlElement', 'Element', 'SVGElement', 'Node', 'ShadowRoot', 'MutationObserver']) globalThis[key] = dom.window[key];
 globalThis.getComputedStyle = dom.window.getComputedStyle.bind(dom.window);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 globalThis.requestAnimationFrame = callback => setTimeout(callback, 0);
@@ -1043,5 +1043,84 @@ test('all-cards tab provides global one-click pause/resume/clear and product lis
     ]);
   } finally {
     await cardsView.close();
+  }
+});
+
+test('operations reconciliation ack omits null through_id/observed_at and read-only backup admin hides write actions', async () => {
+  const posts = [];
+  globalThis.reviewApi = {
+    get: async (path) => {
+      if (path === '/maintenance/health') {
+        return {
+          data: {
+            healthy: false,
+            observed_at: '2026-11-28T07:00:00+08:00',
+            reconciliation: { enabled: true, healthy: true, consecutive_failures: 3, failure_version: 4, failure_warning: true, pending: 0, failed: 0 },
+            notifications: { healthy: true },
+            scheduler: { healthy: true },
+            seo: { enabled: false, healthy: true },
+            backups: { healthy: true, enabled: true },
+            notification_failed: 0,
+            seo_failed: 0,
+            overdue_orders: 0,
+          },
+        };
+      }
+      if (path === '/maintenance/backups') {
+        return {
+          data: {
+            data: [{ name: 'shop-20261128-020000-local.tar.gz', size: 102400, created_at: '2026-11-28T02:00:00+08:00' }],
+            health: { enabled: true, healthy: true, pending: 0, worker_required: true, worker_healthy: true },
+            restore: null,
+            enabled_cloud_providers: [],
+          },
+        };
+      }
+      if (path === '/maintenance/backup-runs') {
+        return { data: { data: [], total: 0 } };
+      }
+      return { data: { data: [] } };
+    },
+    post: async (path, payload) => {
+      posts.push([path, payload]);
+      return { data: { message: 'ok' } };
+    },
+  };
+
+  // 1. Owner acknowledging reconciliation sends only { type, failure_version }
+  const ownerView = await mount('/operations');
+  try {
+    await settleTables();
+    await click('确认当前失败');
+    await settleTables();
+    const popConfirmBtn = [...document.querySelectorAll('.ant-popconfirm button')].find((b) =>
+      ['确定', '确认', 'OK'].includes(b.textContent.replace(/\s+/g, ''))
+    );
+    assert.ok(popConfirmBtn, 'Expected popconfirm confirm button');
+    await act(async () => popConfirmBtn.click());
+    await settleTables();
+    assert.deepEqual(posts, [['/maintenance/health/acknowledge', { type: 'reconciliation', failure_version: 4 }]]);
+  } finally {
+    await ownerView.close();
+  }
+
+  // 2. Admin with backups.read (but NOT backups.write) must not see backup write buttons
+  const readOnlyBackupAdmin = {
+    id: 2,
+    is_active: true,
+    permission_definition: {
+      capabilities: ['maintenance:read', 'maintenance:write', 'backups.read'],
+      pages: [],
+    },
+  };
+  const roView = await mount('/operations', readOnlyBackupAdmin);
+  try {
+    await selectTab('备份与恢复');
+    await settleTables();
+    const btnLabels = [...document.querySelectorAll('button')].map((b) => b.textContent.replace(/\s+/g, ''));
+    assert.ok(!btnLabels.includes('立即创建全量备份'), 'Read-only backup admin must not see create backup button');
+    assert.ok(!btnLabels.includes('校验完整性'), 'Read-only backup admin must not see validate backup button');
+  } finally {
+    await roView.close();
   }
 });

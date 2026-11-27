@@ -190,7 +190,7 @@ button, a, input, select, textarea, [tabindex] { -webkit-tap-highlight-color: tr
 .m-secret-toggle { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); min-block-size: 30px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--m-muted); font-size: 0.75rem; font-weight: 550; }
 .m-secret-toggle:hover { color: var(--m-ink); background: var(--m-subtle); }
 .m-hint { font-size: 0.75rem; color: var(--m-muted); line-height: 1.6; }
-.m-field-error { color: var(--m-red); font-size: 0.75rem; line-height: 1.5; }
+.m-field-error, .m-hint[data-error="true"], .ws-field-error, .ws-turnstile-runtime-error { color: var(--m-red); font-size: 0.75rem; line-height: 1.5; }
 
 .m-details { margin: 0; font-size: 0.8125rem; }
 .m-details > div { display: flex; gap: 18px; justify-content: space-between; align-items: baseline; padding-block: 10px; border-bottom: 1px solid var(--m-line); min-width: 0; }

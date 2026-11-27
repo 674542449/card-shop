@@ -235,6 +235,13 @@ class OrderFulfilmentService
                 return OrderFulfilmentResult::refused($reason);
             }
 
+            if ($order->status !== 'pending'
+                && $order->coupon_id
+                && bccomp((string) $order->discount_amount, '0.00', 2) > 0) {
+                // Acquire Coupon row lock before Card rows to match OrderService::createOrder() and prevent AB-BA deadlocks.
+                Coupon::whereKey($order->coupon_id)->lockForUpdate()->first();
+            }
+
             $cards = $this->allocateCards($order);
 
             if ($cards->count() < $order->quantity) {
@@ -306,7 +313,7 @@ class OrderFulfilmentService
             $this->notifications->enqueuePaid($order);
 
             return OrderFulfilmentResult::fulfilled($order);
-        });
+        }, 3);
 
         // The receipt, review reason and queued alert have already committed.
         // Logging supplements the operator-visible records without blocking callbacks.

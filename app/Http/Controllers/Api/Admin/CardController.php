@@ -111,33 +111,53 @@ class CardController extends Controller
             $sourceStatus = in_array($action, ['pause_unsold', 'delete_unsold'], true) ? 'unsold' : 'disabled';
             $query->where('status', $sourceStatus);
 
-            $affectedProductIds = (clone $query)->distinct()->pluck('product_id')->map(fn ($id) => (int) $id)->all();
-
+            $count = 0;
+            $affectedProductMap = [];
             $now = now();
-            if ($action === 'pause_unsold') {
-                $count = $query->update(['status' => 'disabled', 'sold_at' => null, 'updated_at' => $now]);
-            } elseif ($action === 'resume_disabled') {
-                $count = $query->update(['status' => 'unsold', 'sold_at' => null, 'updated_at' => $now]);
-                if ($count > 0 && $affectedProductIds !== []) {
-                    $products = Product::whereIn('id', $affectedProductIds)
-                        ->whereNotNull('low_stock_threshold')
-                        ->where('low_stock_notified', true)
-                        ->get();
-                    foreach ($products as $product) {
-                        if ($product->stockCount() > $product->low_stock_threshold) {
-                            $product->forceFill(['low_stock_notified' => false])->save();
-                        }
+            $lastId = 0;
+
+            while (true) {
+                $batch = (clone $query)
+                    ->where('id', '>', $lastId)
+                    ->orderBy('id')
+                    ->limit(1000)
+                    ->lockForUpdate()
+                    ->get(['id', 'product_id']);
+                if ($batch->isEmpty()) {
+                    break;
+                }
+                $lastId = (int) $batch->last()->id;
+                $batchIds = $batch->pluck('id')->all();
+                foreach ($batch as $row) {
+                    $affectedProductMap[(int) $row->product_id] = true;
+                }
+                if ($action === 'pause_unsold') {
+                    $count += Card::whereIn('id', $batchIds)->update(['status' => 'disabled', 'sold_at' => null, 'updated_at' => $now]);
+                } elseif ($action === 'resume_disabled') {
+                    $count += Card::whereIn('id', $batchIds)->update(['status' => 'unsold', 'sold_at' => null, 'updated_at' => $now]);
+                } else {
+                    $count += Card::whereIn('id', $batchIds)->delete();
+                }
+            }
+
+            $affectedProductIds = array_keys($affectedProductMap);
+            if ($action === 'resume_disabled' && $count > 0 && $affectedProductIds !== []) {
+                $products = Product::whereIn('id', $affectedProductIds)
+                    ->whereNotNull('low_stock_threshold')
+                    ->where('low_stock_notified', true)
+                    ->get();
+                foreach ($products as $product) {
+                    if ($product->stockCount() > $product->low_stock_threshold) {
+                        $product->forceFill(['low_stock_notified' => false])->save();
                     }
                 }
-            } else {
-                $count = $query->delete();
             }
 
             return [
                 'count' => (int) $count,
                 'affected_products' => $count > 0 ? count($affectedProductIds) : 0,
             ];
-        });
+        }, 3);
 
         $scopeLabel = match ($scope) {
             'all' => '全部商品',
@@ -519,7 +539,11 @@ class CardController extends Controller
         // gap and the delete would take a card a pending order is holding — the
         // buyer's order then cannot be fulfilled. batchDestroy() below already
         // scoped its delete this way; this one had not.
-        $deleted = Card::whereKey($card->getKey())->where('status', 'unsold')->delete();
+        $deleted = Card::whereKey($card->getKey())
+            ->where('status', 'unsold')
+            ->whereNull('order_id')
+            ->whereNull('replaced_at')
+            ->delete();
 
         if ($deleted === 0) {
             return response()->json(['message' => '只能删除未售出的卡密。'], 422);
@@ -533,11 +557,15 @@ class CardController extends Controller
     public function batchDestroy(Request $request)
     {
         $request->validate([
-            'ids' => 'required|array',
-            'ids.*' => 'integer',
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'integer|min:1',
         ]);
 
-        $count = Card::whereIn('id', $request->ids)->where('status', 'unsold')->delete();
+        $count = Card::whereIn('id', $request->ids)
+            ->where('status', 'unsold')
+            ->whereNull('order_id')
+            ->whereNull('replaced_at')
+            ->delete();
         OperationLog::log('批量删除卡密', 'card', null, "批量删除 {$count} 张卡密");
 
         return response()->json(['message' => "成功删除 {$count} 张卡密。", 'count' => $count]);

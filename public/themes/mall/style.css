@@ -224,6 +224,8 @@ code { font-family: var(--ml-mono); }
     padding-block: 20px 56px;
 }
 
+[hidden] { display: none !important; }
+
 .ml-muted { color: var(--ml-muted); font-size: 13.5px; }
 
 .ml-link {

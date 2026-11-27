@@ -24,6 +24,7 @@ import { getSettings, updateSettings, sendTestEmail, sendTestTelegram, testBacku
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
 import { onAdminSessionChange } from '../services/sessionLifecycle';
+import { sanitizeEditorHtml } from '../utils/editorHtml';
 
 const THEME_LABELS = {
   default: '默认主题（现代数字工作台）',
@@ -304,8 +305,13 @@ function SettingsForm({
   onValuesChange,
   onFinish,
 }) {
+  const hydratedRef = useRef(false);
+
   useEffect(() => {
-    form.setFieldsValue(initialValues);
+    if (!hydratedRef.current && Object.keys(initialValues).length > 0) {
+      hydratedRef.current = true;
+      form.setFieldsValue(initialValues);
+    }
   }, [form, initialValues]);
 
   return (
@@ -443,6 +449,12 @@ export default function Settings() {
         normalised.backup_stale_hours ||= 30;
         normalised.backup_min_free_mb ??= 1024;
         normalised.backup_r2_region ||= 'auto';
+        if (typeof normalised.site_announcement === 'string') {
+          normalised.site_announcement = sanitizeEditorHtml(normalised.site_announcement);
+        }
+        if (typeof normalised.popup_announcement === 'string') {
+          normalised.popup_announcement = sanitizeEditorHtml(normalised.popup_announcement);
+        }
         delete normalised._available_themes;
         delete normalised._client_ip;
         delete normalised._client_subnet64;
@@ -503,12 +515,35 @@ export default function Settings() {
     setSaveState({ status: 'saving', error: '' });
     try {
       const res = await updateSettings(payload);
-      const nextSaved = { ...savedValuesRef.current, ...payload };
+      const effectivePayload = { ...payload };
+      const numericDefaults = {
+        order_expire_minutes: 30,
+        order_max_pending_per_ip: 3,
+        order_max_pending_per_email: 3,
+        order_max_locked_percent: 80,
+        honeypot_ban_minutes: 10080,
+        popup_interval_hours: 24,
+      };
+      for (const [k, fallbackVal] of Object.entries(numericDefaults)) {
+        if (Object.prototype.hasOwnProperty.call(effectivePayload, k) && effectivePayload[k] == null) {
+          effectivePayload[k] = fallbackVal;
+        }
+      }
+      const nextSaved = { ...savedValuesRef.current, ...effectivePayload };
       savedValuesRef.current = nextSaved;
       const remaining = {};
       for (const [key, value] of Object.entries(dirtyValuesRef.current)) {
-        if (!valuesEqual(value, nextSaved[key])) {
+        if (!valuesEqual(value, nextSaved[key]) && !(Object.prototype.hasOwnProperty.call(payload, key) && valuesEqual(value, payload[key]))) {
           remaining[key] = value;
+        }
+      }
+      for (const [k, fallbackVal] of Object.entries(numericDefaults)) {
+        if (
+          Object.prototype.hasOwnProperty.call(payload, k) &&
+          payload[k] == null &&
+          !Object.prototype.hasOwnProperty.call(remaining, k)
+        ) {
+          form.setFieldValue(k, fallbackVal);
         }
       }
       dirtyValuesRef.current = remaining;
@@ -525,7 +560,7 @@ export default function Settings() {
     } finally {
       savingRef.current = false;
     }
-  }, [canWrite, loading, loadError]);
+  }, [canWrite, loading, loadError, form]);
 
   const handleReset = useCallback(() => {
     if (savingRef.current) return;
@@ -632,6 +667,17 @@ export default function Settings() {
         if (nextVal !== curVal) {
           form.setFieldValue(key, nextVal);
           changed[key] = nextVal;
+          if (!nextVal) {
+            // Clear unsaved draft fields for a newly unchecked provider so hidden invalid inputs cannot block saving.
+            for (const sub of ['endpoint', 'region', 'bucket', 'prefix', 'access_key', 'secret_key', 'path_style']) {
+              const subKey = `backup_${item.key}_${sub}`;
+              if (Object.prototype.hasOwnProperty.call(dirtyValuesRef.current, subKey)) {
+                const savedSub = savedValuesRef.current[subKey];
+                form.setFieldValue(subKey, savedSub);
+                changed[subKey] = savedSub;
+              }
+            }
+          }
         }
       }
       if (Object.keys(changed).length > 0) {

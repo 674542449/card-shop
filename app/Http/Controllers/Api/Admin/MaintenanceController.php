@@ -46,7 +46,7 @@ class MaintenanceController extends Controller
     {
         $this->authorizeBackup();
         $files = glob($service->directory().'/shop-*.tar.gz') ?: [];
-        rsort($files);
+        usort($files, static fn (string $a, string $b): int => ((int) @filemtime($b) <=> (int) @filemtime($a)) ?: strcmp($b, $a));
 
         $providers = array_map(
             static fn (string $key): array => ['key' => $key, 'label' => CloudBackupStorageService::label($key)],
@@ -73,7 +73,7 @@ class MaintenanceController extends Controller
 
     public function backup(BackupQueue $queue)
     {
-        $this->authorizeBackup();
+        $this->authorizeBackup('backups.write');
         try {
             $run = $queue->enqueue('manual', request()->attributes->get('admin')->id);
         } catch (\Throwable) {
@@ -101,7 +101,7 @@ class MaintenanceController extends Controller
 
     public function retryBackup(BackupRun $run, BackupQueue $queue)
     {
-        $this->authorizeBackup();
+        $this->authorizeBackup('backups.write');
         try {
             $updated = $queue->retry($run);
         } catch (\RuntimeException $e) {
@@ -113,7 +113,7 @@ class MaintenanceController extends Controller
 
     public function acknowledgeBackup(BackupRun $run)
     {
-        $this->authorizeBackup();
+        $this->authorizeBackup('backups.write');
         $updated = BackupRun::whereKey($run->id)->whereNull('health_acknowledged_at')
             ->where(fn ($q) => $q->where('status', 'failed')->orWhereNotNull('last_error'))
             ->update(['health_acknowledged_at' => now()]);
@@ -132,7 +132,7 @@ class MaintenanceController extends Controller
 
     public function validateBackup(string $name, ShopBackupService $service)
     {
-        $this->authorizeBackup();
+        $this->authorizeBackup('backups.write');
         try {
             $manifest = $service->validate($this->file($name, $service));
         } catch (\Throwable) {
@@ -282,6 +282,8 @@ class MaintenanceController extends Controller
         }
 
         $tempFile = $service->directory() . DIRECTORY_SEPARATOR . '.pull-' . Str::uuid() . '.tar.gz';
+        // Avoid hitting PHP-FPM's 30s execution limit while downloading and hashing large cloud backups.
+        @set_time_limit(600);
         try {
             $cloud->downloadFile($provider, $key, $tempFile);
             $imported = $service->importValidatedArchive($tempFile, $provider);

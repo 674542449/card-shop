@@ -14,6 +14,18 @@ class WorkSeo extends Command
 
     public function handle(SeoQueue $queue, MaintenanceWriteBarrier $barrier): int
     {
+        $shouldQuit = false;
+        if (extension_loaded('pcntl') && defined('SIGTERM') && defined('SIGINT')) {
+            $this->trap([SIGTERM, SIGINT], function () use (&$shouldQuit): void {
+                $shouldQuit = true;
+            });
+        }
+        $pause = static function (int $seconds) use (&$shouldQuit): void {
+            for ($i = 0; $i < $seconds && ! $shouldQuit; $i++) {
+                sleep(1);
+            }
+        };
+
         do {
             settings_memo(clear: true);
             try {
@@ -24,11 +36,13 @@ class WorkSeo extends Command
             } catch (\Throwable) {
                 $this->error('SEO 进程暂时不可用或正在维护，稍后重试。');
                 if ($this->option('once')) { return self::FAILURE; }
-                sleep(5);
+                $pause(5);
                 continue;
             }
-            if ($this->option('once')) { return self::SUCCESS; }
-            if ($count === 0) { sleep(5); }
-        } while (true);
+            if ($this->option('once') || $shouldQuit) { return self::SUCCESS; }
+            if ($count === 0) { $pause(5); }
+        } while (! $shouldQuit);
+
+        return self::SUCCESS;
     }
 }

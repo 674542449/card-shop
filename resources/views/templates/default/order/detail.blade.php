@@ -23,7 +23,8 @@
             : ($order->status === 'closed' ? 'closed' : 'pending'));
 
         [$stateTitle, $stateNote, $pillClass] = $states[$stateKey];
-        if (!$order->isPaid() && $order->payment_no) {
+        $paymentReview = !$order->isPaid() && $order->requiresPaymentReview();
+        if ($paymentReview) {
             $stateTitle = '付款待核对';
             $stateNote = '收到付款回执，订单暂未发货，请联系客服核对，请勿重复支付。';
             $pillClass = 'ws-pill-warn';

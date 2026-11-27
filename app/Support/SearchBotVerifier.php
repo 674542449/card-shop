@@ -21,7 +21,7 @@ class SearchBotVerifier
     private const BOTS = [
         'google' => [
             'pattern' => '/(Googlebot|Google-InspectionTool|Storebot-Google|GoogleOther|AdsBot-Google|Mediapartners-Google)/i',
-            'suffixes' => ['.googlebot.com', '.google.com', '.googleusercontent.com'],
+            'suffixes' => ['.googlebot.com', '.google.com'],
         ],
         'bing' => [
             'pattern' => '/(bingbot|adidxbot|MicrosoftPreview)/i',

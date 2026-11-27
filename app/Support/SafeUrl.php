@@ -90,8 +90,11 @@ class SafeUrl
 
         $allowLocal = $allowLoopbackAndPrivate ?? app()->environment(['local', 'testing']);
         $rawHost = strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]'));
-        $host = rtrim($rawHost, '.');
-        if ($host === '' || in_array($host, self::ALWAYS_BLOCKED_HOSTS, true) || str_ends_with($host, '.google.internal')) {
+        if ($rawHost === '' || str_ends_with($rawHost, '.')) {
+            return null;
+        }
+        $host = $rawHost;
+        if (in_array($host, self::ALWAYS_BLOCKED_HOSTS, true) || str_ends_with($host, '.google.internal')) {
             return null;
         }
 
@@ -102,12 +105,12 @@ class SafeUrl
             return null;
         }
 
-        if (filter_var($rawHost, FILTER_VALIDATE_IP) !== false) {
-            if (! self::isAllowedOutboundIp($rawHost, $allowLocal)) {
+        if (filter_var($host, FILTER_VALIDATE_IP) !== false) {
+            if (! self::isAllowedOutboundIp($host, $allowLocal)) {
                 return null;
             }
-        } elseif (preg_match('/^(?:0x[0-9a-f]+|0[0-7]+|\d+)$/i', $host) === 1) {
-            // Reject integer / hex / octal IPv4 encodings (e.g. 2852039166 for 169.254.169.254).
+        } elseif (preg_match('/^(?:(?:0x[0-9a-f]+|0[0-7]+|\d+)\.)*(?:0x[0-9a-f]+|0[0-7]+|\d+)$/i', $host) === 1) {
+            // Reject integer / hex / octal / short dotted IPv4 encodings (e.g. 2852039166, 0177.0.0.1, 127.1).
             return null;
         }
 

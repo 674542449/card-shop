@@ -259,9 +259,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // 6. Payment status polling
+    // 6. Payment status polling & countdown timer
     const paymentPollingEl = document.getElementById('payment-polling');
+    const countdownEl = document.getElementById('countdown-timer');
     let recheckPayment = null;
+    let countdownTimer = null;
+    const stopCountdown = (label) => {
+        if (countdownTimer) {
+            clearInterval(countdownTimer);
+            countdownTimer = null;
+        }
+        if (label && countdownEl) {
+            const timeEl = countdownEl.querySelector('.time');
+            if (timeEl) timeEl.textContent = label;
+        }
+    };
     if (paymentPollingEl) {
         const orderNo = paymentPollingEl.dataset.orderNo;
         const checkUrl = paymentPollingEl.dataset.pollUrl || ('/order/pay/' + orderNo);
@@ -280,9 +292,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 paymentTimer = setTimeout(() => recheckPayment(false), Math.min(30000, 5000 * Math.pow(2, paymentFailures)));
             }
         };
-        const paymentNeedsVerification = () => {
+        const paymentNeedsVerification = (paid = false) => {
             paymentStopped = true;
-            paymentMessage('查询会话已失效，请验证下单邮箱与查询密码后查看订单。');
+            if (paid) {
+                stopCountdown('已支付');
+                document.querySelectorAll('[data-payment-action]').forEach((el) => {
+                    el.hidden = true;
+                    el.setAttribute('aria-disabled', 'true');
+                });
+                paymentMessage('订单已支付成功，请验证下单邮箱与查询密码后查看卡密。');
+            } else {
+                paymentMessage('查询会话已失效，请验证下单邮箱与查询密码后查看订单。');
+            }
             if (paymentVerify) paymentVerify.hidden = false;
         };
 
@@ -305,7 +326,7 @@ document.addEventListener('DOMContentLoaded', () => {
             })
                 .then((response) => {
                     if ([401, 403, 419].includes(response.status) || response.redirected) {
-                        paymentNeedsVerification();
+                        paymentNeedsVerification(false);
                         return null;
                     }
                     if (!response.ok) throw new Error('payment-check-unavailable');
@@ -314,9 +335,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 .then((data) => {
                     if (!data) return;
                     if (!['pending', 'paid', 'expired', 'closed'].includes(data.status)) throw new Error('payment-check-invalid');
-                    if (data.verification_required) { paymentNeedsVerification(); return; }
+                    if (data.verification_required) { paymentNeedsVerification(data.status === 'paid'); return; }
                     if (data.status !== 'pending' || data.payment_review) {
                         paymentStopped = true;
+                        stopCountdown();
                         window.location.reload();
                         return;
                     }
@@ -348,16 +370,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 7. Countdown timer
-    const countdownEl = document.getElementById('countdown-timer');
     if (countdownEl) {
         const expiresAt = new Date(countdownEl.dataset.expires).getTime();
-        let countdownTimer = null;
         const updateCountdown = () => {
             const diff = expiresAt - Date.now();
             const timeEl = countdownEl.querySelector('.time');
             if (diff <= 0) {
                 if (timeEl) timeEl.textContent = '00:00';
-                if (countdownTimer) clearInterval(countdownTimer);
+                stopCountdown();
                 if (recheckPayment) recheckPayment(false);
                 else setTimeout(() => window.location.reload(), 2000);
                 return;
@@ -450,6 +470,22 @@ document.addEventListener('DOMContentLoaded', () => {
             .catch(() => {});
     }
 
+    const supportsTextSecurity = Boolean(
+        window.CSS && typeof window.CSS.supports === 'function' && window.CSS.supports('-webkit-text-security', 'disc')
+    );
+    const applySecretMask = (input, masked) => {
+        if (!input) return;
+        input.classList.toggle('is-secret-masked', masked);
+        if (!supportsTextSecurity) {
+            try { input.type = masked ? 'password' : 'text'; } catch {}
+        }
+    };
+    if (!supportsTextSecurity) {
+        document.querySelectorAll('input.is-secret-masked').forEach((input) => {
+            applySecretMask(input, true);
+        });
+    }
+
     window.addEventListener('pageshow', (e) => {
         if (!e.persisted) return;
         document.querySelectorAll('form[data-guard] button[type="submit"]').forEach((btn) => {
@@ -459,7 +495,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         document.querySelectorAll('input[data-clear-on-restore]').forEach((input) => {
             input.value = '';
-            input.classList.add('is-secret-masked');
+            applySecretMask(input, true);
         });
         document.querySelectorAll('[data-secret-toggle]').forEach((btn) => {
             btn.setAttribute('aria-pressed', 'false');
@@ -474,14 +510,16 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshCheckoutIntents();
     });
 
-    // Masked secret input visibility toggle (no-autofill password inputs)
+    // Masked secret input visibility toggle (no-autofill password inputs, with Firefox type fallback)
     document.addEventListener('click', (e) => {
         const toggle = e.target.closest?.('[data-secret-toggle]');
         if (!toggle) return;
         const target = document.getElementById(toggle.getAttribute('data-secret-toggle') || '');
         if (!target) return;
-        const unmask = target.classList.contains('is-secret-masked');
-        target.classList.toggle('is-secret-masked', !unmask);
+        const unmask = supportsTextSecurity
+            ? target.classList.contains('is-secret-masked')
+            : (target.type === 'password' || target.classList.contains('is-secret-masked'));
+        applySecretMask(target, !unmask);
         toggle.setAttribute('aria-pressed', unmask ? 'true' : 'false');
         toggle.setAttribute('aria-label', unmask ? '隐藏查询密码' : '显示查询密码');
         toggle.textContent = unmask ? '隐藏' : '显示';

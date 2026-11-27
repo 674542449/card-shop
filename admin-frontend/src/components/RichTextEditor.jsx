@@ -16,14 +16,26 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
   const safeValue = useMemo(() => sanitizeEditorHtml(value || ''), [value]);
   const [html, setHtml] = useState(safeValue);
   // What we last handed to (or took from) the form. Guards the sync effect so a
-  // value echoed back by the form never resets the caret mid-typing.
+  // value echoed back by the form never resets the caret mid-typing, and avoids
+  // marking forms dirty on initial mount or programmatic setHtml hydration.
   const lastEmitted = useRef(safeValue);
+  const onChangeRef = useRef(onChange);
+  const disabledRef = useRef(disabled);
+  const readyRef = useRef(false);
+  const syncingRef = useRef(false);
+
+  onChangeRef.current = onChange;
+  disabledRef.current = disabled;
 
   useEffect(() => {
     const next = safeValue;
     if (next !== lastEmitted.current) {
+      syncingRef.current = true;
       lastEmitted.current = next;
       setHtml(next);
+      queueMicrotask(() => {
+        syncingRef.current = false;
+      });
     }
   }, [safeValue]);
 
@@ -74,13 +86,15 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
   );
 
   const handleChange = (ed) => {
-    if (disabled) return;
+    if (disabledRef.current || !readyRef.current || syncingRef.current) return;
     const raw = sanitizeEditorHtml(ed.getHtml());
     // Keep the raw html for the editor itself, but report an empty string upwards
     // when there is nothing in it, so `required` rules behave as an operator expects.
-    lastEmitted.current = ed.isEmpty() ? '' : raw;
+    const nextEmitted = ed.isEmpty() ? '' : raw;
+    if (nextEmitted === lastEmitted.current) return;
+    lastEmitted.current = nextEmitted;
     setHtml(raw);
-    onChange?.(lastEmitted.current);
+    onChangeRef.current?.(nextEmitted);
   };
 
   return (
@@ -89,7 +103,14 @@ export default function RichTextEditor({ value, onChange, placeholder = '请输�
       <Editor
         defaultConfig={editorConfig}
         value={html}
-        onCreated={ed => { protectEditorHtmlInputs(ed); setEditor(ed); }}
+        onCreated={(ed) => {
+          protectEditorHtmlInputs(ed);
+          lastEmitted.current = ed.isEmpty() ? '' : sanitizeEditorHtml(ed.getHtml());
+          setEditor(ed);
+          queueMicrotask(() => {
+            readyRef.current = true;
+          });
+        }}
         onChange={handleChange}
         mode="default"
         style={{ minHeight: height, height, overflowY: 'hidden' }}

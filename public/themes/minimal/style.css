@@ -339,7 +339,7 @@ input, textarea { min-width: 0; }
 .n-secret-toggle { position: absolute; inset-inline-end: 6px; top: 50%; transform: translateY(-50%); min-block-size: 30px; padding: 0 8px; border: 0; border-radius: 5px; background: transparent; color: var(--n-muted); font-size: 0.75rem; font-weight: 550; }
 .n-secret-toggle:hover { color: var(--n-ink); background: var(--n-subtle); }
 .n-field .n-hint { margin-top: 5px; }
-.n-field-error { color: var(--n-negative); font-size: 0.75rem; margin-top: 5px; }
+.n-field-error, .n-hint[data-error="true"], .ws-field-error, .ws-turnstile-runtime-error { color: var(--n-negative); font-size: 0.75rem; margin-top: 5px; line-height: 1.5; }
 
 /* Product Detail */
 .n-product-hero { display: grid; grid-template-columns: 140px minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 20px 24px; background: var(--n-surface); border: 1px solid var(--n-line); border-radius: var(--n-radius); box-shadow: var(--n-shadow-sm); margin-bottom: 24px; }

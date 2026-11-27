@@ -148,6 +148,23 @@ api.interceptors.response.use(
       }
     }
 
+    if (typeof Blob !== 'undefined' && error.response?.data instanceof Blob) {
+      const contentType = String(
+        error.response.data.type || error.response.headers?.['content-type'] || ''
+      ).toLowerCase();
+      if (contentType.includes('json') || contentType === '' || contentType.includes('text')) {
+        try {
+          const text = await error.response.data.text();
+          const parsed = JSON.parse(text);
+          if (parsed && typeof parsed === 'object') {
+            error.response.data = parsed;
+          }
+        } catch {
+          // Leave non-JSON blobs untouched.
+        }
+      }
+    }
+
     return Promise.reject(error);
   }
 );

@@ -25,13 +25,13 @@ ARCHIVE="$TMPDIR/shop-20261125-030000-test.tar.gz"
 tar -czf "$ARCHIVE" -C "$STAGE" manifest.json database.dump config.env
 
 KEYRING="$TMPDIR/src-keyring.json"
-printf '{"keyring_id":"k-test","current_version":"v1","keys":{"v1":"AAAA"}}\n' > "$KEYRING"
+printf '{"format":"cardshop-keyring-v1","active":"v1","versions":{"v1":"AAAA"},"fingerprint":"BBBB"}\n' > "$KEYRING"
 
 LOG_FILE="$TMPDIR/docker-calls.log"
 STUB_BIN="$TMPDIR/stub-docker"
 cat > "$STUB_BIN" <<EOF
 #!/usr/bin/env bash
-echo "\$*" >> "$LOG_FILE"
+echo "\$* [ENV=\$SHOP_ENV_FILE SECRETS=\$SHOP_SECRETS_DIR]" >> "$LOG_FILE"
 if [ "\${1:-}" = "compose" ] && [ "\${2:-}" = "version" ]; then
     echo "Docker Compose version v2.29.0"
     exit 0
@@ -42,7 +42,7 @@ if [ "\${1:-}" = "compose" ]; then
             echo "stub-app-container-id"
             exit 0
         fi
-        if [ "\$arg" = "shop:admin-path" ]; then
+        if [ "\$arg" = "admin:path" ]; then
             echo "/random-admin-path"
             exit 0
         fi
@@ -73,10 +73,13 @@ CARDSHOP_DOCKER_BIN="$STUB_BIN" "$SCRIPT" "$ARCHIVE" \
 test -f "$TMPDIR/etc/runtime.env"
 test -f "$TMPDIR/secrets/shop-keyring.json"
 grep -q "stop worker nginx" "$LOG_FILE"
+grep -q "up -d --wait postgres redis \[ENV=" "$LOG_FILE"
+grep -q "up -d --no-deps app \[ENV=" "$LOG_FILE"
 grep -q "artisan down --retry=15" "$LOG_FILE"
 grep -q "stub-app-container-id:/var/www/html/storage/app/private/shop-backups/shop-20261125-030000-test.tar.gz" "$LOG_FILE"
 grep -q "shop:restore storage/app/private/shop-backups/shop-20261125-030000-test.tar.gz --verify-only" "$LOG_FILE"
 grep -q "shop:restore storage/app/private/shop-backups/shop-20261125-030000-test.tar.gz --database=cardshop_test_restore --confirm=restore:cardshop_test_restore" "$LOG_FILE"
 grep -q "artisan up" "$LOG_FILE"
+grep -q "artisan admin:path" "$LOG_FILE"
 
 echo "PASS: all 5 restore.sh regression scenarios passed"
