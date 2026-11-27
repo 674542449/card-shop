@@ -1961,8 +1961,11 @@ body.mall-store:has(.ml-cat-strip) .ml-pdp-aside { top: 124px; }
 
 @media (min-width: 861px) {
     .ml-mobile-nav.open { display: none; }
-    .ml-pdp-aside { max-height: calc(100dvh - 136px); overflow-y: auto; scrollbar-gutter: stable; }
     .ml-footer-bottom { padding-inline-end: 58px; }
+}
+
+@media (min-width: 861px) and (max-height: 820px) {
+    .ml-pdp-aside, body.mall-store:has(.ml-cat-strip) .ml-pdp-aside { position: static; }
 }
 
 /* ---------- Accessibility: Reduced Motion & High Contrast ---------- */
