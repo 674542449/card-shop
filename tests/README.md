@@ -1,10 +1,10 @@
 # 自动化测试与回归验收
 
-适用正式版本：**v1.0.10**，核对日期：**2026-11-27**。
+适用正式版本：**v1.0.11**，核对日期：**2026-11-27**。
 
-最新双架构验收流水线：[Validate and build release #45932703907](https://github.com/674542449/card-shop/actions/runs/45932703907)（`linux/amd64` + `linux/arm64` 全部通过）：
-- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.10`（`sha256:11cffc1941521dfd3b89b8f110da28ce316400a6657caec3f5011bd4a943227a`）
-- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.10`（`sha256:a411ae4a7d85b8b62093f5996d28f07845af8455a430800cb2a30bb0055c24fb`）
+最新双架构验收流水线：[Validate and build release #46011083621](https://github.com/674542449/card-shop/actions/runs/46011083621)（`linux/amd64` + `linux/arm64` 全部通过）：
+- 应用多架构索引：`ghcr.io/674542449/card-shop:v1.0.11`（`sha256:786063f4eb59a43f8c9c144a0e88f5e4103a23b69166ad7b8661948878bdcb58`）
+- Nginx 多架构索引：`ghcr.io/674542449/card-shop-nginx:v1.0.11`（`sha256:aa857e966c4a159b43f7d54ed76884a6db2c0c342ecff42b7c5942929c9591ba`）
 
 ## 验证覆盖范围
 
