@@ -20,6 +20,20 @@ class CardResource extends JsonResource
             $order = $this->resource->getRelation('order');
             $data['order'] = $order ? Arr::only($order->attributesToArray(), ['id', 'order_no', 'status']) : null;
         }
+        if ($this->resource->relationLoaded('product')) {
+            $product = $this->resource->getRelation('product');
+            if ($product) {
+                $category = $product->relationLoaded('category') ? $product->getRelation('category') : null;
+                $data['product'] = [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'category_id' => $product->category_id,
+                    'category_name' => $category?->name,
+                ];
+            } else {
+                $data['product'] = null;
+            }
+        }
         return $data;
     }
 }

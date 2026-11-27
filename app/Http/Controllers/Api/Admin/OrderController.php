@@ -205,7 +205,11 @@ class OrderController extends Controller
 
         OperationLog::log('手动确认支付', 'order', $order->id, "手动确认订单 {$order->order_no}");
 
-        return response()->json(['message' => '订单已确认支付，卡密可在查单页获取，邮件已加入发送队列。']);
+        $message = $this->notifications->emailEnabled()
+            ? '订单已确认支付，卡密可在查单页获取，邮件已加入发送队列。'
+            : '订单已确认支付，卡密可在查单页获取（SMTP 邮件投递已关闭，未发送邮件）。';
+
+        return response()->json(['message' => $message]);
     }
 
     public function resend(Order $order)

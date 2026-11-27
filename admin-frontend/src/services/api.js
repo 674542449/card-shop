@@ -250,6 +250,18 @@ export const deleteProduct = (id) =>
   api.delete(`/products/${id}`);
 
 // Product Cards
+export const getAllCards = (params, config) =>
+  api.get('/cards', { ...config, params });
+
+export const getCardProductOptions = (config) =>
+  api.get('/cards/product-options', config);
+
+export const bulkCardAction = (data) =>
+  api.post('/cards/bulk-action', data);
+
+export const exportCards = (params) =>
+  api.get('/cards/export', { params, responseType: 'blob' });
+
 export const getProductCards = (productId, params, config) =>
   api.get(`/products/${productId}/cards`, { ...config, params });
 

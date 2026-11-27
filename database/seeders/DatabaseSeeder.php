@@ -173,6 +173,7 @@ class DatabaseSeeder extends Seeder
 
             // Email settings
             'email' => [
+                'mail_enabled' => '1',
                 'email_template_subject' => '【{{site_name}}】您的订单 {{order_no}} 已完成',
                 'email_template_body' => <<<'TEMPLATE'
 尊敬的客户，您好！

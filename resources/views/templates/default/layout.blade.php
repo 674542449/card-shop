@@ -84,12 +84,18 @@
 
             {{-- Right Zone: Facebook #E4E6EB 40x40 Circular Action Buttons --}}
             <div class="fb-topbar-right">
-                @if($supportHref)
-                <a href="{{ $supportHref }}" class="fb-circle-btn" title="联系客服" aria-label="联系客服" target="_blank" rel="noopener">
+                @if($contactUrl)
+                <a href="{{ $contactUrl }}" class="fb-circle-btn" title="联系客服" aria-label="联系客服" target="_blank" rel="noopener">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"></path>
                     </svg>
                 </a>
+                @elseif($contactQr)
+                <button type="button" class="fb-circle-btn" command="show-modal" commandfor="contact-qr-dialog" title="查看客服二维码" aria-label="查看客服二维码">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"></path>
+                    </svg>
+                </button>
                 @endif
 
                 <button type="button" class="fb-circle-btn" id="ui-theme-toggle"
@@ -171,7 +177,7 @@
                 <a href="{{ $contactUrl }}" target="_blank" rel="noopener">在线客服 &nearr;</a>
                 @endif
                 @if($contactQr)
-                <a href="{{ $contactQr }}" target="_blank" rel="noopener">客服二维码 &nearr;</a>
+                <button type="button" class="cs-qr-link-btn" command="show-modal" commandfor="contact-qr-dialog">客服二维码</button>
                 @endif
             </div>
         </div>
@@ -188,6 +194,8 @@
     @if(request()->is('/') || request()->is('product/*'))
     @themeInclude('partials.announcement-modal')
     @endif
+
+    @include('shared.contact-qr-modal')
 
     <script defer src="{{ asset_versioned('js/front.js') }}"></script>
     <script defer src="{{ theme_asset('workspace.js') }}"></script>

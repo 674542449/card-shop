@@ -36,7 +36,7 @@ await build({ stdin: { contents: "export {default as OrderDetail} from './src/pa
       :
       `const call = name => (...args) => globalThis.reviewApi[name](...args);
        export const getOrder=call('getOrder'), closeOrder=call('closeOrder'), markPaid=call('markPaid'), resendOrder=call('resendOrder'), getSettings=call('getSettings'), updateSettings=call('updateSettings'), sendTestEmail=call('sendTestEmail'), sendTestTelegram=call('sendTestTelegram'), testBackupStorage=call('testBackupStorage');
-       export const getNotifications=call('getNotifications'), retryNotification=call('retryNotification'), getDashboard=call('getDashboard'), getProductCards=call('getProductCards'), importCards=call('importCards'), deleteCard=call('deleteCard'), batchDeleteCards=call('batchDeleteCards'), setCardStatus=call('setCardStatus');
+       export const getNotifications=call('getNotifications'), retryNotification=call('retryNotification'), getDashboard=call('getDashboard'), getProductCards=call('getProductCards'), getAllCards=call('getAllCards'), getCardProductOptions=call('getCardProductOptions'), bulkCardAction=call('bulkCardAction'), exportCards=call('exportCards'), importCards=call('importCards'), deleteCard=call('deleteCard'), batchDeleteCards=call('batchDeleteCards'), setCardStatus=call('setCardStatus');
        export const getProducts=call('getProducts'), getProduct=call('getProduct'), createProduct=call('createProduct'), updateProduct=call('updateProduct'), batchUpdateProductDescription=call('batchUpdateProductDescription'), batchUpdateProductPrice=call('batchUpdateProductPrice'), deleteProduct=call('deleteProduct');
        export const getCategories=call('getCategories'), createCategory=call('createCategory'), updateCategory=call('updateCategory'), deleteCategory=call('deleteCategory');
        export const getArticles=call('getArticles'), getArticle=call('getArticle'), createArticle=call('createArticle'), updateArticle=call('updateArticle'), deleteArticle=call('deleteArticle');
@@ -330,7 +330,7 @@ test('consolidated catalog and content workspaces manage categories in tabs with
   const productsView = await mount('/products');
   try {
     await settleTables();
-    assert.deepEqual([...document.querySelectorAll('[role="tab"]')].map(e => e.textContent), ['商品列表', '商品分类']);
+    assert.deepEqual([...document.querySelectorAll('[role="tab"]')].map(e => e.textContent), ['商品列表', '商品分类', '全部卡密']);
     await selectTab('商品分类');
     assert.equal(productsView.router.state.location.search, '?tab=categories');
     assert.ok(text().includes('软件订阅'));
@@ -876,5 +876,172 @@ test('operations backup tab supports one-click local restore, cloud backup pull,
     assert.ok(text().includes('全量恢复任务已入队'));
   } finally {
     await view.close();
+  }
+});
+
+test('mail settings tab allows enabling and disabling SMTP delivery without losing fields and requires explicit save', async () => {
+  const writes = [];
+  const testEmails = [];
+  globalThis.reviewApi = {
+    getSettings: async () => ({
+      data: {
+        mail_enabled: '1',
+        mail_host: 'smtp.example.test',
+        mail_port: '465',
+        mail_username: 'shop@example.test',
+        mail_password: '********',
+        mail_from_address: 'shop@example.test',
+        email_template_subject: '订单交付',
+        _available_themes: ['default'],
+      },
+    }),
+    updateSettings: async (data) => {
+      writes.push(data);
+      return { data: { message: '设置已保存。' } };
+    },
+    sendTestEmail: async (email) => {
+      testEmails.push(email);
+      return { data: { message: '已发送' } };
+    },
+  };
+
+  const view = await mount('/settings?tab=mail');
+  try {
+    const panel = activePanel();
+    const toggle = panel.querySelector('[id$="_mail_enabled"]');
+    assert.ok(toggle, 'Missing mail_enabled switch');
+    assert.equal(toggle.getAttribute('aria-checked'), 'true');
+    assert.ok(panel.textContent.includes('服务已开启'));
+
+    const findSendTestBtn = () => [...panel.querySelectorAll('button')].find((b) => b.textContent.replace(/\s+/g, '') === '发送测试');
+    assert.equal(findSendTestBtn().disabled, false);
+
+    // Toggle SMTP off
+    await act(async () => { toggle.click(); });
+    await settleTables();
+    assert.equal(toggle.getAttribute('aria-checked'), 'false');
+    assert.ok(panel.textContent.includes('服务已关闭'));
+    assert.ok(panel.textContent.includes('SMTP 邮件投递服务当前处于关闭状态'));
+    assert.equal(findSendTestBtn().disabled, true);
+    // SMTP inputs remain visible and preserved
+    assert.equal(panel.querySelector('[id$="_mail_host"]').value, 'smtp.example.test');
+    assert.deepEqual(writes, []);
+
+    // Explicit save persists mail_enabled: false
+    await click('保存设置');
+    await settleTables();
+    assert.deepEqual(writes, [{ mail_enabled: false }]);
+    assert.deepEqual(testEmails, []);
+
+    // Toggle SMTP back on and save
+    await act(async () => { toggle.click(); });
+    await settleTables();
+    assert.equal(toggle.getAttribute('aria-checked'), 'true');
+    assert.equal(findSendTestBtn().disabled, false);
+    await click('保存设置');
+    await settleTables();
+    assert.deepEqual(writes, [{ mail_enabled: false }, { mail_enabled: true }]);
+  } finally {
+    await view.close();
+  }
+});
+
+test('all-cards tab provides global one-click pause/resume/clear and product list exposes batch card menu', { timeout: 15000 }, async () => {
+  const bulkCalls = [];
+  globalThis.reviewApi = {
+    getCategories: async () => ({ data: { data: [{ id: 1, name: '亚太区' }] } }),
+    getProducts: async () => ({
+      data: {
+        data: [
+          { id: 31, name: '东京升级号', category_id: 1, price: '200.00', stock_count: 3, is_active: true },
+          { id: 32, name: '首尔升级号', category_id: 1, price: '180.00', stock_count: 2, is_active: true },
+        ],
+        total: 2,
+      },
+    }),
+    getCardProductOptions: async () => ({
+      data: {
+        data: [
+          { id: 31, name: '东京升级号', category_id: 1, category_name: '亚太区', stock_count: 3, disabled_count: 1 },
+          { id: 32, name: '首尔升级号', category_id: 1, category_name: '亚太区', stock_count: 2, disabled_count: 1 },
+        ],
+      },
+    }),
+    getAllCards: async () => ({
+      data: {
+        data: [
+          { id: 501, product_id: 31, content: 'TOKYO-KEY-01', status: 'unsold', order_id: null, product: { id: 31, name: '东京升级号', category_id: 1, category_name: '亚太区' } },
+          { id: 502, product_id: 32, content: 'SEOUL-KEY-01', status: 'disabled', order_id: null, product: { id: 32, name: '首尔升级号', category_id: 1, category_name: '亚太区' } },
+          { id: 503, product_id: 32, content: 'LOCKED-KEY-01', status: 'locked', order_id: 99, product: { id: 32, name: '首尔升级号', category_id: 1, category_name: '亚太区' } },
+        ],
+        total: 3,
+        stats: { total: 3, unsold: 1, sold: 0, locked: 1, disabled: 1, products_with_unsold: 1, products_with_disabled: 1 },
+        global_stats: { total: 3, unsold: 1, sold: 0, locked: 1, disabled: 1, products_with_unsold: 1, products_with_disabled: 1 },
+      },
+    }),
+    bulkCardAction: async (payload) => {
+      bulkCalls.push(payload);
+      return { data: { message: '操作已完成', count: 1, affected_products: 1 } };
+    },
+    exportCards: async () => ({ data: 'TOKYO-KEY-01\n', headers: { 'content-disposition': 'attachment; filename=cards.txt' } }),
+  };
+
+  // 1. Multi-select in Products tab shows 批量管理卡密（2）
+  const prodView = await mount('/products');
+  try {
+    await settleTables();
+    for (const id of [31, 32]) {
+      const cb = document.querySelector(`tr[data-row-key="${id}"] input[type="checkbox"]`);
+      assert.ok(cb, `Missing checkbox for product ${id}`);
+      await act(async () => cb.click());
+    }
+    assert.ok(text().includes('批量管理卡密（2）'));
+  } finally {
+    await prodView.close();
+  }
+
+  // 2. Global All-Cards tab (/products?tab=cards) renders cross-product inventory & one-click actions
+  const cardsView = await mount('/products?tab=cards');
+  try {
+    await settleTables();
+    assert.ok(text().includes('当前作用域：全部商品'));
+    assert.ok(text().includes('TOKYO-KEY-01'));
+    assert.ok(text().includes('SEOUL-KEY-01'));
+    assert.ok(text().includes('一键暂停可售'));
+    assert.ok(text().includes('一键恢复停用'));
+    assert.ok(text().includes('一键清空库存'));
+    assert.ok(text().includes('一键导出卡密'));
+
+    // Locked card checkbox must stay disabled while unsold & disabled rows are selectable
+    assert.equal(document.querySelector('tr[data-row-key="503"] input[type="checkbox"]').disabled, true);
+    assert.equal(document.querySelector('tr[data-row-key="501"] input[type="checkbox"]').disabled, false);
+    assert.equal(document.querySelector('tr[data-row-key="502"] input[type="checkbox"]').disabled, false);
+
+    // Trigger one-click pause all unsold across all products
+    await click('一键暂停可售');
+    await settleTables();
+    const confirmPause = [...document.querySelectorAll('.ant-modal-confirm button')].find((b) =>
+      b.textContent.replace(/\s+/g, '').includes('确认暂停')
+    );
+    assert.ok(confirmPause, 'Expected confirmation button for one-click pause');
+    await act(async () => confirmPause.click());
+    await settleTables();
+    assert.deepEqual(bulkCalls, [{ action: 'pause_unsold', scope: 'all' }]);
+
+    // Trigger one-click resume all disabled across all products
+    await click('一键恢复停用');
+    await settleTables();
+    const confirmResume = [...document.querySelectorAll('.ant-modal-confirm button')].find((b) =>
+      b.textContent.replace(/\s+/g, '').includes('确认恢复')
+    );
+    assert.ok(confirmResume, 'Expected confirmation button for one-click resume');
+    await act(async () => confirmResume.click());
+    await settleTables();
+    assert.deepEqual(bulkCalls, [
+      { action: 'pause_unsold', scope: 'all' },
+      { action: 'resume_disabled', scope: 'all' },
+    ]);
+  } finally {
+    await cardsView.close();
   }
 });

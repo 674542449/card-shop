@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Upload, Button, Space, Spin, message } from 'antd';
-import { PlusOutlined, LoadingOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Upload, Button, Space, Spin, Modal, message } from 'antd';
+import { PlusOutlined, LoadingOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons';
 import { uploadImage } from '../services/api';
 
 // .ico is here because the server accepts it and the site favicon field uses this
@@ -40,6 +40,7 @@ function validateFile(file) {
  */
 export default function ImageUploader({ value, onChange, disabled }) {
   const [uploading, setUploading] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const safeSrc = typeof value === 'string' && (/^\/(?!\/)/.test(value) || /^https?:\/\//i.test(value))
     ? value
     : '';
@@ -90,18 +91,57 @@ export default function ImageUploader({ value, onChange, disabled }) {
         )}
       </Upload>
       {value && !uploading ? (
-        <Button
-          type="link"
-          size="small"
-          danger
-          icon={<DeleteOutlined />}
-          disabled={disabled}
-          onClick={() => onChange?.(null)}
-          style={{ paddingLeft: 0 }}
-        >
-          移除图片
-        </Button>
+        <Space size={8} wrap>
+          {safeSrc ? (
+            <Button
+              type="link"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={() => setPreviewOpen(true)}
+              style={{ paddingInline: 0 }}
+            >
+              查看大图
+            </Button>
+          ) : null}
+          <Button
+            type="link"
+            size="small"
+            danger
+            icon={<DeleteOutlined />}
+            disabled={disabled}
+            onClick={() => onChange?.(null)}
+            style={{ paddingInline: 0 }}
+          >
+            移除图片
+          </Button>
+        </Space>
       ) : null}
+      <Modal
+        open={previewOpen && Boolean(safeSrc)}
+        title="图片放大预览"
+        footer={null}
+        centered
+        width={420}
+        onCancel={() => setPreviewOpen(false)}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 16,
+            background: '#ffffff',
+            borderRadius: 10,
+            border: '1px solid #f0f0f0',
+          }}
+        >
+          <img
+            src={safeSrc}
+            alt="放大预览图片"
+            style={{ maxWidth: '100%', maxHeight: '65vh', objectFit: 'contain', display: 'block' }}
+          />
+        </div>
+      </Modal>
     </Space>
   );
 }

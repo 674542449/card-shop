@@ -3,9 +3,21 @@ import useWritePermission from '../hooks/useWritePermission';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ProTable, ModalForm, ProFormTextArea } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag, Space, Upload, Typography } from 'antd';
-import { PlusOutlined, ArrowLeftOutlined, UploadOutlined, DeleteOutlined } from '@ant-design/icons';
-import { getProductCards, importCards, deleteCard, batchDeleteCards, setCardStatus } from '../services/api';
+import { Button, Dropdown, Modal, message, Popconfirm, Tag, Space, Upload, Typography } from 'antd';
+import {
+  PlusOutlined,
+  ArrowLeftOutlined,
+  UploadOutlined,
+  DeleteOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  ClearOutlined,
+  DownloadOutlined,
+  DownOutlined,
+  ToolOutlined,
+} from '@ant-design/icons';
+import { getProductCards, importCards, deleteCard, batchDeleteCards, setCardStatus, bulkCardAction, exportCards } from '../services/api';
+import { downloadBlobResponse } from '../components/AllCardsPanel';
 
 export default function ProductCards() {
   const { productId } = useParams();
@@ -23,9 +35,20 @@ function ProductCardsPage({ productId }) {
   }, []);
   const [importVisible, setImportVisible] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [selectedRowsMap, setSelectedRowsMap] = useState({});
   const [uploading, setUploading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [busyBulk, setBusyBulk] = useState(false);
   const [stats, setStats] = useState(null);
   const [productName, setProductName] = useState('');
+
+  const selectedUnsoldIds = selectedRowKeys.filter((id) => (selectedRowsMap[id]?.status ?? 'unsold') === 'unsold');
+  const selectedDisabledIds = selectedRowKeys.filter((id) => selectedRowsMap[id]?.status === 'disabled');
+
+  const clearSelection = () => {
+    setSelectedRowKeys([]);
+    setSelectedRowsMap({});
+  };
 
   const handleToggleStatus = async (record, next) => {
     try {
@@ -39,18 +62,153 @@ function ProductCardsPage({ productId }) {
 
   const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先勾选需要删除的未售卡密');
+      message.warning('请先勾选需要删除的未售或停用卡密');
       return;
     }
     try {
-      const res = await batchDeleteCards(selectedRowKeys);
-      message.success(res.data?.message || '已批量清理所选卡密');
-      setSelectedRowKeys([]);
+      if (selectedDisabledIds.length === 0) {
+        const res = await batchDeleteCards(selectedRowKeys);
+        message.success(res.data?.message || '已批量清理所选卡密');
+      } else {
+        let deleted = 0;
+        if (selectedUnsoldIds.length > 0) {
+          const r1 = await bulkCardAction({ action: 'delete_unsold', scope: 'cards', card_ids: selectedUnsoldIds });
+          deleted += Number(r1.data?.count || 0);
+        }
+        const r2 = await bulkCardAction({ action: 'delete_disabled', scope: 'cards', card_ids: selectedDisabledIds });
+        deleted += Number(r2.data?.count || 0);
+        message.success(`成功删除 ${deleted} 张卡密。`);
+      }
+      clearSelection();
       actionRef.current?.reload();
     } catch (err) {
       message.error(err.response?.data?.message || '批量删除失败');
     }
   };
+
+  const runProductCardAction = async (payload, label) => {
+    setBusyBulk(true);
+    try {
+      const res = await bulkCardAction(payload);
+      message.success(res.data?.message || `${label}已完成`);
+      clearSelection();
+      actionRef.current?.reload();
+    } catch (err) {
+      message.error(err.response?.data?.message || `${label}失败`, 6);
+    } finally {
+      setBusyBulk(false);
+    }
+  };
+
+  const confirmProductBulkAction = (actionKey, title, countKey, noun, detail, danger = false) => {
+    const count = stats?.[countKey] ?? 0;
+    if (count === 0) {
+      message.info(`当前商品没有可操作的${noun}`);
+      return;
+    }
+    Modal.confirm({
+      title: `${title}（${productName || `商品 #${productId}`}）`,
+      content: (
+        <div>
+          <p style={{ marginBottom: 8 }}>
+            即将处理本商品下的 <strong>{count}</strong> 张{noun}。
+          </p>
+          <Typography.Text type="secondary">{detail}</Typography.Text>
+        </div>
+      ),
+      okText: danger ? '确认永久清理' : '确认',
+      cancelText: '取消',
+      okButtonProps: { danger },
+      onOk: () =>
+        runProductCardAction(
+          { action: actionKey, scope: 'products', product_ids: [Number(productId)] },
+          title
+        ),
+    });
+  };
+
+  const handleExport = async (format, status) => {
+    setExporting(true);
+    try {
+      const res = await exportCards({
+        format,
+        product_id: Number(productId),
+        ...(status ? { status } : {}),
+      });
+      downloadBlobResponse(res, `product_${productId}_cards_${status || 'all'}.${format}`);
+      message.success('卡密导出文件已生成');
+    } catch (err) {
+      message.error(err.response?.data?.message || '导出卡密失败', 6);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const productBulkMenuItems = [
+    {
+      key: 'pause_unsold',
+      icon: <PauseCircleOutlined />,
+      label: `一键暂停本商品未售卡密（${stats?.unsold ?? 0}）`,
+      onClick: () =>
+        confirmProductBulkAction(
+          'pause_unsold',
+          '一键暂停本商品未售卡密',
+          'unsold',
+          '未售卡密',
+          '暂停后本商品未售卡密将转为停用，待支付锁定与已售卡密不受影响。'
+        ),
+    },
+    {
+      key: 'resume_disabled',
+      icon: <PlayCircleOutlined />,
+      label: `一键恢复本商品停用卡密（${stats?.disabled ?? 0}）`,
+      onClick: () =>
+        confirmProductBulkAction(
+          'resume_disabled',
+          '一键恢复本商品停用卡密',
+          'disabled',
+          '停用卡密',
+          '将本商品下无订单关联的停用卡密恢复为可售状态。'
+        ),
+    },
+    { type: 'divider' },
+    {
+      key: 'delete_unsold',
+      danger: true,
+      icon: <DeleteOutlined />,
+      label: `一键清空本商品未售卡密（${stats?.unsold ?? 0}）`,
+      onClick: () =>
+        confirmProductBulkAction(
+          'delete_unsold',
+          '一键清空本商品未售卡密',
+          'unsold',
+          '未售卡密',
+          '将永久删除本商品下全部未售卡密且不可撤销；锁定与已售卡密受保护。',
+          true
+        ),
+    },
+    {
+      key: 'delete_disabled',
+      danger: true,
+      icon: <ClearOutlined />,
+      label: `一键清空本商品停用卡密（${stats?.disabled ?? 0}）`,
+      onClick: () =>
+        confirmProductBulkAction(
+          'delete_disabled',
+          '一键清空本商品停用卡密',
+          'disabled',
+          '停用卡密',
+          '将永久删除本商品下全部停用废弃卡密且不可撤销。',
+          true
+        ),
+    },
+  ];
+
+  const exportMenuItems = [
+    { key: 'txt-unsold', label: '导出本商品未售卡密（TXT）', onClick: () => handleExport('txt', 'unsold') },
+    { key: 'txt-disabled', label: '导出本商品停用卡密（TXT）', onClick: () => handleExport('txt', 'disabled') },
+    { key: 'csv-all', label: '导出本商品全部卡密（CSV）', onClick: () => handleExport('csv', undefined) },
+  ];
 
   const columns = [
     { title: 'ID', dataIndex: 'id', width: 68, search: false },
@@ -204,8 +362,28 @@ function ProductCardsPage({ productId }) {
           canWrite
             ? {
                 selectedRowKeys,
-                onChange: setSelectedRowKeys,
-                getCheckboxProps: (record) => ({ disabled: record.status !== 'unsold' }),
+                onChange: (keys, rows) => {
+                  setSelectedRowKeys(keys);
+                  setSelectedRowsMap((prev) => {
+                    const next = {};
+                    const keySet = new Set(keys);
+                    for (const [k, item] of Object.entries(prev)) {
+                      if (keySet.has(item.id) || keySet.has(k)) next[item.id] = item;
+                    }
+                    for (const row of rows || []) {
+                      if (row && row.id != null) {
+                        next[row.id] = { id: row.id, status: row.status };
+                      }
+                    }
+                    return next;
+                  });
+                },
+                getCheckboxProps: (record) => ({
+                  disabled:
+                    record.order_id != null ||
+                    Boolean(record.replaced_at) ||
+                    !['unsold', 'disabled'].includes(record.status),
+                }),
               }
             : false
         }
@@ -236,8 +414,8 @@ function ProductCardsPage({ productId }) {
             success: true,
           };
         }}
-        toolBarRender={() =>
-          canWrite
+        toolBarRender={() => [
+          ...(canWrite
             ? [
                 <Button key="import" type="primary" icon={<PlusOutlined />} onClick={() => setImportVisible(true)}>
                   导入卡密
@@ -270,10 +448,40 @@ function ProductCardsPage({ productId }) {
                     上传 TXT / CSV
                   </Button>
                 </Upload>,
+                <Dropdown key="bulkMenu" menu={{ items: productBulkMenuItems }} trigger={['click']}>
+                  <Button icon={<ToolOutlined />} loading={busyBulk}>
+                    一键库存管理 <DownOutlined />
+                  </Button>
+                </Dropdown>,
+                selectedUnsoldIds.length > 0 && (
+                  <Popconfirm
+                    key="batchPause"
+                    title={`确认批量暂停所选 ${selectedUnsoldIds.length} 条未售卡密？`}
+                    onConfirm={() =>
+                      runProductCardAction({ action: 'pause_unsold', scope: 'cards', card_ids: selectedUnsoldIds }, '批量暂停')
+                    }
+                  >
+                    <Button icon={<PauseCircleOutlined />}>批量暂停</Button>
+                  </Popconfirm>
+                ),
+                selectedDisabledIds.length > 0 && (
+                  <Popconfirm
+                    key="batchResume"
+                    title={`确认批量恢复所选 ${selectedDisabledIds.length} 条停用卡密？`}
+                    onConfirm={() =>
+                      runProductCardAction(
+                        { action: 'resume_disabled', scope: 'cards', card_ids: selectedDisabledIds },
+                        '批量恢复'
+                      )
+                    }
+                  >
+                    <Button icon={<PlayCircleOutlined />}>批量恢复</Button>
+                  </Popconfirm>
+                ),
                 selectedRowKeys.length > 0 && (
                   <Popconfirm
                     key="batchDelete"
-                    title={`确认批量删除已选中的 ${selectedRowKeys.length} 条未售卡密？`}
+                    title={`确认批量删除已选中的 ${selectedRowKeys.length} 条未售/停用卡密？`}
                     onConfirm={handleBatchDelete}
                   >
                     <Button danger icon={<DeleteOutlined />}>
@@ -282,8 +490,13 @@ function ProductCardsPage({ productId }) {
                   </Popconfirm>
                 ),
               ]
-            : []
-        }
+            : []),
+          <Dropdown key="exportMenu" menu={{ items: exportMenuItems }} trigger={['click']}>
+            <Button icon={<DownloadOutlined />} loading={exporting}>
+              导出卡密 <DownOutlined />
+            </Button>
+          </Dropdown>,
+        ]}
       />
       <ModalForm
         name="card-importer"

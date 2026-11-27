@@ -94,6 +94,12 @@
                         <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/>
                     </svg>
                 </a>
+                @elseif($contactQr)
+                <button type="button" class="ml-icon-btn ml-support-icon" command="show-modal" commandfor="contact-qr-dialog" title="查看客服二维码" aria-label="查看客服二维码">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5z"/>
+                    </svg>
+                </button>
                 @endif
 
                 <button type="button" class="ml-icon-btn" id="ui-theme-toggle" aria-label="切换深色模式" title="切换深色模式" aria-pressed="false">
@@ -175,7 +181,7 @@
                 <a href="/order/query">订单查询</a>
                 <a href="/articles">帮助中心</a>
                 @if($contactUrl)<a href="{{ $contactUrl }}" target="_blank" rel="noopener">在线客服 ↗</a>@endif
-                @if($contactQr)<a href="{{ $contactQr }}" target="_blank" rel="noopener">客服二维码 ↗</a>@endif
+                @if($contactQr)<button type="button" class="cs-qr-link-btn" command="show-modal" commandfor="contact-qr-dialog">客服二维码</button>@endif
             </nav>
         </div>
         <div class="ml-container ml-footer-bottom">
@@ -188,6 +194,8 @@
     <button type="button" class="ml-back-top" id="back-to-top" aria-label="返回顶部" title="返回顶部">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 15l-6-6-6 6"/></svg>
     </button>
+
+    @include('shared.contact-qr-modal')
 
     <script defer src="{{ asset_versioned('js/front.js') }}"></script>
     <script defer src="{{ asset_versioned('js/checkout.js') }}"></script>

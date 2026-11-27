@@ -159,6 +159,7 @@ const OWNER_SETTINGS = new Set([
   'epusdt_api_token',
   'usdt_gateway',
   'payment_reconciliation_enabled',
+  'mail_enabled',
   'email_template_subject',
   'email_template_body',
   'mail_host',
@@ -405,6 +406,7 @@ export default function Settings() {
         setClientSubnet64(typeof data._client_subnet64 === 'string' ? data._client_subnet64 : '');
         const normalised = { ...data };
         for (const [key, defaultValue] of Object.entries({
+          mail_enabled: true,
           telegram_enabled: false,
           telegram_notify_product_sold: false,
           telegram_notify_product_listed: false,
@@ -554,8 +556,18 @@ export default function Settings() {
     [canConfigurePrivate, form, handleValuesChange]
   );
 
+  const mailEnabled = Boolean(
+    Object.prototype.hasOwnProperty.call(dirtyValues, 'mail_enabled')
+      ? dirtyValues.mail_enabled
+      : initialValues.mail_enabled ?? true
+  );
+
   const handleTestEmail = async () => {
     if (!canConfigurePrivate || loading || loadError) return;
+    if (!mailEnabled) {
+      message.warning('SMTP 邮件投递服务当前已关闭，请先开启并保存后再发送测试邮件');
+      return;
+    }
     if (Object.keys(dirtyValuesRef.current).length > 0) {
       message.warning('当前有未保存的设置更改，请先点击「保存设置」后再发送测试邮件');
       return;
@@ -813,8 +825,23 @@ export default function Settings() {
             showIcon
             style={{ marginBottom: 16 }}
             message="SMTP 邮件投递服务配置"
-            description="系统通过此处配置的 SMTP 通道向买家发送卡密交付与退款通知邮件。买家同时可通过前台订单查询页自助提取卡密；修改参数并保存后请执行发信测试以验证连通性。"
+            description="系统通过此处配置的 SMTP 通道向买家发送卡密交付、售后换卡与退款通知邮件；可随时开启或关闭投递服务，关闭后将保留已填写的 SMTP 参数与模板，买家仍可通过前台订单查询页自助提取卡密。"
           />
+          <ProFormSwitch
+            name="mail_enabled"
+            disabled={!canConfigurePrivate}
+            label="启用 SMTP 邮件投递服务"
+            extra="开启后自动向买家发送订单交付与退款邮件；关闭后暂停全部 SMTP 发信（不入队新邮件任务，待发队列自动跳过），修改后请点击「保存设置」生效。"
+          />
+          {!mailEnabled ? (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="SMTP 邮件投递服务当前处于关闭状态"
+              description="保存后系统将停止发送交付、换卡、退款及测试邮件，已配置的服务器参数和邮件正文模板不会被清空；如需恢复发信，重新开启上方开关并保存即可。"
+            />
+          ) : null}
           <div className="admin-form-grid-3">
             <ProFormText
               name="mail_host"
@@ -865,9 +892,20 @@ export default function Settings() {
             <ProFormText name="mail_from_name" disabled={!canConfigurePrivate} label="发件人显示名称" placeholder="留空默认采用站点名称" fieldProps={NO_AUTOFILL_PROPS} />
           </div>
 
-          <Card size="small" title="SMTP 连通性测试" style={{ marginTop: 8, marginBottom: 20 }}>
+          <Card
+            size="small"
+            title={
+              <Space size={8}>
+                <span>SMTP 连通性测试</span>
+                <Tag color={mailEnabled ? 'success' : 'default'} style={{ marginInlineEnd: 0 }}>
+                  {mailEnabled ? '服务已开启' : '服务已关闭'}
+                </Tag>
+              </Space>
+            }
+            style={{ marginTop: 8, marginBottom: 20 }}
+          >
             <Typography.Paragraph type="secondary" style={{ marginBottom: 12 }}>
-              将使用已保存的 SMTP 邮件参数投递测试邮件；修改参数后请先点击「保存设置」。正式业务通知若投递失败将自动转入任务中心重试队列，不影响订单履约。
+              将使用已保存的 SMTP 邮件参数投递测试邮件；修改参数或开关状态后请先点击「保存设置」。正式业务通知若投递失败将自动转入任务中心重试队列，不影响订单履约。
             </Typography.Paragraph>
             <Space.Compact style={{ width: '100%', maxWidth: 460 }}>
               <Input
@@ -890,7 +928,7 @@ export default function Settings() {
                 htmlType="button"
                 icon={<SendOutlined />}
                 loading={testing}
-                disabled={!canConfigurePrivate}
+                disabled={!canConfigurePrivate || !mailEnabled}
                 onClick={handleTestEmail}
               >
                 发送测试

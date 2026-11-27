@@ -84,3 +84,7 @@
     @else
     <link rel="icon" type="image/svg+xml" href="/favicon.svg">
     @endif
+
+    @if(\App\Support\SafeUrl::asset(setting('contact_qr_image')))
+    <link href="{{ asset_versioned('css/qr-lightbox.css') }}" rel="stylesheet">
+    @endif

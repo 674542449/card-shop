@@ -138,6 +138,10 @@ Route::prefix('api/' . admin_path())->group(function () {
         Route::delete('/products/{product}', [ApiAdmin\ProductController::class, 'destroy'])->defaults('_admin_capability', 'catalog:write');
 
         // Cards
+        Route::get('/cards', [ApiAdmin\CardController::class, 'all'])->defaults('_admin_capability', 'cards:read');
+        Route::get('/cards/product-options', [ApiAdmin\CardController::class, 'productOptions'])->defaults('_admin_capability', 'cards:read');
+        Route::get('/cards/export', [ApiAdmin\CardController::class, 'export'])->defaults('_admin_capability', 'cards:read');
+        Route::post('/cards/bulk-action', [ApiAdmin\CardController::class, 'bulkAction'])->defaults('_admin_capability', 'cards:write');
         Route::get('/products/{product}/cards', [ApiAdmin\CardController::class, 'index'])->defaults('_admin_capability', 'cards:read');
         Route::post('/products/{product}/cards/import', [ApiAdmin\CardController::class, 'import'])->defaults('_admin_capability', 'cards:write');
         Route::delete('/cards/batch-destroy', [ApiAdmin\CardController::class, 'batchDestroy'])->defaults('_admin_capability', 'cards:write');

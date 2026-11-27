@@ -75,7 +75,7 @@
             <nav aria-label="页脚导航">
                 @foreach($navItems as $item)<a href="{{ $item['url'] }}">{{ $item['label'] }}</a>@endforeach
                 @if($contactUrl)<a href="{{ $contactUrl }}" target="_blank" rel="noopener">联系客服 ↗</a>@endif
-                @if($contactQr)<a href="{{ $contactQr }}" target="_blank" rel="noopener">客服二维码 ↗</a>@endif
+                @if($contactQr)<button type="button" class="cs-qr-link-btn" command="show-modal" commandfor="contact-qr-dialog">客服二维码</button>@endif
             </nav>
         </div>
         <div class="n-shell n-footer-bottom">
@@ -85,6 +85,7 @@
     </footer>
     <button type="button" class="n-back-top" id="back-to-top" aria-label="回到顶部" title="回到顶部"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     @if(request()->is('/') || request()->is('product/*'))@themeInclude('partials.announcement-modal')@endif
+    @include('shared.contact-qr-modal')
     <script defer src="{{ asset_versioned('js/front.js') }}"></script>
     <script defer src="{{ asset_versioned('js/checkout.js') }}"></script>
     @yield('scripts')

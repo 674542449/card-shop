@@ -12,6 +12,11 @@ class NotificationQueue
 {
     public function __construct(private readonly NotificationService $sender) {}
 
+    public function emailEnabled(): bool
+    {
+        return NotificationService::isEmailEnabled();
+    }
+
     public function enqueue(string $key, string $type, ?Order $order = null, array $payload = [], ?int $productId = null): NotificationDelivery
     {
         return NotificationDelivery::firstOrCreate(['dedupe_key' => $key], [
@@ -22,7 +27,9 @@ class NotificationQueue
 
     public function enqueuePaid(Order $order): void
     {
-        $this->enqueue('order-email:'.$order->id, 'order_email', $order);
+        if ($this->emailEnabled()) {
+            $this->enqueue('order-email:'.$order->id, 'order_email', $order);
+        }
         if ($this->sender->telegramConfigured()) {
             $this->enqueue('new-order:'.$order->id, 'new_order', $order);
         }
@@ -92,13 +99,30 @@ class NotificationQueue
         }
     }
 
-    public function enqueueRefund(Order $order, \App\Models\OrderRefund $refund): NotificationDelivery
+    public function enqueueRefund(Order $order, \App\Models\OrderRefund $refund): ?NotificationDelivery
     {
+        if (!$this->emailEnabled()) {
+            return null;
+        }
+
         return $this->enqueue('refund-email:'.$refund->id.':'.$refund->status, 'refund_email', $order, $refund->customerProjection());
+    }
+
+    public function enqueueCardReplacement(Order $order, int $replacementId): ?NotificationDelivery
+    {
+        if (!$this->emailEnabled()) {
+            return null;
+        }
+
+        return $this->enqueue('card-replacement:'.$replacementId, 'order_email', $order);
     }
 
     public function resend(Order $order): NotificationDelivery
     {
+        if (!$this->emailEnabled()) {
+            throw new RuntimeException('SMTP 邮件投递服务当前已关闭，请先在「系统设置 → 邮件设置」中开启后再补发卡密邮件。');
+        }
+
         return DB::transaction(function () use ($order) {
             $locked = Order::whereKey($order->id)->lockForUpdate()->firstOrFail();
             if (!$locked->isPaid() || !$locked->deliveryCards()->exists()) {
@@ -155,17 +179,23 @@ class NotificationQueue
         try {
             $order = $delivery->order_id ? Order::find($delivery->order_id) : null;
             if ($delivery->type === 'order_email') {
-                if (!$order?->isPaid()) {
-                    throw new RuntimeException('订单未支付，不能发送卡密邮件。');
-                }
-                if ($order->deliveryCards()->count() !== $order->quantity) {
-                    throw new RuntimeException('已发放卡密数量与订单不一致。');
-                }
-                if (!$this->sender->sendOrderEmail($order)) {
-                    throw new RuntimeException('邮件发送失败，请检查 SMTP 配置及服务器日志。');
+                if (!$this->emailEnabled()) {
+                    $status = 'skipped';
+                } else {
+                    if (!$order?->isPaid()) {
+                        throw new RuntimeException('订单未支付，不能发送卡密邮件。');
+                    }
+                    if ($order->deliveryCards()->count() !== $order->quantity) {
+                        throw new RuntimeException('已发放卡密数量与订单不一致。');
+                    }
+                    if (!$this->sender->sendOrderEmail($order)) {
+                        throw new RuntimeException('邮件发送失败，请检查 SMTP 配置及服务器日志。');
+                    }
                 }
             } elseif ($delivery->type === 'refund_email') {
-                if (!$order || !$this->sender->sendRefundEmail($order, $payload)) {
+                if (!$this->emailEnabled()) {
+                    $status = 'skipped';
+                } elseif (!$order || !$this->sender->sendRefundEmail($order, $payload)) {
                     throw new RuntimeException('邮件发送失败，请检查 SMTP 配置及服务器日志。');
                 }
             } elseif (in_array($delivery->type, ['product_sold', 'product_listed'], true)) {

@@ -4,16 +4,357 @@ namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Card;
+use App\Models\Category;
 use App\Models\Product;
 use App\Models\OperationLog;
 use App\Support\AdminListQuery;
 use App\Services\CardService;
 use App\Http\Resources\Admin\CardResource;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Response;
 
 class CardController extends Controller
 {
+    public function all(Request $request)
+    {
+        $pageSize = AdminListQuery::pageSize($request, 50, [
+            'status' => 'nullable|in:unsold,locked,sold,disabled',
+            'content' => 'nullable|string|max:500',
+            'category_id' => 'nullable|integer|min:1',
+            'product_id' => 'nullable|integer|min:1',
+        ]);
+
+        $scopeQuery = $this->applyGlobalScopeFilters($request, Card::query());
+        $listQuery = (clone $scopeQuery)->with([
+            'order:id,order_no,status',
+            'product:id,name,category_id',
+            'product.category:id,name',
+        ]);
+
+        if ($request->filled('content')) {
+            $listQuery->where('content_fingerprint', app(\App\Security\SecretCipher::class)->fingerprint(trim((string) $request->input('content'))));
+        }
+
+        if ($request->filled('status')) {
+            $listQuery->where('status', $request->string('status')->toString());
+        }
+
+        $cards = $listQuery->orderByDesc('id')->paginate($pageSize);
+        $cards->getCollection()->each(fn (Card $card) => $card->makeVisible('content'));
+
+        return response()->json([
+            'data' => CardResource::collection($cards->items())->resolve($request),
+            'total' => $cards->total(),
+            'stats' => $this->summarizeStats($scopeQuery),
+            'global_stats' => $this->summarizeStats(Card::query()),
+        ]);
+    }
+
+    public function productOptions()
+    {
+        $products = Product::query()
+            ->with('category:id,name')
+            ->withCount([
+                'cards as stock_count' => fn (Builder $q) => $q->where('status', 'unsold'),
+                'cards as disabled_count' => fn (Builder $q) => $q->where('status', 'disabled'),
+            ])
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get(['id', 'name', 'category_id', 'is_active']);
+
+        return response()->json([
+            'data' => $products->map(fn (Product $product) => [
+                'id' => $product->id,
+                'name' => $product->name,
+                'category_id' => $product->category_id,
+                'category_name' => $product->category?->name,
+                'is_active' => (bool) $product->is_active,
+                'stock_count' => (int) ($product->stock_count ?? 0),
+                'disabled_count' => (int) ($product->disabled_count ?? 0),
+            ])->values(),
+        ]);
+    }
+
+    public function bulkAction(Request $request)
+    {
+        $data = $request->validate([
+            'action' => 'required|in:pause_unsold,resume_disabled,delete_unsold,delete_disabled',
+            'scope' => 'required|in:all,category,products,cards',
+            'category_id' => 'required_if:scope,category|nullable|integer|exists:categories,id',
+            'product_ids' => 'required_if:scope,products|nullable|array|min:1|max:500',
+            'product_ids.*' => 'integer|min:1',
+            'card_ids' => 'required_if:scope,cards|nullable|array|min:1|max:500',
+            'card_ids.*' => 'integer|min:1',
+        ]);
+
+        $action = (string) $data['action'];
+        $scope = (string) $data['scope'];
+
+        $result = DB::transaction(function () use ($action, $scope, $data) {
+            $query = Card::query()
+                ->whereNull('order_id')
+                ->whereNull('replaced_at');
+
+            if ($scope === 'category') {
+                $categoryId = (int) $data['category_id'];
+                $query->whereHas('product', fn (Builder $q) => $q->where('category_id', $categoryId));
+            } elseif ($scope === 'products') {
+                $productIds = array_values(array_unique(array_map('intval', $data['product_ids'])));
+                $query->whereIn('product_id', $productIds);
+            } elseif ($scope === 'cards') {
+                $cardIds = array_values(array_unique(array_map('intval', $data['card_ids'])));
+                $query->whereIn('id', $cardIds);
+            }
+
+            $sourceStatus = in_array($action, ['pause_unsold', 'delete_unsold'], true) ? 'unsold' : 'disabled';
+            $query->where('status', $sourceStatus);
+
+            $affectedProductIds = (clone $query)->distinct()->pluck('product_id')->map(fn ($id) => (int) $id)->all();
+
+            $now = now();
+            if ($action === 'pause_unsold') {
+                $count = $query->update(['status' => 'disabled', 'sold_at' => null, 'updated_at' => $now]);
+            } elseif ($action === 'resume_disabled') {
+                $count = $query->update(['status' => 'unsold', 'sold_at' => null, 'updated_at' => $now]);
+                if ($count > 0 && $affectedProductIds !== []) {
+                    $products = Product::whereIn('id', $affectedProductIds)
+                        ->whereNotNull('low_stock_threshold')
+                        ->where('low_stock_notified', true)
+                        ->get();
+                    foreach ($products as $product) {
+                        if ($product->stockCount() > $product->low_stock_threshold) {
+                            $product->forceFill(['low_stock_notified' => false])->save();
+                        }
+                    }
+                }
+            } else {
+                $count = $query->delete();
+            }
+
+            return [
+                'count' => (int) $count,
+                'affected_products' => $count > 0 ? count($affectedProductIds) : 0,
+            ];
+        });
+
+        $scopeLabel = match ($scope) {
+            'all' => '全部商品',
+            'category' => '分类「' . (Category::whereKey((int) $data['category_id'])->value('name') ?? '#' . $data['category_id']) . '」',
+            'products' => '所选 ' . count(array_unique($data['product_ids'])) . ' 个商品',
+            'cards' => '所选卡密',
+        };
+
+        $actionMeta = [
+            'pause_unsold' => ['log' => '一键暂停可售卡密', 'verb' => '暂停', 'noun' => '可售卡密'],
+            'resume_disabled' => ['log' => '一键恢复停用卡密', 'verb' => '恢复', 'noun' => '停用卡密'],
+            'delete_unsold' => ['log' => '一键清空未售卡密', 'verb' => '清空', 'noun' => '未售卡密'],
+            'delete_disabled' => ['log' => '一键清空停用卡密', 'verb' => '清理', 'noun' => '停用卡密'],
+        ][$action];
+
+        $count = $result['count'];
+        $affectedProducts = $result['affected_products'];
+
+        if ($count > 0) {
+            OperationLog::log(
+                $actionMeta['log'],
+                'card',
+                null,
+                "范围：{$scopeLabel}；成功{$actionMeta['verb']} {$count} 张{$actionMeta['noun']}（涉及 {$affectedProducts} 个商品）"
+            );
+            $message = "已成功{$actionMeta['verb']} {$count} 张{$actionMeta['noun']}（涉及 {$affectedProducts} 个商品）。";
+        } else {
+            $message = "{$scopeLabel}中没有符合条件的{$actionMeta['noun']}，未执行变更。";
+        }
+
+        return response()->json([
+            'message' => $message,
+            'action' => $action,
+            'scope' => $scope,
+            'count' => $count,
+            'affected_products' => $affectedProducts,
+        ]);
+    }
+
+    public function export(Request $request)
+    {
+        $data = $request->validate([
+            'format' => 'nullable|in:csv,txt',
+            'status' => 'nullable|in:unsold,locked,sold,disabled',
+            'category_id' => 'nullable|integer|min:1',
+            'product_id' => 'nullable|integer|min:1',
+            'product_ids' => 'nullable|string|max:5000',
+            'content' => 'nullable|string|max:500',
+        ]);
+
+        $format = (string) ($data['format'] ?? 'csv');
+        $productIds = [];
+        if (!empty($data['product_ids'])) {
+            foreach (explode(',', (string) $data['product_ids']) as $rawId) {
+                $trimmed = trim($rawId);
+                if ($trimmed === '') {
+                    continue;
+                }
+                if (!ctype_digit($trimmed) || (int) $trimmed < 1) {
+                    return response()->json(['message' => '商品 ID 列表格式无效。'], 422);
+                }
+                $productIds[] = (int) $trimmed;
+            }
+            $productIds = array_values(array_unique($productIds));
+            if (count($productIds) > 500) {
+                return response()->json(['message' => '单次最多按 500 个商品导出卡密。'], 422);
+            }
+        }
+
+        $query = $this->applyGlobalScopeFilters($request, Card::query());
+        if ($productIds !== []) {
+            $query->whereIn('product_id', $productIds);
+        }
+        if ($request->filled('content')) {
+            $query->where('content_fingerprint', app(\App\Security\SecretCipher::class)->fingerprint(trim((string) $request->input('content'))));
+        }
+        if ($request->filled('status')) {
+            $query->where('status', (string) $data['status']);
+        }
+
+        $query->with(['product:id,name,category_id', 'product.category:id,name', 'order:id,order_no'])
+            ->orderBy('id');
+
+        $statusLabel = match ($data['status'] ?? null) {
+            'unsold' => 'unsold',
+            'disabled' => 'disabled',
+            'sold' => 'sold',
+            'locked' => 'locked',
+            default => 'all',
+        };
+        $filename = sprintf('cards_%s_%s.%s', $statusLabel, date('Ymd_His'), $format);
+
+        OperationLog::log(
+            '导出卡密',
+            'card',
+            null,
+            sprintf(
+                '格式：%s；状态：%s；分类：%s；商品：%s',
+                strtoupper($format),
+                $statusLabel,
+                $request->input('category_id') ?: '全部',
+                $productIds !== [] ? count($productIds) . '个指定商品' : ($request->input('product_id') ?: '全部')
+            )
+        );
+
+        $headers = [
+            'Content-Disposition' => 'attachment; filename=' . $filename,
+            'Cache-Control' => 'no-store, private',
+            'X-Content-Type-Options' => 'nosniff',
+            'X-Accel-Buffering' => 'no',
+        ];
+
+        if ($format === 'txt') {
+            $headers['Content-Type'] = 'text/plain; charset=UTF-8';
+
+            return Response::stream(function () use ($query) {
+                $out = fopen('php://output', 'w');
+                $query->chunkById(500, function ($cards) use ($out) {
+                    foreach ($cards as $card) {
+                        fwrite($out, (string) $card->content . "\n");
+                    }
+                    if (ob_get_level() > 0) {
+                        ob_flush();
+                    }
+                    flush();
+                });
+                fclose($out);
+            }, 200, $headers);
+        }
+
+        $statusMap = [
+            'unsold' => '未售',
+            'locked' => '锁定中',
+            'sold' => '已售',
+            'disabled' => '停用',
+        ];
+
+        $cell = static function ($value): string {
+            $value = (string) $value;
+            if ($value !== '' && str_contains("=+-@\t\r", $value[0])) {
+                $value = "'" . $value;
+            }
+
+            return '"' . str_replace('"', '""', $value) . '"';
+        };
+
+        $headers['Content-Type'] = 'text/csv; charset=UTF-8';
+
+        return Response::stream(function () use ($query, $statusMap, $cell) {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+            fwrite($out, "ID,所属分类,商品名称,卡密内容,库存状态,关联订单号,入库时间,售出时间\n");
+
+            $query->chunkById(500, function ($cards) use ($out, $statusMap, $cell) {
+                foreach ($cards as $card) {
+                    $statusText = $card->replaced_at
+                        ? '售后已换出'
+                        : ($card->status === 'sold'
+                            ? ($card->order_id ? '订单已售' : '线下已售')
+                            : ($statusMap[$card->status] ?? $card->status));
+
+                    fwrite($out, implode(',', array_map($cell, [
+                        $card->id,
+                        $card->product?->category?->name ?? '',
+                        $card->product?->name ?? '',
+                        $card->content,
+                        $statusText,
+                        $card->order?->order_no ?? '',
+                        $card->created_at,
+                        $card->sold_at ?? '',
+                    ])) . "\n");
+                }
+                if (ob_get_level() > 0) {
+                    ob_flush();
+                }
+                flush();
+            });
+            fclose($out);
+        }, 200, $headers);
+    }
+
+    private function applyGlobalScopeFilters(Request $request, Builder $query): Builder
+    {
+        if ($request->filled('product_id')) {
+            $query->where('product_id', (int) $request->input('product_id'));
+        } elseif ($request->filled('category_id')) {
+            $categoryId = (int) $request->input('category_id');
+            $query->whereHas('product', fn (Builder $q) => $q->where('category_id', $categoryId));
+        }
+
+        return $query;
+    }
+
+    private function summarizeStats(Builder $baseQuery): array
+    {
+        $rows = (clone $baseQuery)
+            ->selectRaw('status, COUNT(*) AS cnt, COUNT(DISTINCT product_id) AS product_cnt')
+            ->groupBy('status')
+            ->get()
+            ->keyBy('status');
+
+        $unsold = (int) ($rows->get('unsold')->cnt ?? 0);
+        $sold = (int) ($rows->get('sold')->cnt ?? 0);
+        $locked = (int) ($rows->get('locked')->cnt ?? 0);
+        $disabled = (int) ($rows->get('disabled')->cnt ?? 0);
+
+        return [
+            'total' => $unsold + $sold + $locked + $disabled,
+            'unsold' => $unsold,
+            'sold' => $sold,
+            'locked' => $locked,
+            'disabled' => $disabled,
+            'products_with_unsold' => (int) ($rows->get('unsold')->product_cnt ?? 0),
+            'products_with_disabled' => (int) ($rows->get('disabled')->product_cnt ?? 0),
+        ];
+    }
+
     public function index(Request $request, Product $product)
     {
         $pageSize = AdminListQuery::pageSize($request, 50, [

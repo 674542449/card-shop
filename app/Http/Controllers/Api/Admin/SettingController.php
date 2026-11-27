@@ -51,6 +51,7 @@ class SettingController extends Controller
                 'payment_reconciliation_enabled',
             ],
             'email' => [
+                'mail_enabled',
                 'email_template_subject', 'email_template_body',
                 // SMTP moved out of .env: changing where card secrets are sent from
                 // used to need SSH, a file edit and a container restart.
@@ -179,6 +180,7 @@ class SettingController extends Controller
         $rules['popup_interval_hours'] = ['nullable', 'integer', 'min:0', 'max:8760'];
         $rules['honeypot_ban_minutes'] = ['nullable', 'integer', 'min:0', 'max:525600'];
         foreach ([
+            'mail_enabled',
             'telegram_enabled',
             'telegram_notify_product_sold',
             'telegram_notify_product_listed',

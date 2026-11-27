@@ -96,7 +96,7 @@ export const leafPaths = (() => {
 /** Formal operational page metadata. */
 export const pageMeta = {
   '/': { title: '经营概览', desc: '实时汇总交易指标、待处理业务事项与商品库存预警' },
-  '/products': { title: '商品与库存', desc: '统一管理在售商品、阶梯定价、库存阈值及商品分类结构' },
+  '/products': { title: '商品与库存', desc: '统一管理在售商品、商品分类与全站卡密一键批量运维' },
   '/products/cards': { title: '卡密库存管理', desc: '管理当前商品的卡密导入、库存状态切换与未售库存清理' },
   '/orders': { title: '订单管理', desc: '检索全站交易订单、核对异常收款并导出订单明细' },
   '/orders/detail': { title: '订单详情', desc: '核验网关交易流水、付款回执、交付卡密及售后换卡与退款记录' },

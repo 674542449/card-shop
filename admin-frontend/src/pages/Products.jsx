@@ -14,8 +14,19 @@ import {
   ProFormDependency,
   ProFormList,
 } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag, Image, Tabs, Space, Typography, Alert } from 'antd';
-import { PlusOutlined, EditOutlined, DollarOutlined } from '@ant-design/icons';
+import { Button, message, Popconfirm, Tag, Image, Tabs, Space, Typography, Alert, Dropdown, Modal } from 'antd';
+import {
+  PlusOutlined,
+  EditOutlined,
+  DollarOutlined,
+  KeyOutlined,
+  DownOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  DeleteOutlined,
+  ClearOutlined,
+  DownloadOutlined,
+} from '@ant-design/icons';
 import { useSearchParams, useOutletContext } from 'react-router-dom';
 import Link from '../components/PermissionLink';
 import { allows } from '../permissions';
@@ -31,9 +42,12 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
+  bulkCardAction,
+  exportCards,
 } from '../services/api';
 import ImageUploader from '../components/ImageUploader';
 import RichTextEditor from '../components/RichTextEditor';
+import AllCardsPanel, { downloadBlobResponse } from '../components/AllCardsPanel';
 import { toTablePage } from '../utils/orderMeta';
 
 function CategoriesPanel({ canWrite, onChanged }) {
@@ -201,8 +215,10 @@ function CategoriesPanel({ canWrite, onChanged }) {
 }
 
 export default function Products() {
+  const admin = useOutletContext();
   const canWrite = useWritePermission('catalog');
-  const canReadCards = allows(useOutletContext(), 'cards');
+  const canReadCards = allows(admin, 'cards');
+  const canWriteCards = allows(admin, 'cards', 'write');
   const actionRef = useRef();
   const batchFormRef = useRef();
   const editRequest = useRef(null);
@@ -212,7 +228,13 @@ export default function Products() {
     templateRequest.current?.abort();
   }, []);
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') === 'categories' ? 'categories' : 'products';
+  const requestedTab = searchParams.get('tab');
+  const activeTab =
+    requestedTab === 'categories'
+      ? 'categories'
+      : requestedTab === 'cards' && canReadCards
+      ? 'cards'
+      : 'products';
   const requestedActive = searchParams.get('is_active');
   const initialActive = ['0', '1'].includes(requestedActive) ? requestedActive : undefined;
   const lowStockOnly = searchParams.get('low_stock') === '1';
@@ -222,6 +244,7 @@ export default function Products() {
   const [selectedRowsMap, setSelectedRowsMap] = useState({});
   const [batchDescVisible, setBatchDescVisible] = useState(false);
   const [batchPriceVisible, setBatchPriceVisible] = useState(false);
+  const [batchCardsBusy, setBatchCardsBusy] = useState(false);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
   const [categoryOptions, setCategoryOptions] = useState([]);
 
@@ -229,6 +252,130 @@ export default function Products() {
     setSelectedRowKeys([]);
     setSelectedRowsMap({});
   }, []);
+
+  const confirmProductsCardAction = useCallback(
+    (actionKey, title, detail, danger = false) => {
+      if (selectedRowKeys.length === 0) return;
+      Modal.confirm({
+        title: `${title}（已选 ${selectedRowKeys.length} 个商品）`,
+        content: detail,
+        okText: danger ? '确认执行' : '确认',
+        cancelText: '取消',
+        okButtonProps: { danger },
+        onOk: async () => {
+          setBatchCardsBusy(true);
+          try {
+            const res = await bulkCardAction({
+              action: actionKey,
+              scope: 'products',
+              product_ids: selectedRowKeys,
+            });
+            message.success(res.data?.message || `${title}已完成`);
+            clearSelection();
+            actionRef.current?.reload();
+          } catch (err) {
+            message.error(err.response?.data?.message || `${title}失败`, 6);
+          } finally {
+            setBatchCardsBusy(false);
+          }
+        },
+      });
+    },
+    [selectedRowKeys, clearSelection]
+  );
+
+  const exportSelectedProductsCards = useCallback(
+    async (format, status) => {
+      if (selectedRowKeys.length === 0) return;
+      setBatchCardsBusy(true);
+      try {
+        const res = await exportCards({
+          format,
+          ...(status ? { status } : {}),
+          product_ids: selectedRowKeys.join(','),
+        });
+        downloadBlobResponse(res, `selected_products_cards_${status || 'all'}.${format}`);
+        message.success('所选商品卡密导出文件已生成');
+      } catch (err) {
+        message.error(err.response?.data?.message || '导出卡密失败', 6);
+      } finally {
+        setBatchCardsBusy(false);
+      }
+    },
+    [selectedRowKeys]
+  );
+
+  const batchCardMenuItems = [
+    ...(canWriteCards
+      ? [
+          {
+            key: 'pause_unsold',
+            icon: <PauseCircleOutlined />,
+            label: '一键暂停所选商品未售卡密',
+            onClick: () =>
+              confirmProductsCardAction(
+                'pause_unsold',
+                '一键暂停所选商品未售卡密',
+                '所选商品的全部未售卡密将转为停用状态，可随时一键恢复；待支付锁定与已售卡密不受影响。'
+              ),
+          },
+          {
+            key: 'resume_disabled',
+            icon: <PlayCircleOutlined />,
+            label: '一键恢复所选商品停用卡密',
+            onClick: () =>
+              confirmProductsCardAction(
+                'resume_disabled',
+                '一键恢复所选商品停用卡密',
+                '将所选商品下无订单关联的停用卡密恢复为可售状态，请确认这些卡密仍有效。'
+              ),
+          },
+          {
+            key: 'delete_unsold',
+            danger: true,
+            icon: <DeleteOutlined />,
+            label: '一键清空所选商品未售卡密',
+            onClick: () =>
+              confirmProductsCardAction(
+                'delete_unsold',
+                '一键清空所选商品未售卡密',
+                '将永久删除所选商品下的全部未售卡密且不可恢复；锁定中、已售及售后换出卡密均受保护。',
+                true
+              ),
+          },
+          {
+            key: 'delete_disabled',
+            danger: true,
+            icon: <ClearOutlined />,
+            label: '一键清空所选商品停用卡密',
+            onClick: () =>
+              confirmProductsCardAction(
+                'delete_disabled',
+                '一键清空所选商品停用卡密',
+                '将永久删除所选商品下的全部停用废弃卡密且不可恢复；未售、锁定中及已售卡密不受影响。',
+                true
+              ),
+          },
+          { type: 'divider' },
+        ]
+      : []),
+    ...(canReadCards
+      ? [
+          {
+            key: 'export_txt',
+            icon: <DownloadOutlined />,
+            label: '导出所选商品未售卡密（TXT）',
+            onClick: () => exportSelectedProductsCards('txt', 'unsold'),
+          },
+          {
+            key: 'export_csv',
+            icon: <DownloadOutlined />,
+            label: '导出所选商品全部卡密（CSV）',
+            onClick: () => exportSelectedProductsCards('csv', undefined),
+          },
+        ]
+      : []),
+  ];
 
   const previewAdjustedPrice = (rawPrice, mode, rawValue) => {
     const base = Number(rawPrice);
@@ -447,6 +594,13 @@ export default function Products() {
                   >
                     批量修改介绍（{selectedRowKeys.length}）
                   </Button>
+                ),
+                selectedRowKeys.length > 0 && batchCardMenuItems.length > 0 && (
+                  <Dropdown key="batchCards" menu={{ items: batchCardMenuItems }} trigger={['click']}>
+                    <Button icon={<KeyOutlined />} loading={batchCardsBusy}>
+                      批量管理卡密（{selectedRowKeys.length}） <DownOutlined />
+                    </Button>
+                  </Dropdown>
                 ),
                 selectedRowKeys.length > 0 && (
                   <Button
@@ -800,10 +954,25 @@ export default function Products() {
       <Tabs
         activeKey={activeTab}
         destroyOnHidden
-        onChange={(key) => setSearchParams(key === 'categories' ? { tab: 'categories' } : {})}
+        onChange={(key) => setSearchParams(key === 'products' ? {} : { tab: key })}
         items={[
           { key: 'products', label: '商品列表', children: productsTab },
           { key: 'categories', label: '商品分类', children: <CategoriesPanel canWrite={canWrite} onChanged={refreshCategoryOptions} /> },
+          ...(canReadCards
+            ? [
+                {
+                  key: 'cards',
+                  label: '全部卡密',
+                  children: (
+                    <AllCardsPanel
+                      canWrite={canWriteCards}
+                      categoryOptions={categoryOptions}
+                      onInventoryChanged={() => actionRef.current?.reload()}
+                    />
+                  ),
+                },
+              ]
+            : []),
         ]}
       />
     </div>

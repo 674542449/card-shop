@@ -76,6 +76,21 @@ class NotificationService
         $this->configuredSmtp = true;
     }
 
+    public static function isEmailEnabled(): bool
+    {
+        $raw = setting('mail_enabled');
+        if ($raw === null || $raw === '') {
+            return true;
+        }
+
+        return self::isTruthySetting('mail_enabled');
+    }
+
+    public function emailEnabled(): bool
+    {
+        return self::isEmailEnabled();
+    }
+
     /**
      * Send a test message to prove the SMTP settings work.
      *
@@ -90,6 +105,10 @@ class NotificationService
      */
     public function sendTestEmail(string $to): array
     {
+        if (!$this->emailEnabled()) {
+            return ['ok' => false, 'message' => 'SMTP 邮件投递服务已关闭，请先开启并保存后再发送测试邮件。'];
+        }
+
         try {
             $this->configureMailer();
 
@@ -126,6 +145,10 @@ class NotificationService
      */
     public function sendOrderEmail(Order $order): bool
     {
+        if (!$this->emailEnabled()) {
+            return false;
+        }
+
         try {
             $this->configureMailer();
 
@@ -198,6 +221,10 @@ class NotificationService
     /** Refund mail contains only buyer-facing fields, never internal notes or card contents. */
     public function sendRefundEmail(Order $order, array $refund): bool
     {
+        if (!$this->emailEnabled()) {
+            return false;
+        }
+
         try {
             $this->configureMailer();
             $siteName = (string) setting('site_name', '卡密商城');

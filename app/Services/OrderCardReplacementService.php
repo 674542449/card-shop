@@ -74,7 +74,7 @@ final class OrderCardReplacementService
             Card::whereIn('id', $new->modelKeys())->update([
                 'status' => 'sold', 'order_id' => $locked->id, 'sold_at' => $now, 'locked_at' => null,
             ]);
-            $this->notifications->enqueue('card-replacement:'.$replacement->id, 'order_email', $locked);
+            $this->notifications->enqueueCardReplacement($locked, (int) $replacement->id);
             // IDs and reason only: old/new secrets must never enter audit details.
             OperationLog::create(['admin_id' => $admin->id, 'action' => '售后换卡', 'target_type' => 'order',
                 'target_id' => $locked->id, 'ip' => request()->ip(),

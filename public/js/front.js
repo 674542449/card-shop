@@ -608,4 +608,41 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+
+    // 11. Native <dialog> progressive-enhancement fallbacks (Invoker Commands + closedby="any")
+    if (typeof HTMLButtonElement === 'undefined' || !('commandForElement' in HTMLButtonElement.prototype)) {
+        document.addEventListener('click', (e) => {
+            const btn = e.target.closest?.('button[commandfor][command]');
+            if (!btn || btn.disabled) return;
+            const targetId = btn.getAttribute('commandfor');
+            const command = btn.getAttribute('command');
+            if (!targetId || !command) return;
+            const target = document.getElementById(targetId);
+            if (!target || target.tagName !== 'DIALOG') return;
+            if (command === 'show-modal' && !target.open && typeof target.showModal === 'function') {
+                target.showModal();
+            } else if (command === 'close' && target.open && typeof target.close === 'function') {
+                target.close();
+            }
+        });
+    }
+
+    if (typeof HTMLDialogElement === 'undefined' || !('closedBy' in HTMLDialogElement.prototype)) {
+        const isOutsideDialog = (e, dialog) => {
+            const r = dialog.getBoundingClientRect();
+            return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+        };
+        document.querySelectorAll('dialog[closedby="any"]').forEach((dialog) => {
+            let pressedOutside = false;
+            dialog.addEventListener('pointerdown', (e) => {
+                pressedOutside = isOutsideDialog(e, dialog);
+            });
+            dialog.addEventListener('pointerup', (e) => {
+                if (pressedOutside && isOutsideDialog(e, dialog) && dialog.open) {
+                    dialog.close();
+                }
+                pressedOutside = false;
+            });
+        });
+    }
 });
