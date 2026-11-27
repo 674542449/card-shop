@@ -156,15 +156,21 @@
                     @error('query_password')<p class="m-field-error" id="m-product-password-hint" role="alert">{{ $message }}</p>@else<p class="m-hint" id="m-product-password-hint">请记住该密码，后续可凭它找回卡密。</p>@enderror
                 </div>
 
-                <div class="m-field">
-                    <label class="m-label" for="coupon_code">优惠码 <span class="m-muted">· 选填</span></label>
-                    <div class="m-coupon-row">
-                        <input type="text" name="coupon_code" id="coupon_code" maxlength="50" class="m-input" value="{{ old('coupon_code') }}" placeholder="输入优惠码" aria-describedby="m-product-coupon-hint" @error('coupon_code') aria-invalid="true" @enderror>
-                        <button type="button" class="m-button m-button-secondary m-button-sm" data-checkout-quote>试算优惠</button>
+                <details class="m-coupon-disclosure" @if(old('coupon_code') || $errors->has('coupon_code')) open @endif>
+                    <summary class="m-coupon-summary">
+                        <span>使用优惠码 <span class="m-muted">· 选填</span></span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <div class="m-coupon-body">
+                        <label class="m-sr-only" for="coupon_code">优惠码（选填）</label>
+                        <div class="m-coupon-row">
+                            <input type="text" name="coupon_code" id="coupon_code" maxlength="50" class="m-input" value="{{ old('coupon_code') }}" placeholder="输入优惠码" autocorrect="off" autocapitalize="none" spellcheck="false" aria-describedby="m-product-coupon-hint" @error('coupon_code') aria-invalid="true" @enderror>
+                            <button type="button" class="m-button m-button-secondary m-button-sm" data-checkout-quote>试算优惠</button>
+                        </div>
+                        @error('coupon_code')<p class="m-field-error" id="m-product-coupon-hint" role="alert">{{ $message }}</p>@enderror
+                        <p class="m-hint" id="m-product-coupon-hint" data-quote-status role="status" aria-live="polite">可试算优惠，不占用库存或优惠次数。</p>
                     </div>
-                    @error('coupon_code')<p class="m-field-error" id="m-product-coupon-hint" role="alert">{{ $message }}</p>@enderror
-                    <p class="m-hint" id="m-product-coupon-hint" data-quote-status role="status" aria-live="polite">可试算优惠，不占用库存或优惠次数。</p>
-                </div>
+                </details>
 
                 <fieldset class="m-product-payments">
                     <legend class="m-label">支付方式</legend>

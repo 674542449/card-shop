@@ -123,15 +123,21 @@
                     <p class="n-hint" id="n-password-hint">后续凭下单邮箱与该密码找回卡密。</p>
                 </div>
 
-                <div class="n-field">
-                    <label for="coupon_code">优惠码 <span>选填</span></label>
-                    <div class="n-coupon-row">
-                        <input type="text" name="coupon_code" id="coupon_code" maxlength="50" class="n-input" value="{{ old('coupon_code') }}" placeholder="输入优惠码" aria-describedby="n-coupon-hint" @error('coupon_code') aria-invalid="true" @enderror>
-                        <button type="button" class="n-button n-button-secondary n-button-sm" data-checkout-quote>试算优惠</button>
+                <details class="n-coupon-disclosure" @if(old('coupon_code') || $errors->has('coupon_code')) open @endif>
+                    <summary class="n-coupon-summary">
+                        <span>使用优惠码 <small>选填</small></span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <div class="n-coupon-body">
+                        <label class="n-sr" for="coupon_code">优惠码（选填）</label>
+                        <div class="n-coupon-row">
+                            <input type="text" name="coupon_code" id="coupon_code" maxlength="50" class="n-input" value="{{ old('coupon_code') }}" placeholder="输入优惠码" autocorrect="off" autocapitalize="none" spellcheck="false" aria-describedby="n-coupon-hint" @error('coupon_code') aria-invalid="true" @enderror>
+                            <button type="button" class="n-button n-button-secondary n-button-sm" data-checkout-quote>试算优惠</button>
+                        </div>
+                        @error('coupon_code')<p class="n-field-error" role="alert">{{ $message }}</p>@enderror
+                        <p class="n-hint" id="n-coupon-hint" data-quote-status role="status" aria-live="polite">可试算优惠，不占用库存或优惠次数。</p>
                     </div>
-                    @error('coupon_code')<p class="n-field-error" role="alert">{{ $message }}</p>@enderror
-                    <p class="n-hint" id="n-coupon-hint" data-quote-status role="status" aria-live="polite">可试算优惠，不占用库存或优惠次数。</p>
-                </div>
+                </details>
 
                 <fieldset class="n-payment-options">
                     <legend>支付方式</legend>

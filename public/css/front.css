@@ -1831,16 +1831,44 @@ html[data-ui-theme="dark"] .ws-icon-sun { display: block; }
     background: var(--ws-surface);
     border-radius: var(--ws-r-lg);
     box-shadow: var(--ws-shadow-sm);
-    padding: 20px;
+    padding: 16px 18px;
 }
 
 .ws-dock-price-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    padding-bottom: 14px;
-    margin-bottom: 16px;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
     border-bottom: 1px solid var(--ws-border);
+}
+.ws-coupon-disclosure {
+    border: 1px solid var(--ws-border);
+    border-radius: var(--ws-r-md);
+    background: var(--ws-surface-subtle, var(--ws-bg));
+}
+.ws-coupon-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ws-ink-2);
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.ws-coupon-summary::-webkit-details-marker { display: none; }
+.ws-coupon-summary small { font-weight: 400; color: var(--ws-muted); margin-inline-start: 4px; }
+.ws-coupon-summary svg { width: 15px; height: 15px; color: var(--ws-muted); transition: transform 0.16s ease; }
+.ws-coupon-disclosure[open] .ws-coupon-summary svg { transform: rotate(180deg); }
+.ws-coupon-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 0 12px 10px;
 }
 .ws-dock-price-caption {
     display: block;
@@ -1919,13 +1947,13 @@ body.ws-drawer-lock .ws-mobile-buybar {
 .ws-form {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 10px;
 }
 
 .ws-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 .ws-label {
     display: flex;

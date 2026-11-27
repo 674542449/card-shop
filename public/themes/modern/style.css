@@ -377,11 +377,17 @@ button, a, input, select, textarea, [tabindex] { -webkit-tap-highlight-color: tr
 .m-product-reminder p { font-size: 0.8125rem; line-height: 1.7; }
 .m-product-reminder a { color: var(--m-clay); text-underline-offset: 3px; text-decoration: underline; }
 
-.m-product-buy-column { position: sticky; top: 82px; }
-.m-product-buy-panel { padding: 24px; scroll-margin-top: 82px; }
-.m-product-buy-heading { margin-bottom: 18px; }
-.m-product-buy-heading h2 { font: 600 1.25rem/1.35 var(--m-serif); margin-bottom: 4px; }
-.m-product-form { display: grid; gap: 16px; }
+.m-product-buy-column { position: sticky; top: 76px; }
+.m-product-buy-panel { padding: 16px 18px; scroll-margin-top: 82px; }
+.m-product-buy-heading { margin-bottom: 10px; }
+.m-product-buy-heading h2 { font: 600 1.15rem/1.3 var(--m-serif); margin-bottom: 2px; }
+.m-product-form { display: grid; gap: 10px; }
+.m-coupon-disclosure { border: 1px solid var(--m-line); border-radius: 8px; background: var(--m-subtle); }
+.m-coupon-summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 7px 11px; font-size: 0.8125rem; font-weight: 600; color: var(--m-ink); cursor: pointer; list-style: none; user-select: none; }
+.m-coupon-summary::-webkit-details-marker { display: none; }
+.m-coupon-summary svg { width: 14px; height: 14px; color: var(--m-muted); transition: transform .15s; }
+.m-coupon-disclosure[open] .m-coupon-summary svg { transform: rotate(180deg); }
+.m-coupon-body { display: grid; gap: 6px; padding: 0 11px 10px; }
 .m-coupon-row { display: flex; align-items: stretch; gap: 8px; }
 .m-coupon-row .m-input { flex: 1; }
 .m-coupon-row .m-button { flex-shrink: 0; }

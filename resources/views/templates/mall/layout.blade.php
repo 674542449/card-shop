@@ -107,7 +107,7 @@
             </div>
         </div>
 
-        @if($headerCategories->isNotEmpty() && $isStoreActive)
+        @if($headerCategories->isNotEmpty() && (request()->is('/') || request()->is('category/*')))
         <div class="ml-cat-strip">
             <nav class="ml-container ml-cat-strip-inner" aria-label="商城频道分类">
                 <a href="/" @class(['ml-cat-pill', 'is-active' => request()->is('/') && !request()->filled('q')]) @if(request()->is('/') && !request()->filled('q')) aria-current="page" @endif>

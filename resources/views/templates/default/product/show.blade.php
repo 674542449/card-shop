@@ -217,20 +217,23 @@
                     @error('query_password')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
                 </div>
 
-                <div class="ws-field">
-                    <label class="ws-label" for="checkout-coupon">
-                        <span>优惠码</span>
-                        <small>选填</small>
-                    </label>
-                    <div class="ws-coupon-row">
-                        <input type="text" id="checkout-coupon" name="coupon_code"
-                               class="ws-input @error('coupon_code') is-invalid @enderror"
-                               placeholder="请输入优惠码（选填）" value="{{ old('coupon_code') }}" maxlength="50" autocomplete="off">
-                        <button type="button" class="ws-btn ws-btn-secondary" data-checkout-quote>试算优惠</button>
+                <details class="ws-coupon-disclosure" @if(old('coupon_code') || $errors->has('coupon_code')) open @endif>
+                    <summary class="ws-coupon-summary">
+                        <span>使用优惠码 <small>选填</small></span>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                    </summary>
+                    <div class="ws-coupon-body">
+                        <label class="ws-sr-only" for="checkout-coupon">优惠码（选填）</label>
+                        <div class="ws-coupon-row">
+                            <input type="text" id="checkout-coupon" name="coupon_code"
+                                   class="ws-input @error('coupon_code') is-invalid @enderror"
+                                   placeholder="请输入优惠码（选填）" value="{{ old('coupon_code') }}" maxlength="50" autocomplete="off" autocorrect="off" autocapitalize="none" spellcheck="false">
+                            <button type="button" class="ws-btn ws-btn-secondary" data-checkout-quote>试算优惠</button>
+                        </div>
+                        @error('coupon_code')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
+                        <p class="ws-quote-note" data-quote-status role="status" aria-live="polite">可试算优惠，试算不占用库存或优惠次数。</p>
                     </div>
-                    @error('coupon_code')<span class="ws-field-error" role="alert">{{ $message }}</span>@enderror
-                </div>
-                <p class="ws-quote-note" data-quote-status role="status" aria-live="polite">可试算优惠，试算不占用库存或优惠次数。</p>
+                </details>
 
                 <div class="ws-field">
                     <span class="ws-label"><span>支付方式</span></span>
