@@ -10,10 +10,12 @@ import {
   ProFormDigit,
   ProFormSwitch,
   ProFormSelect,
+  ProFormRadio,
+  ProFormDependency,
   ProFormList,
 } from '@ant-design/pro-components';
-import { Button, message, Popconfirm, Tag, Image, Tabs, Space, Typography } from 'antd';
-import { PlusOutlined, EditOutlined } from '@ant-design/icons';
+import { Button, message, Popconfirm, Tag, Image, Tabs, Space, Typography, Alert } from 'antd';
+import { PlusOutlined, EditOutlined, DollarOutlined } from '@ant-design/icons';
 import { useSearchParams, useOutletContext } from 'react-router-dom';
 import Link from '../components/PermissionLink';
 import { allows } from '../permissions';
@@ -23,6 +25,7 @@ import {
   createProduct,
   updateProduct,
   batchUpdateProductDescription,
+  batchUpdateProductPrice,
   deleteProduct,
   getCategories,
   createCategory,
@@ -216,9 +219,35 @@ export default function Products() {
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [editingRecord, setEditingRecord] = useState(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState([]);
+  const [selectedRowsMap, setSelectedRowsMap] = useState({});
   const [batchDescVisible, setBatchDescVisible] = useState(false);
+  const [batchPriceVisible, setBatchPriceVisible] = useState(false);
   const [loadingTemplate, setLoadingTemplate] = useState(false);
   const [categoryOptions, setCategoryOptions] = useState([]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedRowKeys([]);
+    setSelectedRowsMap({});
+  }, []);
+
+  const previewAdjustedPrice = (rawPrice, mode, rawValue) => {
+    const base = Number(rawPrice);
+    const val = Number(rawValue);
+    if (!Number.isFinite(base) || !Number.isFinite(val)) return null;
+    let next;
+    if (mode === 'fixed') {
+      next = val;
+    } else if (mode === 'delta') {
+      if (val === 0) return null;
+      next = base + val;
+    } else if (mode === 'percent') {
+      if (val === 0) return null;
+      next = base * (1 + val / 100);
+    } else {
+      return null;
+    }
+    return Math.round((next + Number.EPSILON) * 100) / 100;
+  };
 
   const refreshCategoryOptions = useCallback(() => {
     getCategories()
@@ -372,7 +401,22 @@ export default function Products() {
           canWrite
             ? {
                 selectedRowKeys,
-                onChange: setSelectedRowKeys,
+                onChange: (keys, rows) => {
+                  setSelectedRowKeys(keys);
+                  setSelectedRowsMap((prev) => {
+                    const next = {};
+                    const keySet = new Set(keys);
+                    for (const [k, item] of Object.entries(prev)) {
+                      if (keySet.has(item.id) || keySet.has(k)) next[item.id] = item;
+                    }
+                    for (const row of rows || []) {
+                      if (row && row.id != null) {
+                        next[row.id] = { id: row.id, name: row.name, price: row.price };
+                      }
+                    }
+                    return next;
+                  });
+                },
                 preserveSelectedRowKeys: true,
               }
             : false
@@ -388,6 +432,15 @@ export default function Products() {
             ? [
                 selectedRowKeys.length > 0 && (
                   <Button
+                    key="batchPrice"
+                    icon={<DollarOutlined />}
+                    onClick={() => setBatchPriceVisible(true)}
+                  >
+                    批量修改价格（{selectedRowKeys.length}）
+                  </Button>
+                ),
+                selectedRowKeys.length > 0 && (
+                  <Button
                     key="batchDesc"
                     icon={<EditOutlined />}
                     onClick={() => setBatchDescVisible(true)}
@@ -398,7 +451,7 @@ export default function Products() {
                 selectedRowKeys.length > 0 && (
                   <Button
                     key="clearSelection"
-                    onClick={() => setSelectedRowKeys([])}
+                    onClick={clearSelection}
                   >
                     清空已选
                   </Button>
@@ -420,6 +473,158 @@ export default function Products() {
         }
       />
       <ModalForm
+        name="product-batch-price"
+        title={`批量修改商品价格（已选 ${selectedRowKeys.length} 个商品）`}
+        open={batchPriceVisible}
+        onOpenChange={setBatchPriceVisible}
+        initialValues={{ mode: 'fixed', wholesale_strategy: 'scale' }}
+        modalProps={{ destroyOnHidden: true, width: 'min(620px, 100vw)' }}
+        onFinish={async (values) => {
+          if (selectedRowKeys.length === 0) {
+            message.warning('请先勾选需要修改价格的商品');
+            return false;
+          }
+          try {
+            const res = await batchUpdateProductPrice(selectedRowKeys, {
+              mode: values.mode,
+              value: values.value,
+              wholesale_strategy: values.wholesale_strategy || 'scale',
+            });
+            message.success(res.data?.message || '已批量更新商品价格');
+            clearSelection();
+            actionRef.current?.reload();
+            return true;
+          } catch (err) {
+            const firstFieldError = Object.values(err.response?.data?.errors || {}).flat()[0];
+            message.error(firstFieldError || err.response?.data?.message || '批量修改商品价格失败');
+            return false;
+          }
+        }}
+      >
+        <Typography.Text type="secondary" style={{ display: 'block', marginBottom: 14 }}>
+          确认后将按以下规则统一调整所选 {selectedRowKeys.length} 个商品的销售单价，商品名称、分类、介绍与库存均不受影响；任一商品调价不合法时整批自动取消。
+        </Typography.Text>
+        <ProFormRadio.Group
+          name="mode"
+          label="调价方式"
+          radioType="button"
+          options={[
+            { label: '统一设为固定价', value: 'fixed' },
+            { label: '按金额加减', value: 'delta' },
+            { label: '按百分比调价', value: 'percent' },
+          ]}
+          rules={[{ required: true, message: '请选择调价方式' }]}
+        />
+        <ProFormDependency name={['mode']}>
+          {({ mode }) => {
+            if (mode === 'delta') {
+              return (
+                <ProFormDigit
+                  name="value"
+                  label="增减金额（CNY）"
+                  min={-99999999.99}
+                  max={99999999.99}
+                  fieldProps={{ precision: 2, addonAfter: '元', placeholder: '例如 10 表示涨价 10 元，-15 表示降价 15 元' }}
+                  extra="正数表示统一加价，负数表示统一降价（不能为 0；任意商品调后单价不能低于 ¥0.01）。"
+                  rules={[
+                    { required: true, message: '请输入增减金额' },
+                    {
+                      validator: (_, v) =>
+                        v === 0 ? Promise.reject(new Error('调价金额不能为 0')) : Promise.resolve(),
+                    },
+                  ]}
+                />
+              );
+            }
+            if (mode === 'percent') {
+              return (
+                <ProFormDigit
+                  name="value"
+                  label="涨跌百分比（%）"
+                  min={-99.99}
+                  max={1000}
+                  fieldProps={{ precision: 2, addonAfter: '%', placeholder: '例如 10 表示上浮 10%，-15 表示打 85 折' }}
+                  extra="正数表示按比例涨价，负数表示按比例降价（例如 -10 为九折，四舍五入保留两位小数）。"
+                  rules={[
+                    { required: true, message: '请输入调价百分比' },
+                    {
+                      validator: (_, v) =>
+                        v === 0 ? Promise.reject(new Error('调价百分比不能为 0')) : Promise.resolve(),
+                    },
+                  ]}
+                />
+              );
+            }
+            return (
+              <ProFormDigit
+                name="value"
+                label="统一销售单价（CNY）"
+                min={0.01}
+                max={99999999.99}
+                fieldProps={{ precision: 2, addonAfter: '元', placeholder: '请输入统一目标售价，最低 0.01' }}
+                extra="将所有勾选商品的基础销售单价统一修改为此数值。"
+                rules={[{ required: true, message: '请输入目标销售单价' }]}
+              />
+            );
+          }}
+        </ProFormDependency>
+        <ProFormSelect
+          name="wholesale_strategy"
+          label="阶梯批发价处理方式"
+          allowClear={false}
+          options={[
+            { label: '按新旧单价同比例调整阶梯价（推荐）', value: 'scale' },
+            { label: '保持原阶梯价不变（新单价低于现有阶梯价时拦阻）', value: 'keep' },
+            { label: '清空所选商品的阶梯批发价', value: 'clear' },
+          ]}
+          extra="若勾选商品已配置多件批发价，默认同比例缩放以维持原有折扣梯度并避免价格倒挂。"
+        />
+        <ProFormDependency name={['mode', 'value']}>
+          {({ mode, value }) => {
+            const previewItems = selectedRowKeys
+              .map((id) => selectedRowsMap[id])
+              .filter(Boolean)
+              .slice(0, 5);
+            if (previewItems.length === 0 || value === undefined || value === null || value === '') {
+              return null;
+            }
+            const rows = previewItems.map((item) => {
+              const next = previewAdjustedPrice(item.price, mode, value);
+              return { ...item, next, invalid: next === null || next < 0.01 || next > 99999999.99 };
+            });
+            const hasInvalid = rows.some((r) => r.invalid);
+            return (
+              <Alert
+                type={hasInvalid ? 'error' : 'info'}
+                showIcon
+                style={{ marginTop: 4 }}
+                message={hasInvalid ? '部分商品调价结果超出合法范围（最低 ¥0.01）' : '调价预览（前 5 个已选商品）'}
+                description={
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {rows.map((r) => (
+                      <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                        <span className="admin-amount" style={{ flexShrink: 0 }}>
+                          ¥{Number(r.price).toFixed(2)} →{' '}
+                          <strong style={{ color: r.invalid ? '#cf1322' : undefined }}>
+                            {r.next === null ? '无效' : `¥${r.next.toFixed(2)}`}
+                          </strong>
+                        </span>
+                      </div>
+                    ))}
+                    {selectedRowKeys.length > previewItems.length && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        其余 {selectedRowKeys.length - previewItems.length} 个商品将在提交时由服务端一并校验并原子更新。
+                      </Typography.Text>
+                    )}
+                  </div>
+                }
+              />
+            );
+          }}
+        </ProFormDependency>
+      </ModalForm>
+      <ModalForm
         name="product-batch-description"
         formRef={batchFormRef}
         title={`批量修改商品介绍（已选 ${selectedRowKeys.length} 个商品）`}
@@ -440,7 +645,7 @@ export default function Products() {
           try {
             const res = await batchUpdateProductDescription(selectedRowKeys, values.description ?? null);
             message.success(res.data?.message || '已批量更新商品介绍');
-            setSelectedRowKeys([]);
+            clearSelection();
             actionRef.current?.reload();
             return true;
           } catch (err) {

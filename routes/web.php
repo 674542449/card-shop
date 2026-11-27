@@ -132,6 +132,7 @@ Route::prefix('api/' . admin_path())->group(function () {
         Route::get('/products', [ApiAdmin\ProductController::class, 'index'])->defaults('_admin_capability', 'catalog:read');
         Route::post('/products', [ApiAdmin\ProductController::class, 'store'])->defaults('_admin_capability', 'catalog:write');
         Route::patch('/products/batch-description', [ApiAdmin\ProductController::class, 'batchUpdateDescription'])->defaults('_admin_capability', 'catalog:write');
+        Route::patch('/products/batch-price', [ApiAdmin\ProductController::class, 'batchUpdatePrice'])->defaults('_admin_capability', 'catalog:write');
         Route::get('/products/{product}', [ApiAdmin\ProductController::class, 'show'])->defaults('_admin_capability', 'catalog:read');
         Route::put('/products/{product}', [ApiAdmin\ProductController::class, 'update'])->defaults('_admin_capability', 'catalog:write');
         Route::delete('/products/{product}', [ApiAdmin\ProductController::class, 'destroy'])->defaults('_admin_capability', 'catalog:write');

@@ -291,4 +291,106 @@ class AdminCompletenessTest extends TestCase
             'target_type' => 'product',
         ]);
     }
+
+    public function test_batch_product_price_update_supports_fixed_delta_percent_and_wholesale_strategies_atomically(): void
+    {
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [1],
+            'mode' => 'fixed',
+            'value' => '99.00',
+        ])->assertUnauthorized();
+
+        $this->signIn();
+        $cat = Category::create(['name' => '甲骨文云', 'slug' => 'oci-price-test', 'is_active' => true]);
+        $p1 = $this->product($cat, ['name' => '东京升级', 'price' => '200.00', 'description' => '<p>保留描述</p>']);
+        $p1->wholesalePrices()->createMany([
+            ['min_quantity' => 3, 'price' => '190.00'],
+            ['min_quantity' => 5, 'price' => '180.00'],
+        ]);
+        $p2 = $this->product($cat, ['name' => '东京普通', 'price' => '100.00']);
+        $p2->wholesalePrices()->create(['min_quantity' => 3, 'price' => '90.00']);
+        $p3 = $this->product($cat, ['name' => '未选中商品', 'price' => '88.00']);
+
+        // 1. Validation rejections
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [],
+            'mode' => 'fixed',
+            'value' => '50.00',
+        ])->assertUnprocessable()->assertJsonValidationErrors('ids');
+
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [$p1->id],
+            'mode' => 'delta',
+            'value' => '0',
+        ])->assertUnprocessable()->assertJsonValidationErrors('value');
+
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [999999],
+            'mode' => 'fixed',
+            'value' => '50.00',
+        ])->assertUnprocessable();
+
+        // 2. Atomic rollback if ANY selected product drops below ¥0.01
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [$p1->id, $p2->id],
+            'mode' => 'delta',
+            'value' => '-100.00',
+            'wholesale_strategy' => 'scale',
+        ])->assertUnprocessable()->assertJsonValidationErrors('value');
+        $this->assertSame('200.00', $p1->fresh()->price);
+        $this->assertSame('100.00', $p2->fresh()->price);
+
+        // 3. Atomic rollback when wholesale_strategy = keep conflicts with existing tier price
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [$p1->id, $p2->id],
+            'mode' => 'fixed',
+            'value' => '150.00',
+            'wholesale_strategy' => 'keep',
+        ])->assertUnprocessable()->assertJsonValidationErrors('wholesale_strategy');
+        $this->assertSame('200.00', $p1->fresh()->price);
+        $this->assertSame('100.00', $p2->fresh()->price);
+
+        // 4. Percent discount (-10%) with proportional wholesale scaling
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [$p1->id, $p2->id],
+            'mode' => 'percent',
+            'value' => '-10',
+            'wholesale_strategy' => 'scale',
+        ])->assertOk()->assertJsonPath('count', 2)->assertJsonPath('wholesale_updated_count', 3);
+
+        $this->assertSame('180.00', $p1->fresh()->price);
+        $this->assertSame('<p>保留描述</p>', $p1->fresh()->description);
+        $this->assertSame(['171.00', '162.00'], $p1->fresh()->wholesalePrices()->orderBy('min_quantity')->pluck('price')->all());
+        $this->assertSame('90.00', $p2->fresh()->price);
+        $this->assertSame(['81.00'], $p2->fresh()->wholesalePrices()->orderBy('min_quantity')->pluck('price')->all());
+        $this->assertSame('88.00', $p3->fresh()->price);
+
+        // 5. Delta increase (+20.00) with keep wholesale strategy succeeds when tiers remain <= new price
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [$p2->id],
+            'mode' => 'delta',
+            'value' => '20.00',
+            'wholesale_strategy' => 'keep',
+        ])->assertOk()->assertJsonPath('count', 1)->assertJsonPath('wholesale_updated_count', 0);
+        $this->assertSame('110.00', $p2->fresh()->price);
+        $this->assertSame(['81.00'], $p2->fresh()->wholesalePrices()->orderBy('min_quantity')->pluck('price')->all());
+
+        // 6. Fixed price with clear wholesale strategy
+        $this->patchJson('/api/admin/products/batch-price', [
+            'ids' => [$p1->id, $p2->id],
+            'mode' => 'fixed',
+            'value' => '66.66',
+            'wholesale_strategy' => 'clear',
+        ])->assertOk()->assertJsonPath('count', 2)->assertJsonPath('wholesale_updated_count', 3);
+        $this->assertSame('66.66', $p1->fresh()->price);
+        $this->assertSame('66.66', $p2->fresh()->price);
+        $this->assertSame(0, $p1->fresh()->wholesalePrices()->count());
+        $this->assertSame(0, $p2->fresh()->wholesalePrices()->count());
+        $this->assertSame('88.00', $p3->fresh()->price);
+
+        $this->assertDatabaseHas('operation_logs', [
+            'action' => '批量修改商品价格',
+            'target_type' => 'product',
+        ]);
+    }
 }

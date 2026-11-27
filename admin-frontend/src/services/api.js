@@ -243,6 +243,9 @@ export const updateProduct = (id, data) =>
 export const batchUpdateProductDescription = (ids, description) =>
   api.patch('/products/batch-description', { ids, description });
 
+export const batchUpdateProductPrice = (ids, data) =>
+  api.patch('/products/batch-price', { ids, ...data });
+
 export const deleteProduct = (id) =>
   api.delete(`/products/${id}`);
 

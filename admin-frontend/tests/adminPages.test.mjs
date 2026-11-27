@@ -37,7 +37,7 @@ await build({ stdin: { contents: "export {default as OrderDetail} from './src/pa
       `const call = name => (...args) => globalThis.reviewApi[name](...args);
        export const getOrder=call('getOrder'), closeOrder=call('closeOrder'), markPaid=call('markPaid'), resendOrder=call('resendOrder'), getSettings=call('getSettings'), updateSettings=call('updateSettings'), sendTestEmail=call('sendTestEmail'), sendTestTelegram=call('sendTestTelegram'), testBackupStorage=call('testBackupStorage');
        export const getNotifications=call('getNotifications'), retryNotification=call('retryNotification'), getDashboard=call('getDashboard'), getProductCards=call('getProductCards'), importCards=call('importCards'), deleteCard=call('deleteCard'), batchDeleteCards=call('batchDeleteCards'), setCardStatus=call('setCardStatus');
-       export const getProducts=call('getProducts'), getProduct=call('getProduct'), createProduct=call('createProduct'), updateProduct=call('updateProduct'), batchUpdateProductDescription=call('batchUpdateProductDescription'), deleteProduct=call('deleteProduct');
+       export const getProducts=call('getProducts'), getProduct=call('getProduct'), createProduct=call('createProduct'), updateProduct=call('updateProduct'), batchUpdateProductDescription=call('batchUpdateProductDescription'), batchUpdateProductPrice=call('batchUpdateProductPrice'), deleteProduct=call('deleteProduct');
        export const getCategories=call('getCategories'), createCategory=call('createCategory'), updateCategory=call('updateCategory'), deleteCategory=call('deleteCategory');
        export const getArticles=call('getArticles'), getArticle=call('getArticle'), createArticle=call('createArticle'), updateArticle=call('updateArticle'), deleteArticle=call('deleteArticle');
        export const getArticleCategories=call('getArticleCategories'), createArticleCategory=call('createArticleCategory'), updateArticleCategory=call('updateArticleCategory'), deleteArticleCategory=call('deleteArticleCategory');
@@ -452,6 +452,67 @@ test('multi-selecting products applies a unified description in one batch reques
     await settleTables();
     assert.deepEqual(batchWrites, [[[11, 12], '<p>统一更新后的甲骨文账号交付与质保说明</p>']]);
     assert.ok(!text().includes('批量修改介绍（2）'));
+    assert.ok(listCalls >= 2);
+  } finally {
+    await view.close();
+  }
+});
+
+test('multi-selecting products adjusts prices in one batch request with live preview', {timeout:15000}, async () => {
+  const batchPriceWrites = [];
+  let listCalls = 0;
+  globalThis.reviewApi = {
+    getCategories: async () => ({ data: { data: [{ id: 1, name: '亚太区' }] } }),
+    getProducts: async () => {
+      listCalls++;
+      return {
+        data: {
+          data: [
+            { id: 21, name: '东京升级 - 高质量谷歌', category_id: 1, price: '200.00', stock_count: 10, is_active: true },
+            { id: 22, name: '大阪升级 - 高质量谷歌', category_id: 1, price: '180.00', stock_count: 8, is_active: true },
+          ],
+          total: 2,
+        },
+      };
+    },
+    batchUpdateProductPrice: async (ids, payload) => {
+      batchPriceWrites.push([ids, payload]);
+      return { data: { message: '已成功调整 2 个商品的销售价格。', count: 2, wholesale_updated_count: 4 } };
+    },
+  };
+  const view = await mount('/products');
+  try {
+    await settleTables();
+    assert.ok(!text().includes('批量修改价格'));
+    for (const id of [21, 22]) {
+      const cb = document.querySelector(`tr[data-row-key="${id}"] input[type="checkbox"]`);
+      assert.ok(cb, `Missing checkbox for product ${id}`);
+      await act(async () => cb.click());
+    }
+    assert.ok(text().includes('批量修改价格（2）'));
+    await click('批量修改价格（2）');
+    const dialog = document.querySelector('[role="dialog"]');
+    assert.ok(dialog);
+    const percentOption = [...dialog.querySelectorAll('label')].find((el) => el.textContent.replace(/\s+/g, '') === '按百分比调价');
+    assert.ok(percentOption, 'Missing percent pricing mode option');
+    await act(async () => percentOption.click());
+    const valueInput = dialog.querySelector('input[role="spinbutton"]');
+    assert.ok(valueInput, 'Missing price adjustment input');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(valueInput, '-10');
+      valueInput.dispatchEvent(new window.Event('input', { bubbles: true }));
+      valueInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+    });
+    await settleTables();
+    const dialogText = dialog.textContent.replace(/\s+/g, '');
+    assert.ok(dialogText.includes('¥200.00→¥180.00'), `Expected live preview for product 21, got: ${dialogText}`);
+    assert.ok(dialogText.includes('¥180.00→¥162.00'), `Expected live preview for product 22, got: ${dialogText}`);
+    const confirmBtn = [...dialog.querySelectorAll('button')].find((b) => ['确定', '确认'].includes(b.textContent.replace(/\s+/g, '')));
+    assert.ok(confirmBtn);
+    await act(async () => confirmBtn.click());
+    await settleTables();
+    assert.deepEqual(batchPriceWrites, [[[21, 22], { mode: 'percent', value: -10, wholesale_strategy: 'scale' }]]);
+    assert.ok(!text().includes('批量修改价格（2）'));
     assert.ok(listCalls >= 2);
   } finally {
     await view.close();

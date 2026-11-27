@@ -313,6 +313,192 @@ class ProductController extends Controller
         ]);
     }
 
+    /**
+     * Rounds a high-precision decimal string to 2 fractional digits (half-up).
+     */
+    private function roundMoney(string $amount): string
+    {
+        $negative = str_starts_with($amount, '-');
+        $unsigned = ltrim($amount, '+-');
+        $rounded = bcadd($unsigned, '0.005', 2);
+
+        if ($negative && bccomp($rounded, '0.00', 2) > 0) {
+            return '-' . $rounded;
+        }
+
+        return $rounded;
+    }
+
+    public function batchUpdatePrice(Request $request)
+    {
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:500',
+            'ids.*' => 'required|integer|min:1|distinct',
+            'mode' => 'required|string|in:fixed,delta,percent',
+            'value' => ['required', 'numeric', 'decimal:0,2'],
+            'wholesale_strategy' => 'nullable|string|in:scale,keep,clear',
+        ]);
+
+        $mode = (string) $data['mode'];
+        $valueStr = bcadd((string) $data['value'], '0', 2);
+        $wholesaleStrategy = (string) ($data['wholesale_strategy'] ?? 'scale');
+
+        if ($mode === 'fixed') {
+            if (bccomp($valueStr, '0.01', 2) < 0 || bccomp($valueStr, '99999999.99', 2) > 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'value' => '统一固定单价必须在 ¥0.01 至 ¥99,999,999.99 之间。',
+                ]);
+            }
+        } elseif ($mode === 'delta') {
+            if (bccomp($valueStr, '0.00', 2) === 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'value' => '调价金额不能为 0，正数表示加价，负数表示降价。',
+                ]);
+            }
+            if (bccomp($valueStr, '-99999999.99', 2) < 0 || bccomp($valueStr, '99999999.99', 2) > 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'value' => '调价金额超出允许范围。',
+                ]);
+            }
+        } else {
+            if (bccomp($valueStr, '0.00', 2) === 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'value' => '调价百分比不能为 0，正数表示上浮，负数表示下调。',
+                ]);
+            }
+            if (bccomp($valueStr, '-99.99', 2) < 0 || bccomp($valueStr, '1000.00', 2) > 0) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'value' => '调价百分比必须在 -99.99% 至 +1000% 之间。',
+                ]);
+            }
+        }
+
+        $result = DB::transaction(function () use ($data, $mode, $valueStr, $wholesaleStrategy): array {
+            $products = Product::whereIn('id', $data['ids'])
+                ->with(['wholesalePrices' => fn ($q) => $q->orderBy('min_quantity')])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+
+            if ($products->isEmpty()) {
+                return ['ids' => [], 'wholesale_updated' => 0];
+            }
+
+            $plan = [];
+            foreach ($products as $product) {
+                $oldPrice = bcadd((string) $product->price, '0', 2);
+
+                if ($mode === 'fixed') {
+                    $newPrice = $valueStr;
+                } elseif ($mode === 'delta') {
+                    $newPrice = bcadd($oldPrice, $valueStr, 2);
+                } else {
+                    $factor = bcdiv(bcadd('100.00', $valueStr, 4), '100', 6);
+                    $newPrice = $this->roundMoney(bcmul($oldPrice, $factor, 6));
+                }
+
+                if (bccomp($newPrice, '0.01', 2) < 0) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'value' => "商品「{$product->name}」调价后为 ¥{$newPrice}，低于最低售价 ¥0.01，整批操作已取消。",
+                    ]);
+                }
+                if (bccomp($newPrice, '99999999.99', 2) > 0) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'value' => "商品「{$product->name}」调价后超出最大允许售价 ¥99,999,999.99，整批操作已取消。",
+                    ]);
+                }
+
+                $tierUpdates = [];
+                $tiers = $product->wholesalePrices;
+                if ($tiers->isNotEmpty()) {
+                    if ($wholesaleStrategy === 'keep') {
+                        foreach ($tiers as $tier) {
+                            $tierPrice = bcadd((string) $tier->price, '0', 2);
+                            if (bccomp($tierPrice, $newPrice, 2) > 0) {
+                                throw \Illuminate\Validation\ValidationException::withMessages([
+                                    'wholesale_strategy' => "商品「{$product->name}」的新单价（¥{$newPrice}）低于现有阶梯价（¥{$tierPrice}）；请选择「按比例同步调整阶梯价」或「清空阶梯价」。",
+                                ]);
+                            }
+                        }
+                    } elseif ($wholesaleStrategy === 'scale') {
+                        $ratio = bccomp($oldPrice, '0.00', 2) > 0
+                            ? bcdiv($newPrice, $oldPrice, 8)
+                            : '1';
+                        $ceiling = $newPrice;
+                        foreach ($tiers as $tier) {
+                            $oldTierPrice = bcadd((string) $tier->price, '0', 2);
+                            $scaled = $this->roundMoney(bcmul($oldTierPrice, $ratio, 8));
+                            if (bccomp($scaled, '0.01', 2) < 0) {
+                                $scaled = '0.01';
+                            }
+                            if (bccomp($scaled, $ceiling, 2) > 0) {
+                                $scaled = $ceiling;
+                            }
+                            $ceiling = $scaled;
+                            $tierUpdates[] = ['model' => $tier, 'price' => $scaled];
+                        }
+                    }
+                }
+
+                $plan[] = [
+                    'product' => $product,
+                    'price' => $newPrice,
+                    'tiers' => $tierUpdates,
+                    'clear_tiers' => $wholesaleStrategy === 'clear' && $tiers->isNotEmpty(),
+                ];
+            }
+
+            $ids = [];
+            $wholesaleUpdated = 0;
+            foreach ($plan as $item) {
+                $item['product']->price = $item['price'];
+                $item['product']->save();
+                $ids[] = $item['product']->id;
+
+                if ($item['clear_tiers']) {
+                    $wholesaleUpdated += $item['product']->wholesalePrices()->delete();
+                } else {
+                    foreach ($item['tiers'] as $tierChange) {
+                        $tierChange['model']->price = $tierChange['price'];
+                        $tierChange['model']->save();
+                        $wholesaleUpdated++;
+                    }
+                }
+            }
+
+            return ['ids' => $ids, 'wholesale_updated' => $wholesaleUpdated];
+        });
+
+        if ($result['ids'] === []) {
+            return response()->json(['message' => '未找到可更新的商品，请刷新列表后重试。'], 422);
+        }
+
+        $count = count($result['ids']);
+        $previewIds = implode(', ', array_slice($result['ids'], 0, 20)) . ($count > 20 ? '…' : '');
+        $modeText = match ($mode) {
+            'fixed' => "统一设为 ¥{$valueStr}",
+            'delta' => (bccomp($valueStr, '0.00', 2) > 0 ? "+¥{$valueStr}" : '-¥' . ltrim($valueStr, '-')),
+            default => (bccomp($valueStr, '0.00', 2) > 0 ? "+{$valueStr}%" : "{$valueStr}%"),
+        };
+        $tierText = match ($wholesaleStrategy) {
+            'scale' => '按比例调整阶梯价',
+            'keep' => '保持原阶梯价',
+            default => '清空阶梯价',
+        };
+        OperationLog::log(
+            '批量修改商品价格',
+            'product',
+            null,
+            "批量调整 {$count} 个商品售价（{$modeText}，{$tierText}；ID: {$previewIds}）"
+        );
+
+        return response()->json([
+            'message' => "已成功调整 {$count} 个商品的销售价格。",
+            'count' => $count,
+            'wholesale_updated_count' => $result['wholesale_updated'],
+        ]);
+    }
+
     public function destroy(Product $product)
     {
         $deleted = DB::transaction(function () use ($product) {
